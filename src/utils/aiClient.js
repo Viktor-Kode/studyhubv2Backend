@@ -1,8 +1,9 @@
 import { AI_PROVIDERS, getModelById, getProviderConfig } from "../config/aiConfig.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const aiClient = {
     /**
-     * Unified chat completion that handles multiple providers (Groq, Hugging Face)
+     * Unified chat completion that handles multiple providers (Gemini, Hugging Face)
      */
     chatCompletion: async (params) => {
         const { model: modelId, messages, max_tokens, temperature } = params;
@@ -18,8 +19,8 @@ const aiClient = {
             throw new Error(`API Key for ${modelInfo.provider} not configured.`);
         }
 
-        if (modelInfo.provider === "groq") {
-            return await handleGroqRequest(modelId, messages, max_tokens, temperature, providerConfig);
+        if (modelInfo.provider === "gemini") {
+            return await handleGeminiRequest(modelId, messages, max_tokens, temperature, providerConfig);
         } else if (modelInfo.provider === "hf-inference") {
             return await handleHFRequest(modelId, messages, max_tokens, temperature, providerConfig);
         } else {
@@ -29,132 +30,74 @@ const aiClient = {
 };
 
 /**
- * Utility to wait for a specific duration
+ * Handle requests to Google Gemini
  */
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+async function handleGeminiRequest(modelId, messages, max_tokens, temperature, config, retryCount = 0) {
+    console.log(`🚀 GEMINI API CALL: model=${modelId} (Attempt ${retryCount + 1})`);
 
-/**
- * Handle requests to Groq Cloud (OpenAI compatible)
- * Includes automatic chunking and Rate Limit (429) handling for Free Tier
- */
-async function handleGroqRequest(model, messages, max_tokens, temperature, config) {
-    const url = `${config.baseUrl}/chat/completions`;
-    const TOKEN_LIMIT = 3000; // Requested chunk size
-    const CHAR_LIMIT = TOKEN_LIMIT * 3.5; // Estimated character equivalent
+    try {
+        const genAI = new GoogleGenerativeAI(config.apiKey);
 
-    // Helper for making requests with retries on rate limit (429)
-    const fetchWithRetry = async (payload, retryCount = 0) => {
-        const response = await fetch(url, {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${config.apiKey}`,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-        });
+        // Extract system prompt if present
+        const systemMessage = messages.find(m => m.role === 'system');
+        const otherMessages = messages.filter(m => m.role !== 'system');
 
-        if (response.status === 429) {
-            const result = await response.json();
-            const waitTimeStr = result.error?.message?.match(/try again in ([\d.]+)(m?s)/);
-            let waitMs = 5000; // Default 5s
+        // Configuration for Gemini
+        const modelConfig = {
+            model: modelId,
+        };
 
-            if (waitTimeStr) {
-                const value = parseFloat(waitTimeStr[1]);
-                const unit = waitTimeStr[2];
-                waitMs = unit === 'ms' ? value : value * 1000;
-            }
-
-            console.warn(`⏳ Rate limit reached. Retrying in ${waitMs / 1000}s... (Attempt ${retryCount + 1})`);
-            await sleep(waitMs + 500); // Add small buffer
-            return await fetchWithRetry(payload, retryCount + 1);
+        if (systemMessage) {
+            modelConfig.systemInstruction = systemMessage.content;
         }
 
-        if (!response.ok) {
-            const result = await response.json();
-            throw new Error(result.error?.message || `Groq API Error: ${response.status}`);
-        }
+        const model = genAI.getGenerativeModel(modelConfig);
 
-        return await response.json();
-    };
+        // Convert messages to Gemini format
+        // Gemini expects roles 'user' and 'model' (instead of assistant)
+        const history = otherMessages.slice(0, -1).map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+        }));
 
-    // Find the largest message content (usually the document)
-    const lastUserMessageIndex = messages.findLastIndex(m => m.role === 'user');
-    const content = lastUserMessageIndex !== -1 ? messages[lastUserMessageIndex].content : "";
+        const lastMessage = otherMessages[otherMessages.length - 1];
 
-    if (content.length > CHAR_LIMIT) {
-        console.log(`⚠️ Content too large (${content.length} chars). Partitioning into chunks...`);
+        const generationConfig = {
+            maxOutputTokens: max_tokens || 2048,
+            temperature: temperature || 0.7,
+        };
 
-        // Split text into chunks
-        const chunks = [];
-        for (let i = 0; i < content.length; i += CHAR_LIMIT) {
-            chunks.push(content.substring(i, i + CHAR_LIMIT));
-        }
-
-        let combinedJson = [];
-        let combinedText = "";
-        let isJsonResponse = false;
-
-        for (let i = 0; i < chunks.length; i++) {
-            console.log(`📦 Processing chunk ${i + 1}/${chunks.length}...`);
-
-            // Reconstruct messages with current chunk
-            const chunkMessages = [...messages];
-            chunkMessages[lastUserMessageIndex] = {
-                ...messages[lastUserMessageIndex],
-                content: chunks[i]
-            };
-
-            const result = await fetchWithRetry({
-                model,
-                messages: chunkMessages,
-                max_tokens: max_tokens || 1000,
-                temperature: temperature || 0.7,
+        let response;
+        // Use startChat for history or generateContent for single prompt
+        if (history.length > 0) {
+            const chat = model.startChat({ history, generationConfig });
+            const result = await chat.sendMessage(lastMessage.content);
+            response = await result.response;
+        } else {
+            const result = await model.generateContent({
+                contents: [{ role: 'user', parts: [{ text: lastMessage.content }] }],
+                generationConfig,
             });
-
-            const chunkOutput = result.choices[0].message.content;
-
-            // Try to extract JSON array if present
-            const startIdx = chunkOutput.indexOf('[');
-            const endIdx = chunkOutput.lastIndexOf(']');
-
-            if (startIdx !== -1 && endIdx !== -1) {
-                const jsonStr = chunkOutput.substring(startIdx, endIdx + 1);
-                try {
-                    const parsed = JSON.parse(jsonStr);
-                    if (Array.isArray(parsed)) {
-                        isJsonResponse = true;
-                        combinedJson = combinedJson.concat(parsed);
-                    } else {
-                        combinedText += chunkOutput + "\n\n";
-                    }
-                } catch (e) {
-                    combinedText += chunkOutput + "\n\n";
-                }
-            } else {
-                combinedText += chunkOutput + "\n\n";
-            }
+            response = await result.response;
         }
 
         return {
             choices: [{
                 message: {
-                    content: isJsonResponse ? JSON.stringify(combinedJson) : combinedText.trim()
+                    content: response.text()
                 }
             }]
         };
-    }
-
-    console.log(`🚀 GROQ API CALL: model=${model}`);
-    try {
-        const result = await fetchWithRetry({
-            model,
-            messages,
-            max_tokens: max_tokens || 1000,
-            temperature: temperature || 0.7,
-        });
-        return result;
     } catch (err) {
-        console.error("Groq Request Error:", err.message);
+        // Handle Rate Limit (429)
+        if (err.message?.includes('429') && retryCount < 3) {
+            const waitMs = 5000;
+            console.warn(`⏳ Gemini Quota exceeded. Retrying in ${waitMs / 1000}s...`);
+            await new Promise(resolve => setTimeout(resolve, waitMs));
+            return await handleGeminiRequest(modelId, messages, max_tokens, temperature, config, retryCount + 1);
+        }
+
+        console.error("Gemini Request Error:", err.message);
         throw err;
     }
 }
@@ -166,7 +109,6 @@ async function handleHFRequest(model, messages, max_tokens, temperature, config)
     const url = `https://api-inference.huggingface.co/models/${model}`;
     console.log(`📡 HF API CALL: model=${model}`);
 
-    // HF Inference API often expects a simple string "inputs" or special prompt format
     const prompt = messages
         .map(m => `${m.role === 'system' ? 'Instruction' : m.role === 'user' ? 'Input' : 'Response'}: ${m.content}`)
         .join('\n\n') + '\n\nResponse:';

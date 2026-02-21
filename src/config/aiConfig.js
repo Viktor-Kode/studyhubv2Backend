@@ -5,34 +5,19 @@ export const AI_PROVIDERS = {
         apiKey: process.env.HF_TOKEN,
         defaultProviderValue: "hf-inference",
     },
-    "groq": {
-        name: "Groq (Fast & High Quality)",
-        apiKey: process.env.GROQ_API_KEY,
-        baseUrl: "https://api.groq.com/openai/v1",
-        defaultProviderValue: "groq"
+    "gemini": {
+        name: "Google Gemini (Flash 1.5 - High Limit)",
+        apiKey: process.env.GEMINI_API_KEY,
+        defaultProviderValue: "gemini"
     }
 };
 
 export const MODEL_REGISTRY = [
     {
-        id: "llama-3.3-70b-versatile",
-        name: "Llama 3.3 70B (Groq - Ultra Fast)",
-        provider: "groq",
-        recommended: false,
-        task: "chat-completion"
-    },
-    {
-        id: "llama-3.1-8b-instant",
-        name: "Llama 3.1 8B (Groq - Instant)",
-        provider: "groq",
+        id: "gemini-1.5-flash",
+        name: "Gemini 1.5 Flash (Fast & Stable)",
+        provider: "gemini",
         recommended: true,
-        task: "chat-completion"
-    },
-    {
-        id: "gemma2-9b-it",
-        name: "Gemma 2 9B (Groq)",
-        provider: "groq",
-        recommended: false,
         task: "chat-completion"
     },
     {
