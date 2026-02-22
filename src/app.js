@@ -11,12 +11,26 @@ const app = express();
 
 // Middlewares
 app.use(helmet());
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://studyhubv2-self.vercel.app',
+  'https://studyhelp-zyqw.onrender.com',
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://studyhubv2-self.vercel.app'
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    // Allow any vercel.app subdomain (preview deployments) or listed origins
+    if (
+      allowedOrigins.includes(origin) ||
+      /^https:\/\/[a-z0-9-]+(\.vercel\.app)$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS: ' + origin));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true
