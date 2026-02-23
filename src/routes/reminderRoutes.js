@@ -3,7 +3,8 @@ import {
     getReminders,
     createReminder,
     updateReminder,
-    deleteReminder
+    deleteReminder,
+    sendWhatsApp
 } from '../controllers/reminderController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -13,7 +14,9 @@ router.use(protect);
 
 router.get('/', getReminders);
 router.post('/', createReminder);
+router.post('/whatsapp', sendWhatsApp);
 router.put('/:id', updateReminder);
 router.delete('/:id', deleteReminder);
 
 export default router;
+

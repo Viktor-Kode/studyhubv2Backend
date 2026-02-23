@@ -1,4 +1,5 @@
 import Reminder from '../models/Reminder.js';
+import { sendWhatsAppMessage } from '../utils/twilio.js';
 
 export const getReminders = async (req, res) => {
     try {
@@ -42,5 +43,28 @@ export const deleteReminder = async (req, res) => {
         res.status(200).json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: 'Failed to delete reminder' });
+    }
+};
+
+export const sendWhatsApp = async (req, res) => {
+    const { phoneNumber, message, reminderTitle } = req.body;
+
+    if (!phoneNumber || (!message && !reminderTitle)) {
+        return res.status(400).json({ success: false, error: 'Phone number and message/title are required' });
+    }
+
+    try {
+        const result = await sendWhatsAppMessage(
+            phoneNumber,
+            message || `📚 Study Reminder: ${reminderTitle}`
+        );
+
+        if (result.success) {
+            res.status(200).json({ success: true, sid: result.sid });
+        } else {
+            res.status(502).json({ success: false, error: result.error });
+        }
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
     }
 };
