@@ -24,6 +24,9 @@ router.get('/env', (req, res) => {
         MONGODB_URI: {
             exists: !!process.env.MONGODB_URI,
         },
+        MONGO_URI: {
+            exists: !!process.env.MONGO_URI,
+        },
         NODE_ENV: process.env.NODE_ENV,
         PLATFORM: process.env.RENDER ? 'Render' : 'Local/Other',
     };
@@ -32,8 +35,9 @@ router.get('/env', (req, res) => {
         service: 'Backend (Express)',
         timestamp: new Date().toISOString(),
         envStatus,
-        message: 'If any "exists" is false, check your Render dashboard for this specific service.'
+        message: 'Ensure either MONGODB_URI or MONGO_URI is set in Render settings.'
     });
 });
 
 export default router;
+
