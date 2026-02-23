@@ -14,6 +14,7 @@ import resourceRoutes from './routes/resourceRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
+import debugRoutes from './routes/debugRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -60,6 +61,7 @@ app.use('/api/resources', resourceRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/debug', debugRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');
