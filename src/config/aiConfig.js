@@ -5,18 +5,18 @@ export const AI_PROVIDERS = {
         apiKey: process.env.HF_TOKEN,
         defaultProviderValue: "hf-inference",
     },
-    "gemini": {
-        name: "Google Gemini (Flash 1.5 - High Limit)",
-        apiKey: process.env.GEMINI_API_KEY,
-        defaultProviderValue: "gemini"
+    "deepseek": {
+        name: "DeepSeek AI (High Intelligence)",
+        apiKey: process.env.DEEPSEEK_API_KEY,
+        defaultProviderValue: "deepseek"
     }
 };
 
 export const MODEL_REGISTRY = [
     {
-        id: "gemini-1.5-flash",
-        name: "Gemini 1.5 Flash (Fast & Stable)",
-        provider: "gemini",
+        id: "deepseek-chat",
+        name: "DeepSeek-V3 (Smart & Efficient)",
+        provider: "deepseek",
         recommended: true,
         task: "chat-completion"
     },

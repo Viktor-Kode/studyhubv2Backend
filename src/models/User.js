@@ -13,7 +13,7 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: function () {
-            return !this.googleId; // Password is required only if not using Google Auth
+            return !this.googleId && !this.firebaseUid; // Password not required for OAuth/Firebase users
         },
         minlength: 8,
         select: false // Don't return password by default
@@ -27,6 +27,11 @@ const userSchema = new mongoose.Schema({
         type: String,
         unique: true,
         sparse: true // Allows multiple null values for non-Google users
+    },
+    firebaseUid: {
+        type: String,
+        unique: true,
+        sparse: true
     },
     name: String,
     schoolName: String,

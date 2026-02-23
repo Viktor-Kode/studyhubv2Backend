@@ -5,6 +5,7 @@ import aiRoutes from './routes/aiRoutes.js';
 import studyRoutes from './routes/studyRoutes.js';
 import flashCardRoutes from './routes/flashCardRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import reminderRoutes from './routes/reminderRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/study', studyRoutes);
 app.use('/api/flashcards', flashCardRoutes);
 app.use('/api/users', authRoutes);
+app.use('/api/reminders', reminderRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');

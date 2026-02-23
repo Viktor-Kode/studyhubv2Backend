@@ -1,4 +1,4 @@
-import hf from '../utils/aiClient.js';
+import aiClient from '../utils/aiClient.js';
 import { quizPrompt, notesPrompt } from '../utils/prompts.js';
 import Question from '../models/Question.js';
 import QuizSession from '../models/QuizSession.js';
@@ -6,6 +6,7 @@ import DocumentHash from '../models/DocumentHash.js';
 import StudyNote from '../models/StudyNote.js';
 import { AI_PROVIDERS, getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import crypto from 'crypto';
+import pdf from 'pdf-parse';
 
 /**
  * Controller to generate study notes.
@@ -25,7 +26,7 @@ export const generateNotes = async (req, res) => {
 
     console.log(`📝 Generating Notes for text length: ${text.length} using model: ${selectedModel.id}`);
 
-    const response = await hf.chatCompletion({
+    const response = await aiClient.chatCompletion({
       model: selectedModel.id,
       messages: [{ role: "user", content: notesPrompt(text) }],
       max_tokens: 2000,
@@ -165,7 +166,7 @@ export const generateQuiz = async (req, res) => {
       default: typeInstructions = 'multiple-choice questions';
     }
 
-    const response = await hf.chatCompletion({
+    const response = await aiClient.chatCompletion({
       model: selectedModel.id,
       messages: [{ role: "user", content: quizPrompt(text, questionCount, typeInstructions, excludeQuestionContents.slice(0, 20)) }],
       max_tokens: 3000,
@@ -287,7 +288,7 @@ export const chatWithTutor = async (req, res) => {
       { role: "user", content: message }
     ];
 
-    const response = await hf.chatCompletion({
+    const response = await aiClient.chatCompletion({
       model: selectedModel.id,
       messages,
       max_tokens: 1000,
@@ -318,5 +319,102 @@ export const deleteQuestion = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Question deleted' });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Generate questions from a PDF file.
+ */
+export const generateQuestionsFromPDF = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No PDF file uploaded' });
+    }
+
+    const {
+      difficulty = 'medium',
+      questionType = 'multiple-choice',
+      numberOfQuestions = 5,
+      subject = 'General',
+      assessmentType = 'assignment',
+      marksPerQuestion = 1
+    } = req.body;
+
+    const userId = req.user._id;
+
+    // 1. Extract text from PDF
+    const data = await pdf(req.file.buffer);
+    const text = data.text;
+
+    if (!text || text.trim().length < 50) {
+      return res.status(400).json({
+        success: false,
+        message: 'The PDF does not contain enough readable text.'
+      });
+    }
+
+    // 2. Prepare instructions
+    let typeInstructions;
+    switch (questionType) {
+      case 'multiple-choice': typeInstructions = 'multiple-choice questions with 4 options each'; break;
+      case 'theory': typeInstructions = 'open-ended theory questions'; break;
+      case 'fill-in-gap': typeInstructions = 'fill-in-the-gap questions with the blank marked as ___'; break;
+      case 'all': typeInstructions = 'a mix of multiple-choice, theory, and fill-in-the-gap questions'; break;
+      default: typeInstructions = 'multiple-choice questions';
+    }
+
+    const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
+
+    // 3. Generate questions using AI
+    console.log(`📝 Generating ${numberOfQuestions} questions from PDF for user ${userId}`);
+    const aiResponse = await aiClient.chatCompletion({
+      model: selectedModel.id,
+      messages: [{ role: "user", content: quizPrompt(text.substring(0, 10000), numberOfQuestions, typeInstructions) }],
+      max_tokens: 3000,
+      temperature: 0.7,
+    });
+
+    const aiContent = aiResponse.choices[0].message.content;
+
+    // Clean up JSON
+    const startIdx = aiContent.indexOf('[');
+    const endIdx = aiContent.lastIndexOf(']');
+    let cleanJsonString = aiContent;
+    if (startIdx !== -1 && endIdx !== -1) {
+      cleanJsonString = aiContent.substring(startIdx, endIdx + 1);
+    } else {
+      cleanJsonString = aiContent.replace(/```json|```/g, "").trim();
+    }
+
+    const parsedQuestions = JSON.parse(cleanJsonString);
+
+    // 4. Format and Save to DB
+    const formattedQuestions = parsedQuestions.map((q) => ({
+      userId,
+      content: q.question || q.content,
+      options: q.options || [],
+      answer: q.answer,
+      knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || "No deep-dive available.",
+      subject: subject || "General Study",
+      difficulty: difficulty,
+      type: q.type || questionType,
+      marks: parseInt(marksPerQuestion) || 1,
+      assessmentType: assessmentType
+    }));
+
+    const savedQuestions = await Question.insertMany(formattedQuestions);
+
+    return res.status(201).json({
+      success: true,
+      questions: savedQuestions,
+      message: `Successfully generated ${savedQuestions.length} questions.`
+    });
+
+  } catch (error) {
+    console.error("❌ generateQuestionsFromPDF Error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to generate questions from PDF"
+    });
   }
 };

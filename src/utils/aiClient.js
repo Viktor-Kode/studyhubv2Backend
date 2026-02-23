@@ -1,9 +1,9 @@
+import OpenAI from "openai";
 import { AI_PROVIDERS, getModelById, getProviderConfig } from "../config/aiConfig.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const aiClient = {
     /**
-     * Unified chat completion that handles multiple providers (Gemini, Hugging Face)
+     * Unified chat completion that handles multiple providers (DeepSeek, Hugging Face)
      */
     chatCompletion: async (params) => {
         const { model: modelId, messages, max_tokens, temperature } = params;
@@ -19,8 +19,8 @@ const aiClient = {
             throw new Error(`API Key for ${modelInfo.provider} not configured.`);
         }
 
-        if (modelInfo.provider === "gemini") {
-            return await handleGeminiRequest(modelId, messages, max_tokens, temperature, providerConfig);
+        if (modelInfo.provider === "deepseek") {
+            return await handleDeepSeekRequest(modelId, messages, max_tokens, temperature, providerConfig);
         } else if (modelInfo.provider === "hf-inference") {
             return await handleHFRequest(modelId, messages, max_tokens, temperature, providerConfig);
         } else {
@@ -30,74 +30,33 @@ const aiClient = {
 };
 
 /**
- * Handle requests to Google Gemini
+ * Handle requests to DeepSeek AI (OpenAI Compatible)
  */
-async function handleGeminiRequest(modelId, messages, max_tokens, temperature, config, retryCount = 0) {
-    console.log(`🚀 GEMINI API CALL: model=${modelId} (Attempt ${retryCount + 1})`);
+async function handleDeepSeekRequest(modelId, messages, max_tokens, temperature, config) {
+    console.log(`🚀 DEEPSEEK API CALL: model=${modelId}`);
 
     try {
-        const genAI = new GoogleGenerativeAI(config.apiKey);
+        const client = new OpenAI({
+            baseURL: "https://api.deepseek.com",
+            apiKey: config.apiKey,
+        });
 
-        // Extract system prompt if present
-        const systemMessage = messages.find(m => m.role === 'system');
-        const otherMessages = messages.filter(m => m.role !== 'system');
-
-        // Configuration for Gemini
-        const modelConfig = {
-            model: modelId,
-        };
-
-        if (systemMessage) {
-            modelConfig.systemInstruction = systemMessage.content;
-        }
-
-        const model = genAI.getGenerativeModel(modelConfig);
-
-        // Convert messages to Gemini format
-        // Gemini expects roles 'user' and 'model' (instead of assistant)
-        const history = otherMessages.slice(0, -1).map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
-        }));
-
-        const lastMessage = otherMessages[otherMessages.length - 1];
-
-        const generationConfig = {
-            maxOutputTokens: max_tokens || 2048,
+        const response = await client.chat.completions.create({
+            model: modelId || "deepseek-chat",
+            messages: messages, // DeepSeek maintains history by passing full array
+            max_tokens: max_tokens || 2048,
             temperature: temperature || 0.7,
-        };
-
-        let response;
-        // Use startChat for history or generateContent for single prompt
-        if (history.length > 0) {
-            const chat = model.startChat({ history, generationConfig });
-            const result = await chat.sendMessage(lastMessage.content);
-            response = await result.response;
-        } else {
-            const result = await model.generateContent({
-                contents: [{ role: 'user', parts: [{ text: lastMessage.content }] }],
-                generationConfig,
-            });
-            response = await result.response;
-        }
+        });
 
         return {
             choices: [{
                 message: {
-                    content: response.text()
+                    content: response.choices[0].message.content
                 }
             }]
         };
     } catch (err) {
-        // Handle Rate Limit (429)
-        if (err.message?.includes('429') && retryCount < 3) {
-            const waitMs = 5000;
-            console.warn(`⏳ Gemini Quota exceeded. Retrying in ${waitMs / 1000}s...`);
-            await new Promise(resolve => setTimeout(resolve, waitMs));
-            return await handleGeminiRequest(modelId, messages, max_tokens, temperature, config, retryCount + 1);
-        }
-
-        console.error("Gemini Request Error:", err.message);
+        console.error("DeepSeek Request Error:", err.message);
         throw err;
     }
 }

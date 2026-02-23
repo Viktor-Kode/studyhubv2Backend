@@ -1,4 +1,5 @@
 import express from 'express';
+import multer from 'multer';
 import {
     generateQuiz,
     generateNotes,
@@ -10,11 +11,13 @@ import {
     getQuizSession,
     deleteQuizSession,
     deleteQuestion,
-    chatWithTutor
+    chatWithTutor,
+    generateQuestionsFromPDF
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 // All AI routes require authentication for user data isolation
 router.use(protect);
@@ -37,6 +40,9 @@ router.post('/chat', chatWithTutor);
 router.get('/questions', getQuestions);
 // Delete an individual question (DELETE)
 router.delete('/questions/:id', deleteQuestion);
+
+// Generate questions from PDF (POST)
+router.post('/generate-from-pdf', upload.single('pdf'), generateQuestionsFromPDF);
 
 // Quiz Sessions (History grouped by quiz)
 router.get('/sessions', getQuizSessions);

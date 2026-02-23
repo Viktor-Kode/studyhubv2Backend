@@ -1,10 +1,9 @@
-import jwt from 'jsonwebtoken';
-import { promisify } from 'util';
+import { adminAuth } from '../config/firebase-admin.js';
 import User from '../models/User.js';
 
 export const protect = async (req, res, next) => {
     try {
-        // 1) Getting token and check of it's there
+        // 1) Getting token and check if it's there
         let token;
         if (
             req.headers.authorization &&
@@ -20,15 +19,37 @@ export const protect = async (req, res, next) => {
             throw error;
         }
 
-        // 2) Verification token
-        const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
+        // 2) Verification of Firebase ID token
+        const decodedToken = await adminAuth.verifyIdToken(token);
 
-        // 3) Check if user still exists
-        const currentUser = await User.findById(decoded.id);
+        // 3) Check if user still exists in MongoDB
+        // Try finding by firebaseUid first, then fallback to email
+        let currentUser = await User.findOne({ firebaseUid: decodedToken.uid });
+
+        if (!currentUser && decodedToken.email) {
+            currentUser = await User.findOne({ email: decodedToken.email.toLowerCase() });
+
+            // If found by email but no firebaseUid, link them now
+            if (currentUser) {
+                currentUser.firebaseUid = decodedToken.uid;
+                await currentUser.save({ validateBeforeSave: false });
+            }
+        }
+
         if (!currentUser) {
-            const error = new Error('The user belonging to this token does no longer exist.');
-            error.statusCode = 401;
-            throw error;
+            // Create user automatically if they exist in Firebase but not in MongoDB
+            try {
+                currentUser = await User.create({
+                    firebaseUid: decodedToken.uid,
+                    email: decodedToken.email?.toLowerCase(),
+                    name: decodedToken.name || decodedToken.email?.split('@')[0] || 'User',
+                    role: decodedToken.role || 'student'
+                });
+                console.log(`Created new MongoDB user for Firebase UID: ${decodedToken.uid}`);
+            } catch (createErr) {
+                console.error('Failed to auto-create user in MongoDB:', createErr);
+                throw createErr;
+            }
         }
 
         // GRANT ACCESS TO PROTECTED ROUTE
@@ -36,14 +57,7 @@ export const protect = async (req, res, next) => {
         next();
     } catch (err) {
         console.log('Auth Failure Detail:', err.message);
-        if (err.name === 'JsonWebTokenError') {
-            err.message = 'Invalid token. Please log in again!';
-            err.statusCode = 401;
-        }
-        if (err.name === 'TokenExpiredError') {
-            err.message = 'Your token has expired! Please log in again.';
-            err.statusCode = 401;
-        }
+        err.statusCode = 401;
         next(err);
     }
 };

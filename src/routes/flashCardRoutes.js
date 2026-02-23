@@ -29,21 +29,21 @@ router.use(protect);
 // Flashcard routes
 router.post('/cards', createFlashCard);
 router.post('/generate', generateAIFlashCards);
-router.get('/cards/:userId', getFlashCards); // Keeping userId param for now but will validate in controller
-router.get('/cards/:userId/due', getDueCards);
+router.get('/cards/due', getDueCards);
+router.get('/cards', getFlashCards); // All cards
 router.put('/cards/:cardId', updateFlashCard);
 router.delete('/cards/:cardId', deleteFlashCard);
 router.post('/cards/:cardId/review', reviewCard);
 router.post('/cards/:cardId/favorite', toggleFavorite);
-router.get('/stats/:userId', getFlashCardStats);
-router.get('/export/:userId', exportFlashCards);
+router.get('/stats', getFlashCardStats);
+router.get('/export', exportFlashCards);
 router.post('/import', importFlashCards);
 
 // Deck routes
 router.post('/decks', createDeck);
-router.get('/public-decks', getPublicDecks); // Verify if checks public flag
+router.get('/public-decks', getPublicDecks);
 router.post('/decks/:deckId/clone', cloneDeck);
-router.get('/decks/:userId', getDecks);
+router.get('/decks', getDecks);
 router.put('/decks/:deckId', updateDeck);
 router.delete('/decks/:deckId', deleteDeck);
 

@@ -7,7 +7,7 @@ const questionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['multiple-choice', 'theory', 'fill-in-the-blank', 'mixed', 'subjective'],
+    enum: ['multiple-choice', 'theory', 'fill-in-the-blank', 'fill-in-gap', 'mixed', 'subjective'],
     default: 'multiple-choice'
   },
   options: [String], // Will hold choices for MCQ
@@ -31,6 +31,15 @@ const questionSchema = new mongoose.Schema({
     type: String,
     enum: ['easy', 'medium', 'hard'],
     default: 'medium'
+  },
+  marks: {
+    type: Number,
+    default: 1
+  },
+  assessmentType: {
+    type: String,
+    enum: ['assignment', 'classwork', 'mid-term', 'examination'],
+    default: 'assignment'
   }
 }, { timestamps: true });
 

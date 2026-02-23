@@ -1,7 +1,7 @@
 import FlashCard from '../models/FlashCard.js';
 import FlashCardDeck from '../models/FlashCardDeck.js';
 import FlashCardSession from '../models/FlashCardSession.js';
-import hf from '../utils/aiClient.js';
+import aiClient from '../utils/aiClient.js';
 import { flashCardPrompt } from '../utils/prompts.js';
 import { getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import mongoose from 'mongoose';
@@ -521,7 +521,7 @@ export const generateAIFlashCards = async (req, res) => {
 
     try {
         const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
-        const response = await hf.chatCompletion({
+        const response = await aiClient.chatCompletion({
             model: selectedModel.id,
             messages: [{ role: "user", content: flashCardPrompt(text, amount) }],
             max_tokens: 2000,

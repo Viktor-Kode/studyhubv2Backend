@@ -211,3 +211,39 @@ export const updatePassword = async (req, res, next) => {
         next(err);
     }
 };
+/**
+ * Update current user profile (name, role, etc.)
+ */
+export const updateMe = async (req, res, next) => {
+    try {
+        const { name, role, schoolName, phone } = req.body;
+        const updateData = {};
+
+        if (name) updateData.name = name;
+        if (role) updateData.role = role;
+        if (schoolName) updateData.schoolName = schoolName;
+        if (phone) updateData.phone = phone;
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(200).json({
+                status: 'success',
+                data: { user: req.user }
+            });
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(
+            req.user._id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        res.status(200).json({
+            status: 'success',
+            data: {
+                user: updatedUser
+            }
+        });
+    } catch (err) {
+        next(err);
+    }
+};
