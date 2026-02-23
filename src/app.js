@@ -6,6 +6,14 @@ import studyRoutes from './routes/studyRoutes.js';
 import flashCardRoutes from './routes/flashCardRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import reminderRoutes from './routes/reminderRoutes.js';
+import classRoutes from './routes/classRoutes.js';
+import questionRoutes from './routes/questionRoutes.js';
+import examRoutes from './routes/examRoutes.js';
+import markingRoutes from './routes/markingRoutes.js';
+import resourceRoutes from './routes/resourceRoutes.js';
+import analyticsRoutes from './routes/analyticsRoutes.js';
+import studentRoutes from './routes/studentRoutes.js';
+import settingsRoutes from './routes/settingsRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -44,6 +52,14 @@ app.use('/api/study', studyRoutes);
 app.use('/api/flashcards', flashCardRoutes);
 app.use('/api/users', authRoutes);
 app.use('/api/reminders', reminderRoutes);
+app.use('/api/classes', classRoutes);
+app.use('/api/questions', questionRoutes);
+app.use('/api/exams', examRoutes);
+app.use('/api/marking', markingRoutes);
+app.use('/api/resources', resourceRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/students', studentRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');

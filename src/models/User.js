@@ -37,7 +37,11 @@ const userSchema = new mongoose.Schema({
     schoolName: String,
     phone: String,
     passwordResetToken: String,
-    passwordResetExpires: Date
+    passwordResetExpires: Date,
+    settings: {
+        type: Object,
+        default: {}
+    }
 }, { timestamps: true });
 
 // Hash password before saving

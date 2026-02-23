@@ -6,7 +6,9 @@ import DocumentHash from '../models/DocumentHash.js';
 import StudyNote from '../models/StudyNote.js';
 import { AI_PROVIDERS, getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import crypto from 'crypto';
-import pdf from 'pdf-parse';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdf = require('pdf-parse');
 
 /**
  * Controller to generate study notes.

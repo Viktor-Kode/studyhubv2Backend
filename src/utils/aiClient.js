@@ -26,6 +26,16 @@ const aiClient = {
         } else {
             throw new Error(`Provider ${modelInfo.provider} is not supported.`);
         }
+    },
+    /**
+     * Helper for quick text responses using a default model
+     */
+    generateChatResponse: async (messages) => {
+        const response = await aiClient.chatCompletion({
+            model: "deepseek-chat", // or any default
+            messages
+        });
+        return response.choices[0].message.content;
     }
 };
 
