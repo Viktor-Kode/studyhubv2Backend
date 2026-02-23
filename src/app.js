@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import aiRoutes from './routes/aiRoutes.js';
 import studyRoutes from './routes/studyRoutes.js';
 import flashCardRoutes from './routes/flashCardRoutes.js';
@@ -19,23 +20,38 @@ import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
 const app = express();
 
+// TRUST PROXY - Required for Render/Vercel to get real IP for rate limiting
+app.set('trust proxy', 1);
+
 // Middlewares
 app.use(helmet());
+
+// GLOBAL RATE LIMITER
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: 429, message: 'Too many requests from this IP, please try again later.' }
+});
+
+// Apply rate limiter to all routes
+app.use(limiter);
+
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'https://studyhubv2-self.vercel.app',
   'https://studyhelp-zyqw.onrender.com',
-];
+].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, server-to-server)
     if (!origin) return callback(null, true);
-    // Allow any vercel.app subdomain (preview deployments) or listed origins
     if (
       allowedOrigins.includes(origin) ||
-      /^https:\/\/[a-z0-9-]+(\.vercel\.app)$/.test(origin)
+      /^https:\/\/[a-z0-9-]+(\.vercel\.app)$/.test(origin) ||
+      /^https:\/\/[a-z0-9-]+(\.onrender\.com)$/.test(origin)
     ) {
       return callback(null, true);
     }
@@ -45,7 +61,16 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true
 }));
+
 app.use(express.json());
+
+// HEALTH CHECK (For Render/uptime monitoring)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+});
+
+// SILENCE FAVICON ERRORS
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Routes
 app.use('/api/ai', aiRoutes);
@@ -71,5 +96,5 @@ app.get('/', (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-// THIS IS THE MISSING PIECE:
 export default app;
+
