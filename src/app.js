@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import mongoose from 'mongoose';
 import aiRoutes from './routes/aiRoutes.js';
 import studyRoutes from './routes/studyRoutes.js';
 import flashCardRoutes from './routes/flashCardRoutes.js';
@@ -9,6 +10,7 @@ import authRoutes from './routes/authRoutes.js';
 import reminderRoutes from './routes/reminderRoutes.js';
 import classRoutes from './routes/classRoutes.js';
 import questionRoutes from './routes/questionRoutes.js';
+import cbtRoutes from './routes/cbtRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import markingRoutes from './routes/markingRoutes.js';
 import resourceRoutes from './routes/resourceRoutes.js';
@@ -65,8 +67,20 @@ app.use(cors({
 app.use(express.json());
 
 // HEALTH CHECK (For Render/uptime monitoring)
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'UP', timestamp: new Date().toISOString() });
+app.get('/api/health', (req, res) => {
+  const healthStatus = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    services: {
+      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      aloc: !!process.env.ALOC_ACCESS_TOKEN ? 'configured' : 'missing',
+      twilio: (!!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN) ? 'configured' : 'missing',
+      deepseek: !!process.env.DEEPSEEK_API_KEY ? 'configured' : 'missing'
+    }
+  };
+
+  const isAllOk = Object.values(healthStatus.services).every(v => v === 'connected' || v === 'configured');
+  res.status(isAllOk ? 200 : 207).json(healthStatus);
 });
 
 // SILENCE FAVICON ERRORS
@@ -80,6 +94,7 @@ app.use('/api/users', authRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/questions', questionRoutes);
+app.use('/api/cbt', cbtRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/marking', markingRoutes);
 app.use('/api/resources', resourceRoutes);
@@ -97,4 +112,3 @@ app.use(notFound);
 app.use(errorHandler);
 
 export default app;
-
