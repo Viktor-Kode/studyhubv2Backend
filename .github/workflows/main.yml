@@ -1,0 +1,32 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Start check
+        run: |
+          node -e "try { require('./src/server.js'); console.log('✅ Entry point loads'); process.exit(0); } catch(e) { console.error(e); process.exit(1); }"
+        env:
+          MONGO_URI: mongodb://localhost:27017/test
+          JWT_SECRET: test-secret
+          ALOC_ACCESS_TOKEN: test-token
+          TWILIO_ACCOUNT_SID: ACxxx
+          TWILIO_AUTH_TOKEN: test-token
