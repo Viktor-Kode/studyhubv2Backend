@@ -38,8 +38,8 @@ export const createFlashCard = async (req, res) => {
 
         await flashCard.save();
 
-        // Update deck card count if deck is specified
-        if (deckId) {
+        // Update deck card count if deck is specified and valid
+        if (deckId && mongoose.Types.ObjectId.isValid(deckId)) {
             await FlashCardDeck.findOneAndUpdate(
                 { _id: deckId, userId }, // Ensure deck belongs to user
                 { $inc: { cardCount: 1 } }

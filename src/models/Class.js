@@ -17,6 +17,7 @@ const classSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    description: String,
     level: {
         type: String,
         enum: ['secondary', 'university'],
@@ -29,6 +30,22 @@ const classSchema = new mongoose.Schema({
     students: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
+    }],
+    assignments: [{
+        title: String,
+        assignmentType: {
+            type: String,
+            enum: ['assignment', 'classwork', 'mid-term', 'examination'],
+            default: 'assignment'
+        },
+        dueDate: Date,
+        totalMarks: Number,
+        createdAt: { type: Date, default: Date.now }
+    }],
+    announcements: [{
+        title: String,
+        message: String,
+        createdAt: { type: Date, default: Date.now }
     }]
 }, { timestamps: true });
 

@@ -35,11 +35,31 @@ const reminderSchema = new mongoose.Schema(
             default: 'medium'
         },
         description: String,
-        sendWhatsApp: {
+        subject: String,
+        location: String,
+        whatsappEnabled: {
             type: Boolean,
             default: false
         },
-        whatsappNumber: String
+        sendWhatsApp: { // Alias/Backward compatibility
+            type: Boolean,
+            default: false
+        },
+        whatsappNumber: String,
+        emailEnabled: {
+            type: Boolean,
+            default: false
+        },
+        notifyBefore: {
+            type: Number,
+            default: 15
+        },
+        recurring: {
+            type: String,
+            enum: ['none', 'daily', 'weekly', 'monthly'],
+            default: 'none'
+        },
+        recurringDays: [Number]
     },
     { timestamps: true }
 );

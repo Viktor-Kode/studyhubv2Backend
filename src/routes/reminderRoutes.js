@@ -4,7 +4,7 @@ import {
     createReminder,
     updateReminder,
     deleteReminder,
-    sendWhatsApp
+    sendWhatsAppNotification
 } from '../controllers/reminderController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -12,11 +12,14 @@ const router = express.Router();
 
 router.use(protect);
 
-router.get('/', getReminders);
-router.post('/', createReminder);
-router.post('/whatsapp', sendWhatsApp);
-router.put('/:id', updateReminder);
-router.delete('/:id', deleteReminder);
+router.route('/')
+    .get(getReminders)
+    .post(createReminder);
+
+router.route('/:id')
+    .patch(updateReminder)
+    .delete(deleteReminder);
+
+router.post('/whatsapp', sendWhatsAppNotification);
 
 export default router;
-
