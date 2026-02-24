@@ -1,14 +1,15 @@
 import twilio from 'twilio';
+import { getEnv } from '../config/env.js';
 
 /**
  * Safely initializes the Twilio client with graceful failure
  */
 export const getTwilioClient = () => {
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const accountSid = getEnv('TWILIO_ACCOUNT_SID');
+    const authToken = getEnv('TWILIO_AUTH_TOKEN');
 
-    if (!accountSid || !authToken || accountSid === 'undefined' || authToken === 'undefined') {
-        if (process.env.NODE_ENV === 'production') {
+    if (!accountSid || !authToken) {
+        if (getEnv('NODE_ENV') === 'production') {
             console.warn('⚠️ WARNING: Twilio credentials missing in production! SMS/WhatsApp features are disabled.');
         } else {
             console.log('ℹ️ Information: Twilio credentials not set. SMS/WhatsApp features disabled.');
@@ -29,7 +30,8 @@ export const getTwilioClient = () => {
  */
 export const sendWhatsAppMessage = async (to, message) => {
     const client = getTwilioClient();
-    const from = process.env.TWILIO_PHONE_NUMBER;
+    const from = getEnv('TWILIO_PHONE_NUMBER');
+
 
     if (!client) {
         console.error('❌ Cannot send WhatsApp: Twilio client not initialized.');

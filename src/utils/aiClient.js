@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { AI_PROVIDERS, getModelById, getProviderConfig } from "../config/aiConfig.js";
+import { getEnv } from "../config/env.js";
+
 
 const aiClient = {
     /**
@@ -16,7 +18,7 @@ const aiClient = {
         const providerConfig = getProviderConfig(modelInfo.provider);
 
         if (!providerConfig.apiKey) {
-            throw new Error(`API Key for ${modelInfo.provider} not configured.`);
+            throw new Error(`AI Service Unavailable: API Key for ${modelInfo.provider} is not configured on the server.`);
         }
 
         if (modelInfo.provider === "deepseek") {

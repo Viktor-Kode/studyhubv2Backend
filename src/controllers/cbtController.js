@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getEnv } from '../config/env.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -6,9 +7,10 @@ const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
  * Tests the ALOC API connection
  */
 export const testALOCConnection = async (req, res) => {
-    const token = process.env.ALOC_ACCESS_TOKEN;
+    const token = getEnv('ALOC_ACCESS_TOKEN');
 
     if (!token) {
+
         return res.status(503).json({
             status: 'error',
             service: 'ALOC',
@@ -45,7 +47,7 @@ export const testALOCConnection = async (req, res) => {
  * Proxy for fetching questions from ALOC
  */
 export const getQuestionsProxy = async (req, res) => {
-    const token = process.env.ALOC_ACCESS_TOKEN;
+    const token = getEnv('ALOC_ACCESS_TOKEN');
     const { subject, type, year, amount = 10 } = req.query;
 
     if (!token) {

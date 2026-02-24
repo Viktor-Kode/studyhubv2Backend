@@ -19,6 +19,8 @@ import studentRoutes from './routes/studentRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import debugRoutes from './routes/debugRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
+import { getEnv } from './config/env.js';
+
 
 const app = express();
 
@@ -67,21 +69,23 @@ app.use(cors({
 app.use(express.json());
 
 // HEALTH CHECK (For Render/uptime monitoring)
+
 app.get('/api/health', (req, res) => {
   const healthStatus = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     services: {
       mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      aloc: !!process.env.ALOC_ACCESS_TOKEN ? 'configured' : 'missing',
-      twilio: (!!process.env.TWILIO_ACCOUNT_SID && !!process.env.TWILIO_AUTH_TOKEN) ? 'configured' : 'missing',
-      deepseek: !!process.env.DEEPSEEK_API_KEY ? 'configured' : 'missing'
+      aloc: !!getEnv('ALOC_ACCESS_TOKEN') ? 'configured' : 'missing',
+      twilio: (!!getEnv('TWILIO_ACCOUNT_SID') && !!getEnv('TWILIO_AUTH_TOKEN')) ? 'configured' : 'missing',
+      deepseek: !!getEnv('DEEPSEEK_API_KEY') ? 'configured' : 'missing'
     }
   };
 
   const isAllOk = Object.values(healthStatus.services).every(v => v === 'connected' || v === 'configured');
   res.status(isAllOk ? 200 : 207).json(healthStatus);
 });
+
 
 // SILENCE FAVICON ERRORS
 app.get('/favicon.ico', (req, res) => res.status(204).end());

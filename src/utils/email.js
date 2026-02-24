@@ -1,18 +1,20 @@
 import nodemailer from 'nodemailer';
+import { getEnv } from '../config/env.js';
 
 const sendEmail = async (options) => {
-    const user = process.env.EMAIL_USERNAME;
-    const pass = process.env.EMAIL_PASSWORD;
-    const from = process.env.EMAIL_FROM;
+    const user = getEnv('EMAIL_USERNAME');
+    const pass = getEnv('EMAIL_PASSWORD');
+    const from = getEnv('EMAIL_FROM');
 
-    if (!user || !pass || user === 'undefined' || pass === 'undefined') {
-        if (process.env.NODE_ENV === 'production') {
+    if (!user || !pass) {
+        if (getEnv('NODE_ENV') === 'production') {
             console.error('❌ CRITICAL: EMAIL_USERNAME or EMAIL_PASSWORD missing in production!');
         } else {
             console.warn('⚠️ Warning: Email credentials not set. Email delivery disabled.');
         }
         return; // Return silently to prevent crashing the server
     }
+
 
     // 1) Create a transporter
     const transporter = nodemailer.createTransport({

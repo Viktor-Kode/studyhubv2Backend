@@ -2,15 +2,17 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import sendEmail from '../utils/email.js';
 import crypto from 'crypto';
+import { getEnv } from '../config/env.js';
 
 /**
  * Signs a JWT token
  */
 const signToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRES_IN || '90d'
+    return jwt.sign({ id }, getEnv('JWT_SECRET'), {
+        expiresIn: getEnv('JWT_EXPIRES_IN', '90d')
     });
 };
+
 
 /**
  * Normalizes and sends the token response
@@ -113,8 +115,9 @@ export const forgotPassword = async (req, res, next) => {
         const resetToken = user.createPasswordResetToken();
         await user.save({ validateBeforeSave: false });
 
-        const frontendURL = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const frontendURL = getEnv('FRONTEND_URL', 'http://localhost:3000');
         const resetURL = `${frontendURL}/reset-password?token=${resetToken}`;
+
 
         const message = `Forgot your password? Reset it here: ${resetURL}\nIf you didn't forget your password, please ignore this email!`;
 

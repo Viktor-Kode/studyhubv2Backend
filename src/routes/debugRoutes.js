@@ -1,4 +1,5 @@
 import express from 'express';
+import { getEnv } from '../config/env.js';
 
 const router = express.Router();
 
@@ -10,26 +11,27 @@ const router = express.Router();
 router.get('/env', (req, res) => {
     const envStatus = {
         ALOC_ACCESS_TOKEN: {
-            exists: !!process.env.ALOC_ACCESS_TOKEN,
-            length: process.env.ALOC_ACCESS_TOKEN?.length || 0,
+            exists: !!getEnv('ALOC_ACCESS_TOKEN'),
+            length: getEnv('ALOC_ACCESS_TOKEN')?.length || 0,
         },
         TWILIO_ACCOUNT_SID: {
-            exists: !!process.env.TWILIO_ACCOUNT_SID,
-            length: process.env.TWILIO_ACCOUNT_SID?.length || 0,
+            exists: !!getEnv('TWILIO_ACCOUNT_SID'),
+            length: getEnv('TWILIO_ACCOUNT_SID')?.length || 0,
         },
         TWILIO_AUTH_TOKEN: {
-            exists: !!process.env.TWILIO_AUTH_TOKEN,
-            length: process.env.TWILIO_AUTH_TOKEN?.length || 0,
+            exists: !!getEnv('TWILIO_AUTH_TOKEN'),
+            length: getEnv('TWILIO_AUTH_TOKEN')?.length || 0,
         },
         MONGODB_URI: {
-            exists: !!process.env.MONGODB_URI,
+            exists: !!getEnv('MONGODB_URI'),
         },
         MONGO_URI: {
-            exists: !!process.env.MONGO_URI,
+            exists: !!getEnv('MONGO_URI'),
         },
-        NODE_ENV: process.env.NODE_ENV,
-        PLATFORM: process.env.RENDER ? 'Render' : 'Local/Other',
+        NODE_ENV: getEnv('NODE_ENV'),
+        PLATFORM: getEnv('RENDER') ? 'Render' : 'Local/Other',
     };
+
 
     res.json({
         service: 'Backend (Express)',

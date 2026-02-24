@@ -1,16 +1,21 @@
+import { getEnv } from './env.js';
+
 // AI Provider Configuration
+
 export const AI_PROVIDERS = {
+
     "hf-inference": {
         name: "Hugging Face Inference API (Free Tier)",
-        apiKey: process.env.HF_TOKEN,
+        apiKey: getEnv('HF_TOKEN'),
         defaultProviderValue: "hf-inference",
     },
     "deepseek": {
         name: "DeepSeek AI (High Intelligence)",
-        apiKey: process.env.DEEPSEEK_API_KEY,
+        apiKey: getEnv('DEEPSEEK_API_KEY'),
         defaultProviderValue: "deepseek"
     }
 };
+
 
 export const MODEL_REGISTRY = [
     {
@@ -34,9 +39,15 @@ export const getProviderConfig = (providerName) => {
     if (!config) {
         throw new Error(`Provider ${providerName} not found in configuration.`);
     }
+
+    if (!config.apiKey) {
+        console.warn(`⚠️ Warning: API Key for ${providerName} is not configured.`);
+    }
+
     return config;
 };
 
 export const getModelById = (modelId) => {
     return MODEL_REGISTRY.find(m => m.id === modelId);
 };
+
