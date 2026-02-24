@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+console.log(`[STARTUP] Raw NODE_ENV: ${process.env.NODE_ENV}, RENDER: ${process.env.RENDER}`);
+
 /**
  * ENVIRONMENT LOADER
  * 
@@ -18,6 +20,12 @@ const __dirname = path.dirname(__filename);
 // 1. Determine if we are in production
 const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
 
+// Force production mode if on Render
+if (!!process.env.RENDER && process.env.NODE_ENV !== 'production') {
+    process.env.NODE_ENV = 'production';
+    console.log('[ENV] Detected Render environment. Forcing NODE_ENV to production.');
+}
+
 // 2. Load Dotenv (Development ONLY)
 if (!isProduction) {
     // Try to load .env from the backend root
@@ -26,6 +34,11 @@ if (!isProduction) {
     console.log(`[ENV] Development mode: Loading variables from ${envPath}`);
 } else {
     console.log(`[ENV] Production mode detected. Skipping dotenv. Using Render environment variables.`);
+
+    // Explicitly check for leakage
+    if (process.env.MONGODB_URI && process.env.MONGODB_URI.includes('localhost')) {
+        console.warn('🚨 LEAKAGE DETECTED: MONGODB_URI is set to localhost in production!');
+    }
 }
 
 /**

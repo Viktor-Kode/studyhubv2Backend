@@ -14,13 +14,17 @@ const connectDB = async () => {
     // Identify if the URI looks like a local one
     const isLocal = mongoURI.includes('localhost') || mongoURI.includes('127.0.0.1');
 
-    // Mask the URI for safe logging (e.g., mongodb+srv://user:***@cluster.mongodb.net)
+    // Mask the URI for safe logging
     const maskedURI = mongoURI.replace(/:([^:@]{3,})@/, ':***@');
-    console.log(`🔌 Attempting to connect to: ${maskedURI.substring(0, 40)}...`);
 
-    if (isLocal && getEnv('NODE_ENV') === 'production') {
-      console.warn('⚠️ WARNING: Using a LOCALHOST MongoDB URI in a PRODUCTION environment!');
+    if (isLocal && (getEnv('NODE_ENV') === 'production' || !!process.env.RENDER)) {
+      console.error('❌ CRITICAL ERROR: Connection to LOCALHOST is not allowed in PRODUCTION.');
+      console.error('Current MONGODB_URI starts with:', mongoURI.substring(0, 20));
+      console.error('Please check your Render dashboard and update MONGODB_URI with your Atlas connection string.');
+      process.exit(1);
     }
+
+    console.log(`🔌 Attempting to connect to: ${maskedURI.substring(0, 50)}...`);
 
     const conn = await mongoose.connect(mongoURI);
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
