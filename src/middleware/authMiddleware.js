@@ -5,25 +5,35 @@ export const protect = async (req, res, next) => {
     try {
         // 1) Getting token and check if it's there
         let token;
-        if (
-            req.headers.authorization &&
-            req.headers.authorization.startsWith('Bearer')
-        ) {
-            token = req.headers.authorization.split(' ')[1];
+        const authHeader = req.headers.authorization;
+
+        if (authHeader && authHeader.startsWith('Bearer')) {
+            token = authHeader.split(' ')[1];
         }
 
         if (!token) {
-            console.log('Auth Failure: No token found in headers');
-            const error = new Error('You are not logged in! Please log in to get access.');
-            error.statusCode = 401;
-            throw error;
+            console.warn(`[AUTH] 401 - No token provided for ${req.originalUrl}`);
+            return res.status(401).json({
+                status: 'fail',
+                message: 'You are not logged in! Please log in to get access.'
+            });
         }
 
         // 2) Verification of Firebase ID token
-        const decodedToken = await adminAuth.verifyIdToken(token);
+        let decodedToken;
+        try {
+            decodedToken = await adminAuth.verifyIdToken(token);
+            console.log(`[AUTH] Token verified for UID: ${decodedToken.uid}`);
+        } catch (verifyErr) {
+            console.error(`[AUTH] 401 - Token verification failed: ${verifyErr.message}`);
+            return res.status(401).json({
+                status: 'fail',
+                message: 'Your token is invalid or expired. Please log in again.',
+                error: verifyErr.code // e.g., 'auth/id-token-expired'
+            });
+        }
 
         // 3) Check if user still exists in MongoDB
-        // Try finding by firebaseUid first, then fallback to email
         let currentUser = await User.findOne({ firebaseUid: decodedToken.uid });
 
         if (!currentUser && decodedToken.email) {
@@ -33,6 +43,7 @@ export const protect = async (req, res, next) => {
             if (currentUser) {
                 currentUser.firebaseUid = decodedToken.uid;
                 await currentUser.save({ validateBeforeSave: false });
+                console.log(`[AUTH] Linked email user ${decodedToken.email} to Firebase UID ${decodedToken.uid}`);
             }
         }
 
@@ -43,12 +54,12 @@ export const protect = async (req, res, next) => {
                     firebaseUid: decodedToken.uid,
                     email: decodedToken.email?.toLowerCase(),
                     name: decodedToken.name || decodedToken.email?.split('@')[0] || 'User',
-                    role: decodedToken.role || 'student'
+                    role: 'student' // Default role for auto-created users
                 });
-                console.log(`Created new MongoDB user for Firebase UID: ${decodedToken.uid}`);
+                console.log(`[AUTH] Auto-created MongoDB user for UID: ${decodedToken.uid}`);
             } catch (createErr) {
-                console.error('Failed to auto-create user in MongoDB:', createErr);
-                throw createErr;
+                console.error('[AUTH] Failed to auto-create user in MongoDB:', createErr.message);
+                return res.status(500).json({ status: 'error', message: 'Internal auth synchronization error' });
             }
         }
 
@@ -56,9 +67,8 @@ export const protect = async (req, res, next) => {
         req.user = currentUser;
         next();
     } catch (err) {
-        console.log('Auth Failure Detail:', err.message);
-        err.statusCode = 401;
-        next(err);
+        console.error('[AUTH] Unexpected error in protect middleware:', err);
+        res.status(500).json({ status: 'error', message: 'Something went wrong with authentication' });
     }
 };
 
