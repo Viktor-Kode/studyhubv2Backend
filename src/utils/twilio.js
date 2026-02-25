@@ -67,13 +67,18 @@ export const sendWhatsAppMessage = async (to, message) => {
     const fromNumber = formatPhone(rawFrom);
 
     try {
+        const from = `whatsapp:${fromNumber}`;
+        const to = `whatsapp:${formattedTo}`;
+
+        console.log(`[Twilio] Sending WhatsApp: FROM=${from} TO=${to}`);
+
         const response = await client.messages.create({
             body: message.trim(),
-            from: `whatsapp:${fromNumber}`,
-            to: `whatsapp:${formattedTo}`,
+            from,
+            to,
         });
 
-        console.log(`[Twilio] WhatsApp sent → ${formattedTo} | SID: ${response.sid}`);
+        console.log(`[Twilio] WhatsApp sent → ${to} | SID: ${response.sid}`);
         return { success: true, sid: response.sid };
     } catch (error) {
         console.error('[Twilio] Send error:', error.message);

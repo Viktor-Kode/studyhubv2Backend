@@ -134,7 +134,7 @@ export const getQuestionsProxy = async (req, res) => {
         try {
             const response = await axios.get(url, {
                 headers: { 'Accept': 'application/json', 'AccessToken': token },
-                timeout: 10000,
+                timeout: 25000,
             });
 
             const parsed = safeParseAlocResponse(response);
