@@ -111,54 +111,25 @@ export const getQuestionsProxy = async (req, res) => {
 
     const clampedAmount = Math.min(Math.max(parseInt(amount, 10) || 10, 1), 40);
 
-    // ── 0. Map Exam Type ──────────────────────────────────────────────────
-    // ALOC v2 only supports: utme, wassce, post-utme
-    // See: https://github.com/Seunope/aloc-endpoints/wiki/API-Parameters
-    let resolvedType = 'utme'; // Default
-    if (type) {
-        const t = type.toLowerCase();
-        if (t === 'jamb' || t === 'utme') resolvedType = 'utme';
-        else if (t === 'waec' || t === 'wassce' || t === 'neco') resolvedType = 'wassce';
-        else if (t === 'post-utme') resolvedType = 'post-utme';
-        else resolvedType = t; // try as is
-    }
+    // ── 0. Exam Type Mapping ──────────────────────────────────────────────
+    const getExamTypesToTry = (t) => {
+        if (!t) return ['utme', 'wassce'];
+        const lower = t.toLowerCase();
+        if (lower === 'jamb' || lower === 'utme') return ['utme'];
+        if (lower === 'waec' || lower === 'wassce') return ['wassce'];
+        if (lower === 'neco') return ['wassce', 'neco']; // Try wassce first, then neco
+        if (lower === 'bece') return ['wassce', 'bece']; // Most junior exams can fallback to secondary level
+        return [lower];
+    };
 
-    try {
-        // 1. Check DB Cache
-        const query = { subject: subjectSlug, examType: resolvedType };
-        if (year) query.year = year;
+    const typesToTry = getExamTypesToTry(type);
 
-        const cached = await CBTQuestion.find(query).limit(clampedAmount);
-
-        if (cached.length >= clampedAmount) {
-            console.log(`✅ Served ${clampedAmount} questions from DB cache`);
-            return res.status(200).json({
-                status: true,
-                message: "Questions from cache",
-                data: cached.map(q => ({
-                    id: q.questionNumber,
-                    question: q.questionText,
-                    option: {
-                        a: q.options[0],
-                        b: q.options[1],
-                        c: q.options[2],
-                        d: q.options[3],
-                        e: q.options[4]
-                    },
-                    answer: q.correctAnswer,
-                    solution: q.explanation,
-                    examType: q.examType,
-                    year: q.year
-                }))
-            });
-        }
-
-        // 2. Fetch from ALOC
-        const params = new URLSearchParams({ subject: subjectSlug, type: resolvedType });
-        if (year) params.append('year', year);
+    const fetchFromALOC = async (targetType, targetYear = null) => {
+        const params = new URLSearchParams({ subject: subjectSlug, type: targetType });
+        if (targetYear && targetYear !== 'any') params.append('year', targetYear);
 
         const url = `${ALOC_BASE}/m/${clampedAmount}?${params.toString()}`;
-        console.log(`[ALOC Proxy] Fetching: ${url}`);
+        console.log(`[ALOC Proxy] Attempting: ${url}`);
 
         try {
             const response = await axios.get(url, {
@@ -167,68 +138,97 @@ export const getQuestionsProxy = async (req, res) => {
             });
 
             const parsed = safeParseAlocResponse(response);
-            if (!parsed.ok) return res.status(502).json({ error: parsed.error, message: 'ALOC response parse failed' });
+            if (!parsed.ok) return { ok: false, error: parsed.error };
 
             const data = parsed.data;
-            if (data.status === false || data.status === 0) {
-                return res.status(404).json({
-                    error: 'ALOC returned no questions',
-                    message: data.message || 'No data found for this combination.'
-                });
+            if (data.status === false || data.status === 0 || !data.data || !Array.isArray(data.data) || data.data.length === 0) {
+                return { ok: false, message: data.message || 'No data returned' };
+            }
+            return { ok: true, data };
+        } catch (err) {
+            return { ok: false, error: err.message };
+        }
+    };
+
+    try {
+        let finalData = null;
+        let lastError = 'No questions found';
+
+        // Attempt Loop: Try all mapped types, then try random if year-specific fails
+        for (const targetType of typesToTry) {
+            // 1. Try with Year
+            if (year && year !== 'any') {
+                // Check Cache first
+                const cached = await CBTQuestion.find({ subject: subjectSlug, examType: targetType, year }).limit(clampedAmount);
+                if (cached.length >= clampedAmount) {
+                    console.log(`✅ Served from cache: ${subjectSlug} (${targetType} ${year})`);
+                    return res.status(200).json({
+                        status: true,
+                        message: "Questions from cache",
+                        data: cached.map(q => ({
+                            id: q.questionNumber,
+                            question: q.questionText,
+                            option: { a: q.options[0], b: q.options[1], c: q.options[2], d: q.options[3], e: q.options[4] },
+                            answer: q.correctAnswer,
+                            solution: q.explanation,
+                            examType: q.examType,
+                            year: q.year
+                        }))
+                    });
+                }
+
+                const result = await fetchFromALOC(targetType, year);
+                if (result.ok) {
+                    finalData = result.data;
+                    break;
+                }
+                lastError = result.message || result.error;
             }
 
-            // 3. Cache to DB
-            if (data.data && Array.isArray(data.data)) {
-                const ops = data.data.map((q, i) => {
-                    const opts = q.option ? Object.values(q.option).filter(v => v !== null && v !== undefined) : [];
-                    return {
-                        updateOne: {
-                            filter: {
-                                subject: subjectSlug,
-                                examType: resolvedType,
-                                year: year || 'any',
-                                questionNumber: q.id || i + 1
-                            },
-                            update: {
-                                $setOnInsert: {
-                                    subject: subjectSlug,
-                                    examType: resolvedType,
-                                    year: year || 'any',
-                                    questionNumber: q.id || i + 1,
-                                    questionText: q.question,
-                                    options: opts,
-                                    correctAnswer: q.answer,
-                                    explanation: q.solution || null,
-                                    source: 'API'
-                                }
-                            },
-                            upsert: true
-                        }
-                    };
-                });
-
-                await CBTQuestion.bulkWrite(ops, { ordered: false }).catch(err => {
-                    if (!err.message.includes('E11000')) console.error('[ALOC Cache] Bulk error:', err.message);
-                });
+            // 2. Try Random (No Year)
+            const result = await fetchFromALOC(targetType, null);
+            if (result.ok) {
+                finalData = result.data;
+                break;
             }
+            lastError = result.message || result.error;
+        }
 
-            return res.status(200).json(data);
-
-        } catch (axiosErr) {
-            const status = axiosErr.response?.status || 500;
-            const alocMsg = axiosErr.response?.data?.message || axiosErr.message;
-            console.error(`[ALOC API Error] ${status}: ${alocMsg}`);
-
-            return res.status(status).json({
-                error: 'ALOC API request failed',
-                message: alocMsg,
-                debug: { status, url }
+        if (!finalData) {
+            return res.status(404).json({
+                error: 'No questions found',
+                message: `ALOC failed for ${subjectSlug} (${type} ${year}). Details: ${lastError}`
             });
         }
 
+        // 3. Cache and serve
+        const ops = finalData.data.map((q, i) => {
+            const opts = q.option ? Object.values(q.option).filter(v => v !== null && v !== undefined) : [];
+            const qYear = q.year || year || 'any';
+            const qType = q.examType || typesToTry[0];
+
+            return {
+                updateOne: {
+                    filter: { subject: subjectSlug, examType: qType, year: qYear, questionNumber: q.id || i + 1 },
+                    update: {
+                        $setOnInsert: {
+                            subject: subjectSlug, examType: qType, year: qYear, questionNumber: q.id || i + 1,
+                            questionText: q.question, options: opts, correctAnswer: q.answer,
+                            explanation: q.solution || null, source: 'API'
+                        }
+                    },
+                    upsert: true
+                }
+            };
+        });
+
+        await CBTQuestion.bulkWrite(ops, { ordered: false }).catch(() => { });
+
+        return res.status(200).json(finalData);
+
     } catch (error) {
         console.error('[CBT Controller Internal Error]:', error);
-        return res.status(500).json({ error: 'Internal server error processing questions' });
+        return res.status(500).json({ error: 'Internal server error', message: error.message });
     }
 };
 
