@@ -41,6 +41,17 @@ const userSchema = new mongoose.Schema({
     settings: {
         type: Object,
         default: {}
+    },
+    plan: {
+        type: { type: String, enum: ['free', 'starter', 'growth', 'premium'], default: 'free' },
+        testsAllowed: { type: Number, default: 1 },
+        testsUsed: { type: Number, default: 0 },
+        aiExplanationsAllowed: { type: Number, default: 5 },
+        aiExplanationsUsed: { type: Number, default: 0 },
+        subjectsAllowed: { type: [String], default: ['english'] },
+        allSubjects: { type: Boolean, default: false },
+        expiresAt: { type: Date, default: null },
+        paystackReference: { type: String, default: null }
     }
 }, { timestamps: true });
 

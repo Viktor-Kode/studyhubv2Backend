@@ -18,6 +18,7 @@ import analyticsRoutes from './routes/analyticsRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import debugRoutes from './routes/debugRoutes.js';
+import paymentRoutes from './routes/paymentRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 
@@ -90,15 +91,25 @@ app.get('/api/health', (req, res) => {
 // SILENCE FAVICON ERRORS
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
+// Specific rate limiter for CBT and AI endpoints
+const cbtAILimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10, // Limit each user to 10 requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: 429, message: 'Too many requests, please slow down.' }
+});
+
 // Routes
-app.use('/api/ai', aiRoutes);
+app.use('/api/ai', cbtAILimiter, aiRoutes);
 app.use('/api/study', studyRoutes);
 app.use('/api/flashcards', flashCardRoutes);
 app.use('/api/users', authRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/questions', questionRoutes);
-app.use('/api/cbt', cbtRoutes);
+app.use('/api/cbt', cbtAILimiter, cbtRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/marking', markingRoutes);
 app.use('/api/resources', resourceRoutes);
