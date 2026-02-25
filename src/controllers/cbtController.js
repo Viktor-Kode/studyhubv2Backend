@@ -1,5 +1,10 @@
 import axios from 'axios';
 import { getEnv } from '../config/env.js';
+import CBTResult from '../models/CBTResult.js';
+import ExplanationCache from '../models/ExplanationCache.js';
+import aiClient from '../utils/aiClient.js';
+import crypto from 'crypto';
+import { MODEL_REGISTRY } from '../config/aiConfig.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -354,4 +359,174 @@ export const getAvailableSubjects = (req, res) => {
         examTypes: ['utme', 'wassce', 'post-utme'],
         note: 'Year 2025 does NOT exist in the ALOC database. Valid years: 2001–2020.',
     });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLLER: Save CBT Result
+// POST /api/cbt/results
+// ─────────────────────────────────────────────────────────────────────────────
+export const saveCBTResult = async (req, res) => {
+    try {
+        const studentId = req.user._id;
+        const resultData = { ...req.body, studentId };
+
+        const newResult = new CBTResult(resultData);
+        await newResult.save();
+
+        res.status(201).json({
+            status: 'success',
+            data: newResult
+        });
+    } catch (error) {
+        console.error('[CBT Save Result] Error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to save CBT result'
+        });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLLER: Get CBT Results Summary
+// GET /api/cbt/results/summary?studentId=...
+// ─────────────────────────────────────────────────────────────────────────────
+export const getCBTResultsSummary = async (req, res) => {
+    try {
+        const studentId = req.query.studentId || req.user._id;
+
+        const results = await CBTResult.find({ studentId }).sort({ takenAt: -1 }).limit(50);
+
+        if (results.length === 0) {
+            return res.status(200).json({
+                overallAccuracy: 0,
+                examsTaken: 0,
+                bestSubject: 'N/A',
+                weakestSubject: 'N/A',
+                recentResults: []
+            });
+        }
+
+        const totalAccuracy = results.reduce((acc, curr) => acc + curr.accuracy, 0);
+        const overallAccuracy = Math.round(totalAccuracy / results.length);
+
+        // Calculate subject performance
+        const subjectStats = {};
+        results.forEach(res => {
+            if (!subjectStats[res.subject]) {
+                subjectStats[res.subject] = { total: 0, count: 0 };
+            }
+            subjectStats[res.subject].total += res.accuracy;
+            subjectStats[res.subject].count += 1;
+        });
+
+        let bestSubject = 'N/A';
+        let bestAcc = -1;
+        let weakestSubject = 'N/A';
+        let weakestAcc = 101;
+
+        Object.keys(subjectStats).forEach(subject => {
+            const avg = subjectStats[subject].total / subjectStats[subject].count;
+            if (avg > bestAcc) {
+                bestAcc = avg;
+                bestSubject = subject;
+            }
+            if (avg < weakestAcc) {
+                weakestAcc = avg;
+                weakestSubject = subject;
+            }
+        });
+
+        res.status(200).json({
+            overallAccuracy,
+            examsTaken: results.length,
+            bestSubject,
+            weakestSubject,
+            recentResults: results.slice(0, 5)
+        });
+    } catch (error) {
+        console.error('[CBT Results Summary] Error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch CBT results summary'
+        });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLLER: Get All CBT Results
+// GET /api/cbt/results
+// ─────────────────────────────────────────────────────────────────────────────
+export const getCBTResults = async (req, res) => {
+    try {
+        const studentId = req.user._id;
+        const results = await CBTResult.find({ studentId }).sort({ takenAt: -1 });
+        res.status(200).json({
+            status: 'success',
+            data: results
+        });
+    } catch (error) {
+        console.error('[CBT All Results] Error:', error);
+        res.status(500).json({
+            status: 'error',
+            message: 'Failed to fetch CBT results'
+        });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTROLLER: Generate Explanation
+// POST /api/cbt/explain
+// ─────────────────────────────────────────────────────────────────────────────
+export const explainQuestion = async (req, res) => {
+    const { question, correctAnswer, options } = req.body;
+
+    if (!question || !correctAnswer || !options) {
+        return res.status(400).json({ status: 'error', message: 'Missing fields' });
+    }
+
+    try {
+        const qHash = crypto.createHash('sha256')
+            .update(`${question}|${correctAnswer}|${options.sort().join(',')}`)
+            .digest('hex');
+
+        // Check cache
+        const cached = await ExplanationCache.findOne({ questionHash: qHash });
+        if (cached) {
+            return res.status(200).json({ status: 'success', explanation: cached.explanation });
+        }
+
+        // Generate AI explanation
+        const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
+
+        const prompt = `
+            Question: ${question}
+            Options: ${options.join(', ')}
+            Correct Answer: ${correctAnswer}
+
+            Give a short, clear explanation (2-3 sentences max) of why
+            "${correctAnswer}" is correct. Write for a secondary school student.
+        `;
+
+        const response = await aiClient.chatCompletion({
+            model: selectedModel.id,
+            messages: [{ role: "user", content: prompt }],
+            max_tokens: 150,
+            temperature: 0.5,
+        });
+
+        const explanation = response.choices[0].message.content.trim();
+
+        // Save to cache
+        await ExplanationCache.create({
+            questionHash: qHash,
+            questionText: question,
+            correctAnswer,
+            explanation
+        });
+
+        res.status(200).json({ status: 'success', explanation });
+    } catch (error) {
+        console.error('[CBT Explanation] Error:', error);
+        res.status(500).json({ status: 'error', message: 'Failed to generate explanation' });
+    }
 };
