@@ -30,8 +30,13 @@ export const getTwilioClient = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 const formatPhone = (raw) => {
     if (!raw || typeof raw !== 'string') return null;
-    const stripped = raw.replace(/^whatsapp:/i, '').trim();
-    return stripped.startsWith('+') ? stripped : `+${stripped}`;
+    let stripped = raw.replace(/^whatsapp:/i, '').replace(/[^0-9+]/g, '').trim();
+    if (stripped.startsWith('0')) {
+        stripped = '+234' + stripped.substring(1);
+    } else if (!stripped.startsWith('+')) {
+        stripped = '+' + stripped;
+    }
+    return stripped;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
