@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
 
 const studySessionSchema = new mongoose.Schema({
-    studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    subject: { type: String, required: true },
-    durationSeconds: { type: Number, required: true },
-    date: { type: Date, default: Date.now },
-    goalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Goal', default: null }
-});
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    title: { type: String, required: true },
+    type: { type: String, enum: ['study', 'break'], default: 'study' },
+    duration: { type: Number, required: true }, // Usually in minutes
+    startTime: { type: Date, default: Date.now },
+    endTime: { type: Date, default: Date.now },
+    notes: { type: String }
+}, { timestamps: true });
 
 const StudySession = mongoose.model('StudySession', studySessionSchema);
 export default StudySession;

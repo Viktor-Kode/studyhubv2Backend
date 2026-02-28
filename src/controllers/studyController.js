@@ -41,23 +41,6 @@ export const createSession = async (req, res) => {
                 stats = new UserStats({ userId });
             }
 
-            // Streak logic
-            if (stats.lastStudyDate) {
-                const lastDate = new Date(stats.lastStudyDate);
-                lastDate.setHours(0, 0, 0, 0);
-
-                const diffTime = Math.abs(today - lastDate);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                if (diffDays === 1) {
-                    stats.studyStreak += 1;
-                } else if (diffDays > 1) {
-                    stats.studyStreak = 1;
-                }
-            } else {
-                stats.studyStreak = 1;
-            }
-
             stats.lastStudyDate = today;
             stats.totalStudyMinutes += parseInt(duration);
             stats.sessionsCompleted += 1;
