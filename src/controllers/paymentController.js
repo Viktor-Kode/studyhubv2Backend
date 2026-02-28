@@ -40,7 +40,8 @@ export const initializePayment = async (req, res) => {
         res.json({
             success: true,
             authorizationUrl: response.data.data.authorization_url,
-            reference: response.data.data.reference
+            reference: response.data.data.reference,
+            amount: plan.price
         });
     } catch (err) {
         console.error('[Payment Init] Error:', err.response?.data || err.message);

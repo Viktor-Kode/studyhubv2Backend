@@ -124,17 +124,17 @@ export const getQuestionsProxy = async (req, res) => {
 
     const typesToTry = getExamTypesToTry(type);
 
-    const fetchFromALOC = async (targetType, targetYear = null) => {
+    const fetchFromALOC = async (targetType, targetYear = null, attempt = 1) => {
         const params = new URLSearchParams({ subject: subjectSlug, type: targetType });
-        if (targetYear && targetYear !== 'any') params.append('year', targetYear);
+        if (targetYear && targetYear !== 'any' && attempt === 1) params.append('year', targetYear);
 
         const url = `${ALOC_BASE}/m/${clampedAmount}?${params.toString()}`;
-        console.log(`[ALOC Proxy] Attempting: ${url}`);
+        console.log(`[ALOC Proxy] Attempting: ${url}, attempt: ${attempt}`);
 
         try {
             const response = await axios.get(url, {
                 headers: { 'Accept': 'application/json', 'AccessToken': token },
-                timeout: 5000,
+                timeout: 40000,
             });
 
             const parsed = safeParseAlocResponse(response);
@@ -146,6 +146,12 @@ export const getQuestionsProxy = async (req, res) => {
             }
             return { ok: true, data };
         } catch (err) {
+            console.error(`ALOC attempt ${attempt} failed:`, err.message);
+            if (attempt < 3) {
+                console.log(`Retrying without year filter...`);
+                await new Promise(r => setTimeout(r, 2000));
+                return fetchFromALOC(targetType, null, attempt + 1);
+            }
             return { ok: false, error: err.message };
         }
     };

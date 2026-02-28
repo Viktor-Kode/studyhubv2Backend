@@ -13,6 +13,13 @@ import { checkCBTAccess, checkAIAccess } from '../middleware/planMiddleware.js';
 
 const router = express.Router();
 
+// Increase the Express route timeout for CBT endpoints
+router.use((req, res, next) => {
+    req.setTimeout(60000); // 60 seconds
+    res.setTimeout(60000);
+    next();
+});
+
 // Public: health check & metadata
 router.get('/test', testALOCConnection);
 router.get('/subjects', getAvailableSubjects);   // valid slugs, year range, exam types

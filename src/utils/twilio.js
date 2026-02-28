@@ -30,13 +30,15 @@ export const getTwilioClient = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 const formatPhone = (raw) => {
     if (!raw || typeof raw !== 'string') return null;
-    let stripped = raw.replace(/^whatsapp:/i, '').replace(/[^0-9+]/g, '').trim();
-    if (stripped.startsWith('0')) {
-        stripped = '+234' + stripped.substring(1);
-    } else if (!stripped.startsWith('+')) {
-        stripped = '+' + stripped;
+    let phone = raw.replace(/^whatsapp:/i, '').replace(/[\s\-]/g, '').trim();
+    if (phone.startsWith('0')) {
+        phone = '+234' + phone.slice(1);
     }
-    return stripped;
+    if (phone.startsWith('234')) {
+        phone = '+' + phone;
+    }
+    if (phone.startsWith('+234')) return phone;
+    return null;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,8 +88,20 @@ export const sendWhatsAppMessage = async (to, message) => {
         console.log(`[Twilio] WhatsApp sent → ${to} | SID: ${response.sid}`);
         return { success: true, sid: response.sid };
     } catch (error) {
-        console.error('[Twilio] Send error:', error.message);
-        return { success: false, error: error.message };
+        console.error('[Twilio] WhatsApp failed:', error.message);
+        try {
+            console.log(`[Twilio] Attempting SMS fallback to ${formattedTo}...`);
+            const fallbackResponse = await client.messages.create({
+                body: message.trim(),
+                from: rawFrom,
+                to: formattedTo,
+            });
+            console.log(`[Twilio] SMS Fallback sent → ${formattedTo} | SID: ${fallbackResponse.sid}`);
+            return { success: true, sid: fallbackResponse.sid, method: 'SMS' };
+        } catch (fallbackError) {
+            console.error('[Twilio] SMS Fallback also failed:', fallbackError.message);
+            return { success: false, error: fallbackError.message };
+        }
     }
 };
 
