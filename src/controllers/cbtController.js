@@ -7,6 +7,7 @@ import ExplanationCache from '../models/ExplanationCache.js';
 import aiClient from '../utils/aiClient.js';
 import crypto from 'crypto';
 import { MODEL_REGISTRY } from '../config/aiConfig.js';
+import { updateStreak } from '../utils/streakUtils.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -257,6 +258,8 @@ export const saveCBTResult = async (req, res) => {
 
         // Increment test usage
         await User.findByIdAndUpdate(studentId, { $inc: { 'plan.testsUsed': 1 } });
+
+        await updateStreak(studentId, 'cbt');
 
         res.status(201).json({ status: 'success', data: newResult });
     } catch (error) {

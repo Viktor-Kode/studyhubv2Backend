@@ -694,3 +694,32 @@ export const cloneDeck = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+import FlashcardProgress from '../models/FlashcardProgress.js';
+import { updateStreak } from '../utils/streakUtils.js';
+
+export const updateFlashcardProgress = async (req, res) => {
+    try {
+        const { deckId, cardId, subject, status } = req.body;
+        const studentId = req.user._id;
+
+        await FlashcardProgress.findOneAndUpdate(
+            { studentId, deckId, cardId },
+            {
+                $set: { status, subject: subject || 'General', lastReviewed: new Date() },
+                $inc: {
+                    seenCount: 1,
+                    masteredCount: status === 'mastered' ? 1 : 0
+                }
+            },
+            { upsert: true, new: true }
+        );
+
+        // Update streak
+        await updateStreak(studentId, 'flashcard');
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

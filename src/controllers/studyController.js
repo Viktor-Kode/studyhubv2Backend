@@ -3,6 +3,7 @@ import UserStats from '../models/UserStats.js';
 import FlashCard from '../models/FlashCard.js';
 import Question from '../models/Question.js';
 import mongoose from 'mongoose';
+import { updateStreak } from '../utils/streakUtils.js';
 
 /**
  * Log a new study session
@@ -27,6 +28,8 @@ export const createSession = async (req, res) => {
         });
 
         await session.save();
+
+        await updateStreak(userId, 'study');
 
         // Update UserStats streak and totals if it's a study session
         if (type === 'study' || !type) {

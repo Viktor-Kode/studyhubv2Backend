@@ -18,7 +18,8 @@ import {
     importFlashCards,
     exportFlashCards,
     getPublicDecks,
-    cloneDeck
+    cloneDeck,
+    updateFlashcardProgress
 } from '../controllers/flashCardController.js';
 
 import { protect } from '../middleware/authMiddleware.js';
@@ -38,6 +39,7 @@ router.post('/cards/:cardId/favorite', toggleFavorite);
 router.get('/stats', getFlashCardStats);
 router.get('/export', exportFlashCards);
 router.post('/import', importFlashCards);
+router.post('/progress', updateFlashcardProgress);
 
 // Deck routes
 router.post('/decks', createDeck);
