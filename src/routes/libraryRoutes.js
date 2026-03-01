@@ -12,7 +12,7 @@ import {
     deleteGuide,
     generateStudyGuide
 } from '../controllers/libraryController.js';
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, restrictTo } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -26,11 +26,11 @@ router.get('/guides/:id', protect, guideAccessControl, getGuide);
 // ---- ADMIN ONLY ROUTES ----
 // Usually these would be namespaced like /api/admin/guides,
 // but since the controller logic is here, we match the prompt paths
-router.get('/admin/guides', protect, authorize('admin', 'teacher'), getAdminGuides);
-router.post('/admin/guides', protect, authorize('admin', 'teacher'), createGuide);
-router.post('/admin/guides/generate-ai', protect, authorize('admin', 'teacher'), generateStudyGuide);
-router.put('/admin/guides/:id', protect, authorize('admin', 'teacher'), updateGuide);
-router.put('/admin/guides/:id/validate', protect, authorize('admin', 'teacher'), validateGuide);
-router.delete('/admin/guides/:id', protect, authorize('admin', 'teacher'), deleteGuide);
+router.get('/admin/guides', protect, restrictTo('admin', 'teacher'), getAdminGuides);
+router.post('/admin/guides', protect, restrictTo('admin', 'teacher'), createGuide);
+router.post('/admin/guides/generate-ai', protect, restrictTo('admin', 'teacher'), generateStudyGuide);
+router.put('/admin/guides/:id', protect, restrictTo('admin', 'teacher'), updateGuide);
+router.put('/admin/guides/:id/validate', protect, restrictTo('admin', 'teacher'), validateGuide);
+router.delete('/admin/guides/:id', protect, restrictTo('admin', 'teacher'), deleteGuide);
 
 export default router;
