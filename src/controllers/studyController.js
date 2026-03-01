@@ -13,7 +13,7 @@ export const createSession = async (req, res) => {
         const userId = req.user._id;
         const { title, type, duration, startTime, endTime, notes } = req.body;
 
-        if (!duration) {
+        if (duration === undefined || duration === null) {
             return res.status(400).json({ error: 'Duration is required' });
         }
 
@@ -219,9 +219,11 @@ export const createGoal = async (req, res) => {
 export const deleteGoal = async (req, res) => {
     try {
         const { id } = req.query;
+        if (!id) return res.status(400).json({ error: 'Goal ID required' });
+
         const stats = await UserStats.findOneAndUpdate(
             { userId: req.user._id },
-            { $pull: { goals: { _id: id } } },
+            { $pull: { goals: { _id: new mongoose.Types.ObjectId(id) } } },
             { new: true }
         );
         res.json({ success: true, goals: stats?.goals || [] });
@@ -237,14 +239,10 @@ export const updateGoal = async (req, res) => {
 
         let stats = await UserStats.findOne({ userId: req.user._id });
         if (stats) {
-            const goalIndex = stats.goals.findIndex(g => g._id.toString() === id);
-            if (goalIndex > -1) {
+            const goal = stats.goals.id(id);
+            if (goal) {
                 // Update goal fields
-                for (const key in updates) {
-                    if (updates[key] !== undefined) {
-                        stats.goals[goalIndex][key] = updates[key];
-                    }
-                }
+                goal.set(updates);
                 await stats.save();
             }
         }
