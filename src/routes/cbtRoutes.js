@@ -7,6 +7,7 @@ import {
     getCBTResultsSummary,
     getCBTResults,
     explainQuestion,
+    getResultRecommendations,
 } from '../controllers/cbtController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { checkCBTAccess, checkAIAccess } from '../middleware/planMiddleware.js';
@@ -29,6 +30,7 @@ router.get('/questions', protect, checkCBTAccess, getQuestionsProxy);
 router.post('/results', protect, saveCBTResult);
 router.get('/results', protect, getCBTResults);
 router.get('/results/summary', protect, getCBTResultsSummary);
+router.get('/results/:id/recommendations', protect, getResultRecommendations);
 router.post('/explain', protect, checkAIAccess, explainQuestion);
 
 export default router;

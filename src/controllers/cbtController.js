@@ -3,6 +3,7 @@ import { getEnv } from '../config/env.js';
 import CBTQuestion from '../models/CBTQuestion.js';
 import User from '../models/User.js';
 import CBTResult from '../models/CBTResult.js';
+import StudyGuide from '../models/StudyGuide.js';
 import ExplanationCache from '../models/ExplanationCache.js';
 import aiClient from '../utils/aiClient.js';
 import crypto from 'crypto';
@@ -350,5 +351,40 @@ export const explainQuestion = async (req, res) => {
         res.status(200).json({ status: 'success', explanation });
     } catch (error) {
         res.status(500).json({ error: 'Failed to generate explanation' });
+    }
+};
+
+export const getResultRecommendations = async (req, res) => {
+    try {
+        const result = await CBTResult.findById(req.params.id);
+        if (!result) return res.status(404).json({ error: 'Result not found' });
+
+        // Find topics where student scored below 50%
+        // In the prompt: 'weakFromThisExam = result.answers.reduce...'
+        // Usually, the CBTResult model doesn't store isCorrect in exactly that format unless changed.
+        // Assuming result.answers has { topic, isCorrect }
+        if (!result.answers) {
+            return res.json({ success: true, guides: [], weakTopics: [] });
+        }
+
+        const weakFromThisExam = result.answers.reduce((acc, a) => {
+            if (!a.isCorrect && a.topic) {
+                acc[a.topic] = (acc[a.topic] || 0) + 1;
+            }
+            return acc;
+        }, {});
+
+        const weakTopics = Object.keys(weakFromThisExam);
+
+        const guides = await StudyGuide.find({
+            topic: { $in: weakTopics },
+            subject: result.subject,
+            validated: true
+        }).limit(3).lean();
+
+        res.json({ success: true, guides, weakTopics });
+    } catch (error) {
+        console.error('getResultRecommendations error:', error);
+        res.status(500).json({ success: false, error: 'Failed to get recommendations' });
     }
 };
