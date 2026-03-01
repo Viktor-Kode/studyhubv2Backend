@@ -144,7 +144,7 @@ export const getDashboardSummary = async (req, res) => {
                         : '0%'
                 },
                 streak: {
-                    current: streakData?.currentStreak || 0,
+                    current: (streakData && streakData.lastStudiedDate && new Date(streakData.lastStudiedDate).setHours(0, 0, 0, 0) < new Date(Date.now() - 24 * 60 * 60 * 1000).setHours(0, 0, 0, 0)) ? 0 : (streakData?.currentStreak || 0),
                     longest: streakData?.longestStreak || 0,
                     lastStudied: streakData?.lastStudiedDate || null
                 },

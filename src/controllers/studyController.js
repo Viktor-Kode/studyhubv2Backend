@@ -229,3 +229,27 @@ export const deleteGoal = async (req, res) => {
         res.status(500).json({ error: 'Failed to delete goal' });
     }
 };
+
+export const updateGoal = async (req, res) => {
+    try {
+        const { id } = req.query;
+        const updates = req.body;
+
+        let stats = await UserStats.findOne({ userId: req.user._id });
+        if (stats) {
+            const goalIndex = stats.goals.findIndex(g => g._id.toString() === id);
+            if (goalIndex > -1) {
+                // Update goal fields
+                for (const key in updates) {
+                    if (updates[key] !== undefined) {
+                        stats.goals[goalIndex][key] = updates[key];
+                    }
+                }
+                await stats.save();
+            }
+        }
+        res.json({ success: true, goals: stats?.goals || [] });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update goal' });
+    }
+};

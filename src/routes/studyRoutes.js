@@ -8,7 +8,8 @@ import {
     deleteActiveTimer,
     getGoals,
     createGoal,
-    deleteGoal
+    deleteGoal,
+    updateGoal
 } from '../controllers/studyController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -32,6 +33,7 @@ router.delete('/active-timer', deleteActiveTimer);
 // Goals
 router.get('/goals', getGoals);
 router.post('/goals', createGoal);
+router.put('/goals', updateGoal);
 router.delete('/goals', deleteGoal);
 
 export default router;
