@@ -112,6 +112,19 @@ export const getDashboardSummary = async (req, res) => {
             topSubject = sorted[0].subject;
         }
 
+        let currentStreak = streakData?.currentStreak || 0;
+        if (streakData && streakData.lastStudiedDate) {
+            const todayDate = new Date();
+            todayDate.setHours(0, 0, 0, 0);
+            const lastStudied = new Date(streakData.lastStudiedDate);
+            lastStudied.setHours(0, 0, 0, 0);
+            const diffDays = Math.round((todayDate - lastStudied) / (1000 * 60 * 60 * 24));
+            // If they missed yesterday entirely, their streak breaks
+            if (diffDays > 1) {
+                currentStreak = 0;
+            }
+        }
+
         res.json({
             success: true,
             data: {
@@ -144,7 +157,7 @@ export const getDashboardSummary = async (req, res) => {
                         : '0%'
                 },
                 streak: {
-                    current: (streakData && streakData.lastStudiedDate && new Date(streakData.lastStudiedDate).setHours(0, 0, 0, 0) < new Date(Date.now() - 24 * 60 * 60 * 1000).setHours(0, 0, 0, 0)) ? 0 : (streakData?.currentStreak || 0),
+                    current: currentStreak,
                     longest: streakData?.longestStreak || 0,
                     lastStudied: streakData?.lastStudiedDate || null
                 },
