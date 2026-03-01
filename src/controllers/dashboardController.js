@@ -74,7 +74,7 @@ export const getDashboardSummary = async (req, res) => {
             Streak.findOne({ studentId }),
 
             // Recent Study Sessions (last 5)
-            StudySession.find({ userId: studentId, type: 'study' })
+            StudySession.find({ userId: new mongoose.Types.ObjectId(studentId), type: 'study' })
                 .sort({ startTime: -1 })
                 .limit(5)
                 .select('title duration startTime'),
