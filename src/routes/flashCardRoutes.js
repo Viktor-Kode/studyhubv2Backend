@@ -17,8 +17,6 @@ import {
     generateAIFlashCards,
     importFlashCards,
     exportFlashCards,
-    getPublicDecks,
-    cloneDeck,
     updateFlashcardProgress
 } from '../controllers/flashCardController.js';
 
@@ -43,8 +41,6 @@ router.post('/progress', updateFlashcardProgress);
 
 // Deck routes
 router.post('/decks', createDeck);
-router.get('/public-decks', getPublicDecks);
-router.post('/decks/:deckId/clone', cloneDeck);
 router.get('/decks', getDecks);
 router.put('/decks/:deckId', updateDeck);
 router.delete('/decks/:deckId', deleteDeck);

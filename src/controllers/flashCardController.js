@@ -669,63 +669,6 @@ export const saveStudySession = async (req, res) => {
     }
 };
 
-export const getPublicDecks = async (req, res) => {
-    try {
-        const { category, search } = req.query;
-        const query = { isPublic: true };
-        if (category) query.category = category;
-        if (search) {
-            query.$or = [{ name: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }];
-        }
-        const decks = await FlashCardDeck.find(query).sort({ updatedAt: -1 });
-        res.json({ success: true, count: decks.length, decks });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-export const cloneDeck = async (req, res) => {
-    try {
-        const { deckId } = req.params;
-        const userId = req.user._id;
-
-        const originalDeck = await FlashCardDeck.findById(deckId);
-        if (!originalDeck) return res.status(404).json({ success: false, message: 'Deck not found' });
-
-        const newDeck = new FlashCardDeck({
-            userId,
-            name: `${originalDeck.name} (Clone)`,
-            description: originalDeck.description,
-            category: originalDeck.category,
-            color: originalDeck.color,
-            icon: originalDeck.icon,
-            isPublic: false
-        });
-
-        await newDeck.save();
-
-        const originalCards = await FlashCard.find({ deckId });
-        const newCards = originalCards.map(c => ({
-            userId,
-            deckId: newDeck._id,
-            front: c.front,
-            back: c.back,
-            category: c.category,
-            difficulty: c.difficulty,
-            tags: c.tags
-        }));
-
-        if (newCards.length > 0) {
-            await FlashCard.insertMany(newCards);
-            newDeck.cardCount = newCards.length;
-            await newDeck.save();
-        }
-
-        res.status(201).json({ success: true, deck: newDeck });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
 
 import FlashcardProgress from '../models/FlashcardProgress.js';
 import { updateStreak } from '../utils/streakUtils.js';
