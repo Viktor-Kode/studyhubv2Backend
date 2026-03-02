@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 
 const flashcardProgressSchema = new mongoose.Schema({
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    deckId: { type: String },
-    cardId: { type: String },
+    deckId: { type: mongoose.Schema.Types.ObjectId, ref: 'FlashCardDeck' },
+    cardId: { type: mongoose.Schema.Types.ObjectId, ref: 'FlashCard', required: true },
     subject: { type: String },
     topic: { type: String },
 
