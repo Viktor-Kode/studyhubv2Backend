@@ -25,18 +25,24 @@ export const quizPrompt = (text, amount = 3, typeInstructions = 'multiple-choice
 };
 
 export const flashCardPrompt = (text, amount = 10) => {
-  return `Generate exactly ${amount} flashcards based on the text below.
-  Each flashcard must have a 'front' (question or concept) and a 'back' (answer or definition).
-  The front should be concise and the back should be informative.
+  return `Act as an expert educator. Based on the study material provided below, generate exactly ${amount} high-quality, concept-focused flashcards.
+  
+  CRITICAL RULES:
+  1. CONCEPTS OVER FACTS: Focus on "why" and "how" more than just "what".
+  2. ATOMICITY: Each card should cover ONE specific concept only.
+  3. Q&A STYLE: The 'front' should be a clear, thought-provoking question or a term to define.
+  4. DETAILED ANSWERS: The 'back' should be a concise but comprehensive explanation, including context where helpful.
+  5. NO TRIVIA: Avoid obscure details; focus on main learning objectives.
 
-  IMPORTANT: Return ONLY a JSON array. Do not include any conversational text or markdown code blocks.
+  IMPORTANT: Return ONLY a raw JSON array. Do not include conversational text, markdown headers, or code blocks.
 
-  Text: ${text}
+  Study Material:
+  ${text}
 
-  JSON Structure:
+  JSON Expected Structure:
   [
-    {"front": "What is...", "back": "The answer is..."},
-    {"front": "Define...", "back": "Definition..."}
+    {"front": "Thoughtful question or term", "back": "Comprehensive, clear explanation"},
+    ...
   ]`;
 };
 

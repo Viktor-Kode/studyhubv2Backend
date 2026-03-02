@@ -4,6 +4,7 @@ import CBTResult from '../models/CBTResult.js';
 import FlashcardProgress from '../models/FlashcardProgress.js';
 import Streak from '../models/Streak.js';
 import Goal from '../models/Goal.js';
+import FlashCard from '../models/FlashCard.js';
 
 export const getDashboardSummary = async (req, res) => {
     try {
@@ -18,7 +19,8 @@ export const getDashboardSummary = async (req, res) => {
             flashStatsData,
             streakData,
             recentSessions,
-            goals
+            goals,
+            totalFlashCount
         ] = await Promise.all([
             // Study Timer Stats
             StudySession.aggregate([
@@ -87,7 +89,10 @@ export const getDashboardSummary = async (req, res) => {
             // Active Goals
             Goal.find({ studentId, status: 'active' })
                 .sort({ deadline: 1 })
-                .limit(3)
+                .limit(3),
+
+            // Correct Total Flashcards
+            FlashCard.countDocuments({ userId: studentId })
         ]);
 
         const study = studyStats[0] || {
@@ -155,12 +160,12 @@ export const getDashboardSummary = async (req, res) => {
                     bestSubject: topSubject
                 },
                 flashcards: {
-                    totalCards: flash.totalCards,
+                    totalCards: totalFlashCount || 0,
                     mastered: flash.mastered,
                     stillLearning: flash.stillLearning,
                     totalReviews: flash.totalReviews,
-                    masteryRate: flash.totalCards > 0
-                        ? Math.round((flash.mastered / flash.totalCards) * 100) + '%'
+                    masteryRate: (totalFlashCount || 0) > 0
+                        ? Math.round((flash.mastered / (totalFlashCount || 1)) * 100) + '%'
                         : '0%'
                 },
                 streak: {

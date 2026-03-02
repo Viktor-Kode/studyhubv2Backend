@@ -467,12 +467,26 @@ export const getFlashCardStats = async (req, res) => {
         const studentId = req.user._id;
         const studentObjectId = new mongoose.Types.ObjectId(studentId);
 
+        // Get total cards count for this user
+        const totalCards = await FlashCard.countDocuments({ userId: studentId });
+
+        // Get category breakdown from BOTH models to ensure we see all cards
+        const categoryBreakdown = await FlashCard.aggregate([
+            { $match: { userId: studentObjectId } },
+            {
+                $group: {
+                    _id: '$category',
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { count: -1 } }
+        ]);
+
         const stats = await FlashcardProgress.aggregate([
             { $match: { studentId: studentObjectId } },
             {
                 $group: {
                     _id: null,
-                    totalCards: { $sum: 1 },
                     masteredCards: { $sum: { $cond: [{ $eq: ['$status', 'mastered'] }, 1, 0] } },
                     dueCards: {
                         $sum: {
@@ -490,31 +504,31 @@ export const getFlashCardStats = async (req, res) => {
             }
         ]);
 
-        const categoryBreakdown = await FlashcardProgress.aggregate([
-            { $match: { studentId: studentObjectId } },
+        const difficultyBreakdown = await FlashCard.aggregate([
+            { $match: { userId: studentObjectId } },
             {
                 $group: {
-                    _id: '$subject',
+                    _id: '$difficulty',
                     count: { $sum: 1 }
                 }
-            },
-            { $sort: { count: -1 } }
+            }
         ]);
 
         const result = stats[0] || {
-            totalCards: 0,
             masteredCards: 0,
             dueCards: 0,
             totalReviews: 0,
-            accuracy: 0
+            correctStreakAvg: 0
         };
 
         res.json({
             success: true,
             stats: {
                 ...result,
+                totalCards,
                 categoryBreakdown,
-                accuracy: result.totalCards > 0 ? Math.round((result.masteredCards / result.totalCards) * 100) : 0
+                difficultyBreakdown,
+                accuracy: totalCards > 0 ? Math.round((result.masteredCards / totalCards) * 100) : 0
             }
         });
 
@@ -526,6 +540,7 @@ export const getFlashCardStats = async (req, res) => {
         });
     }
 };
+
 
 // AI & Bulk
 export const generateAIFlashCards = async (req, res) => {
