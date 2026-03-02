@@ -2,9 +2,12 @@ import { getEnv } from './config/env.js'; // Must be first to load environment v
 import app from './app.js';
 import connectDB from './config/db.js';
 import mongoose from 'mongoose';
+import { registerNotificationJobs } from './jobs/notificationJobs.js';
 
 // Connect to Database
-connectDB();
+connectDB().then(() => {
+  registerNotificationJobs();
+});
 
 const PORT = getEnv('PORT', 5000);
 

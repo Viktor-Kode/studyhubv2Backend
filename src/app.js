@@ -20,6 +20,7 @@ import settingsRoutes from './routes/settingsRoutes.js';
 import debugRoutes from './routes/debugRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 
@@ -79,7 +80,7 @@ app.get('/api/health', (req, res) => {
     services: {
       mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
       aloc: !!getEnv('ALOC_ACCESS_TOKEN') ? 'configured' : 'missing',
-      twilio: (!!getEnv('TWILIO_ACCOUNT_SID') && !!getEnv('TWILIO_AUTH_TOKEN')) ? 'configured' : 'missing',
+      ycloud: (!!getEnv('YCLOUD_API_KEY') && !!getEnv('YCLOUD_WHATSAPP_NUMBER')) ? 'configured' : 'missing',
       deepseek: !!getEnv('DEEPSEEK_API_KEY') ? 'configured' : 'missing'
     }
   };
@@ -119,6 +120,7 @@ app.use('/api/students', studentRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');

@@ -89,7 +89,7 @@ const checkFeatures = () => {
     return {
         mongodb: !!getEnv('MONGODB_URI'),
         aloc: !!getEnv('ALOC_ACCESS_TOKEN'),
-        twilio: (!!getEnv('TWILIO_ACCOUNT_SID') && !!getEnv('TWILIO_AUTH_TOKEN')),
+        ycloud: (!!getEnv('YCLOUD_API_KEY') && !!getEnv('YCLOUD_WHATSAPP_NUMBER')),
         deepseek: !!getEnv('DEEPSEEK_API_KEY'),
         mode: process.env.NODE_ENV || 'development'
     };

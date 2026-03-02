@@ -1,5 +1,5 @@
 import Reminder from '../models/Reminder.js';
-import { sendWhatsAppMessage } from '../utils/twilio.js';
+import { sendWhatsApp } from '../services/yCloudService.js';
 
 export const getReminders = async (req, res) => {
     try {
@@ -53,8 +53,8 @@ export const sendWhatsAppNotification = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Phone number and message are required' });
         }
 
-        const twilioRes = await sendWhatsAppMessage(phoneNumber, message);
-        res.status(200).json({ success: true, data: twilioRes });
+        const yCloudRes = await sendWhatsApp(phoneNumber, message);
+        res.status(200).json({ success: true, data: yCloudRes });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

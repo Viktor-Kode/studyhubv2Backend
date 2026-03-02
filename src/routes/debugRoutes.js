@@ -14,13 +14,13 @@ router.get('/env', (req, res) => {
             exists: !!getEnv('ALOC_ACCESS_TOKEN'),
             length: getEnv('ALOC_ACCESS_TOKEN')?.length || 0,
         },
-        TWILIO_ACCOUNT_SID: {
-            exists: !!getEnv('TWILIO_ACCOUNT_SID'),
-            length: getEnv('TWILIO_ACCOUNT_SID')?.length || 0,
+        YCLOUD_API_KEY: {
+            exists: !!getEnv('YCLOUD_API_KEY'),
+            length: getEnv('YCLOUD_API_KEY')?.length || 0,
         },
-        TWILIO_AUTH_TOKEN: {
-            exists: !!getEnv('TWILIO_AUTH_TOKEN'),
-            length: getEnv('TWILIO_AUTH_TOKEN')?.length || 0,
+        YCLOUD_WHATSAPP_NUMBER: {
+            exists: !!getEnv('YCLOUD_WHATSAPP_NUMBER'),
+            length: getEnv('YCLOUD_WHATSAPP_NUMBER')?.length || 0,
         },
         MONGODB_URI: {
             exists: !!getEnv('MONGODB_URI'),

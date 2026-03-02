@@ -22,7 +22,7 @@ router.route('/:id')
 
 router.post('/whatsapp', sendWhatsAppNotification);
 import User from '../models/User.js';
-import { sendWhatsAppMessage } from '../utils/twilio.js';
+import { sendWhatsApp } from '../services/yCloudService.js';
 
 router.get('/test-whatsapp', async (req, res) => {
     try {
@@ -32,10 +32,10 @@ router.get('/test-whatsapp', async (req, res) => {
         }
 
         const phone = user.phone || user.phoneNumber;
-        const result = await sendWhatsAppMessage(phone, '✅ StudyHelp WhatsApp test message! Your notifications are working.');
+        const result = await sendWhatsApp(phone, '✅ StudyHelp WhatsApp test message! Your notifications are working.');
 
         if (result.success) {
-            return res.json({ success: true, sid: result.sid, method: result.method || 'WhatsApp' });
+            return res.json({ success: true, sid: result.messageId, method: result.method || 'WhatsApp' });
         }
         res.json({ success: false, error: result.error });
     } catch (err) {
