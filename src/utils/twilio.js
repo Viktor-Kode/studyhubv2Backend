@@ -33,12 +33,12 @@ const formatPhone = (raw) => {
     let phone = raw.replace(/^whatsapp:/i, '').replace(/[\s\-]/g, '').trim();
     if (phone.startsWith('0')) {
         phone = '+234' + phone.slice(1);
-    }
-    if (phone.startsWith('234')) {
+    } else if (phone.startsWith('234')) {
+        phone = '+' + phone;
+    } else if (!phone.startsWith('+')) {
         phone = '+' + phone;
     }
-    if (phone.startsWith('+234')) return phone;
-    return null;
+    return phone;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
