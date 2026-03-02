@@ -1,15 +1,12 @@
 import axios from 'axios';
 
 const YCLOUD_API_URL = 'https://api.ycloud.com/v2';
-const YCLOUD_API_KEY = process.env.YCLOUD_API_KEY;
-const FROM_NUMBER = process.env.YCLOUD_WHATSAPP_NUMBER;
 
-// Validate config on startup
-if (!YCLOUD_API_KEY) {
-    console.warn('⚠️ YCLOUD_API_KEY not set — WhatsApp notifications disabled');
-}
+// Read env lazily so dotenv has already loaded
+const getApiKey = () => process.env.YCLOUD_API_KEY;
+const getFromNumber = () => process.env.YCLOUD_WHATSAPP_NUMBER;
 
-// Format Nigerian phone numbers
+// Format phone numbers (international)
 const formatPhone = (phone) => {
     if (!phone) return null;
     phone = phone.replace(/[\s\-\(\)]/g, '');
@@ -19,17 +16,41 @@ const formatPhone = (phone) => {
     return phone;
 };
 
+// Extract YCloud error message (nested under .error.message)
+const extractError = (err) => {
+    return (
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        err.message ||
+        'Unknown error'
+    );
+};
+
 // Core send function
 const sendWhatsApp = async (to, message) => {
+    const YCLOUD_API_KEY = getApiKey();
+    const FROM_NUMBER = getFromNumber();
+
     if (!YCLOUD_API_KEY) {
-        console.warn('YCloud not configured — skipping WhatsApp');
+        console.warn('[YCloud] YCLOUD_API_KEY not set — skipping WhatsApp');
         return { success: false, error: 'YCloud not configured' };
+    }
+
+    if (!FROM_NUMBER) {
+        console.warn('[YCloud] YCLOUD_WHATSAPP_NUMBER not set — skipping WhatsApp');
+        return { success: false, error: 'Sender number not configured' };
+    }
+
+    if (!message || !message.trim()) {
+        return { success: false, error: 'Message body is empty' };
     }
 
     const phone = formatPhone(to);
     if (!phone) {
-        return { success: false, error: 'Invalid phone number' };
+        return { success: false, error: 'Invalid recipient phone number' };
     }
+
+    console.log(`[YCloud] Sending WhatsApp FROM=${FROM_NUMBER} TO=${phone}`);
 
     try {
         const response = await axios.post(
@@ -38,7 +59,7 @@ const sendWhatsApp = async (to, message) => {
                 from: FROM_NUMBER,
                 to: phone,
                 type: 'text',
-                text: { body: message }
+                text: { body: message.trim() }
             },
             {
                 headers: {
@@ -48,19 +69,23 @@ const sendWhatsApp = async (to, message) => {
             }
         );
 
-        console.log('✅ YCloud WhatsApp sent:', response.data.id);
+        console.log(`[YCloud] ✅ WhatsApp sent → ${phone} | ID: ${response.data.id}`);
         return { success: true, messageId: response.data.id };
 
     } catch (err) {
-        const errMsg = err.response?.data?.message || err.message;
-        console.error('❌ YCloud WhatsApp failed:', errMsg);
+        const errMsg = extractError(err);
+        console.error(`[YCloud] ❌ WhatsApp failed → ${phone}:`, errMsg);
+        console.error('[YCloud] Full error response:', JSON.stringify(err.response?.data, null, 2));
         return { success: false, error: errMsg };
     }
 };
 
 // Send template message (for pre-approved templates)
 const sendWhatsAppTemplate = async (to, templateName, variables = []) => {
-    if (!YCLOUD_API_KEY) return { success: false, error: 'YCloud not configured' };
+    const YCLOUD_API_KEY = getApiKey();
+    const FROM_NUMBER = getFromNumber();
+
+    if (!YCLOUD_API_KEY || !FROM_NUMBER) return { success: false, error: 'YCloud not configured' };
 
     const phone = formatPhone(to);
     if (!phone) return { success: false, error: 'Invalid phone number' };
@@ -96,8 +121,8 @@ const sendWhatsAppTemplate = async (to, templateName, variables = []) => {
 
         return { success: true, messageId: response.data.id };
     } catch (err) {
-        const errMsg = err.response?.data?.message || err.message;
-        console.error('❌ YCloud template failed:', errMsg);
+        const errMsg = extractError(err);
+        console.error('[YCloud] ❌ Template failed:', errMsg);
         return { success: false, error: errMsg };
     }
 };
