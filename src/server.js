@@ -17,22 +17,28 @@ const server = app.listen(PORT, () => {
 });
 
 // GRACEFUL SHUTDOWN
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   console.log('👋 SIGTERM received. Shutting down gracefully...');
-  server.close(() => {
-    mongoose.connection.close(false, () => {
-      console.log('📚 MongoDB connection closed.');
-      process.exit(0);
-    });
-  });
+  try {
+    server.close();
+    await mongoose.connection.close();
+    console.log('✅ MongoDB connection closed.');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Error during SIGTERM shutdown:', err);
+    process.exit(1);
+  }
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   console.log('👋 SIGINT received. Shutting down gracefully...');
-  server.close(() => {
-    mongoose.connection.close(false, () => {
-      console.log('📚 MongoDB connection closed.');
-      process.exit(0);
-    });
-  });
+  try {
+    server.close();
+    await mongoose.connection.close();
+    console.log('✅ MongoDB connection closed.');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Error during SIGINT shutdown:', err);
+    process.exit(1);
+  }
 });

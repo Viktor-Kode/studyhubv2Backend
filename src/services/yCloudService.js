@@ -9,10 +9,13 @@ const getFromNumber = () => process.env.YCLOUD_WHATSAPP_NUMBER;
 // Format phone numbers (international)
 const formatPhone = (phone) => {
     if (!phone) return null;
+    // Strip any legacy whatsapp: prefix (Twilio format — not needed for YCloud)
+    phone = phone.replace(/^whatsapp:/i, '');
     phone = phone.replace(/[\s\-\(\)]/g, '');
     if (phone.startsWith('0')) phone = '+234' + phone.slice(1);
     if (phone.startsWith('234') && !phone.startsWith('+')) phone = '+' + phone;
     if (!phone.startsWith('+')) phone = '+' + phone;
+    console.log(`[YCloud] Formatted phone: ${phone}`);
     return phone;
 };
 
