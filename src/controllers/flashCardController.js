@@ -276,7 +276,7 @@ export const reviewCard = async (req, res) => {
         nextDate.setDate(nextDate.getDate() + progress.intervalDays);
         progress.nextReviewDate = nextDate;
         progress.reviewCount += 1;
-        progress.confidence = q;
+        progress.confidence = rating;
         progress.lastReviewed = new Date();
 
         await progress.save();
