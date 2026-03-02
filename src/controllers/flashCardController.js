@@ -255,42 +255,20 @@ export const reviewCard = async (req, res) => {
             });
         }
 
-        // SM-2 Algorithm Implementation
-        // map UI ratings [1,2,3,4] to quality [1,2,3,5] or similar
-        const q = rating === 4 ? 5 : rating; // If user says Easy (4), we treat it as Perfect (5) in SM-2
-
-        if (q >= 3) {
-            // Correct response
-            if (progress.reviewCount === 0) {
-                progress.intervalDays = 1;
-            } else if (progress.reviewCount === 1) {
-                progress.intervalDays = 6;
-            } else {
-                progress.intervalDays = Math.round(
-                    progress.intervalDays * progress.easeFactor
-                );
-            }
+        // SM-2 Algorithm Implementation - Simplified for Mastered/Not Mastered
+        if (rating >= 4) {
+            // User selected "Mastered"
+            progress.status = 'mastered';
+            progress.intervalDays = 365; // Skip review for a year
             progress.correctStreak += 1;
+            progress.easeFactor = Math.min(progress.easeFactor + 0.1, 5.0);
         } else {
-            // Wrong response — reset interval
+            // User selected "Still Learning"
+            progress.status = 'learning';
             progress.intervalDays = 1;
             progress.correctStreak = 0;
             progress.incorrectCount += 1;
-        }
-
-        // Update ease factor (SM-2 formula)
-        progress.easeFactor = Math.max(
-            1.3,
-            progress.easeFactor + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)
-        );
-
-        // Update status based on performance
-        if (progress.correctStreak >= 5 && q >= 4) {
-            progress.status = 'mastered';
-        } else if (progress.correctStreak >= 2 && q >= 3) {
-            progress.status = 'reviewing';
-        } else if (progress.reviewCount > 0) {
-            progress.status = 'learning';
+            progress.easeFactor = Math.max(1.3, progress.easeFactor - 0.2);
         }
 
         // Schedule next review
