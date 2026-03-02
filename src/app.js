@@ -20,7 +20,6 @@ import settingsRoutes from './routes/settingsRoutes.js';
 import debugRoutes from './routes/debugRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
-import libraryRoutes from './routes/libraryRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 
@@ -120,7 +119,6 @@ app.use('/api/students', studentRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-app.use('/api', libraryRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');

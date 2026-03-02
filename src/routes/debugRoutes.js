@@ -41,31 +41,6 @@ router.get('/env', (req, res) => {
     });
 });
 
-/**
- * DEBUG STUDY GUIDES
- * Shows exactly what is in the DB
- */
-import StudyGuide from '../models/StudyGuide.js';
-router.get('/library', async (req, res) => {
-    try {
-        const total = await StudyGuide.countDocuments();
-        const validated = await StudyGuide.countDocuments({ validated: true });
-        const unvalidated = await StudyGuide.countDocuments({ validated: false });
-        const sample = await StudyGuide.find().limit(2).lean();
-
-        res.json({
-            total,
-            validated,
-            unvalidated,
-            sample,
-            message: total === 0
-                ? '❌ Database is empty — guides have never been seeded'
-                : `✅ ${total} guides in DB but ${unvalidated} are unvalidated`
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 export default router;
 
