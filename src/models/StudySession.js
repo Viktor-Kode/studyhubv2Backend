@@ -7,7 +7,8 @@ const studySessionSchema = new mongoose.Schema({
     duration: { type: Number, required: true }, // Usually in minutes
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date, default: Date.now },
-    notes: { type: String }
+    notes: { type: String },
+    goalId: { type: mongoose.Schema.Types.ObjectId }
 }, { timestamps: true });
 
 const StudySession = mongoose.model('StudySession', studySessionSchema);

@@ -11,13 +11,13 @@ import { updateStreak } from '../utils/streakUtils.js';
 export const createSession = async (req, res) => {
     try {
         const userId = req.user._id;
-        const { title, type, duration, startTime, endTime, notes } = req.body;
+        const { title, type, duration, startTime, endTime, notes, goalId } = req.body;
 
         if (duration === undefined || duration === null) {
             return res.status(400).json({ error: 'Duration is required' });
         }
 
-        const session = new StudySession({
+        const sessionData = {
             userId,
             title: title || (type === 'break' ? 'Short Break' : 'Productive Session'),
             type: type || 'study',
@@ -25,14 +25,20 @@ export const createSession = async (req, res) => {
             startTime: startTime || new Date(),
             endTime: endTime || new Date(),
             notes
-        });
+        };
 
+        if (goalId) sessionData.goalId = goalId;
+
+        const session = new StudySession(sessionData);
         await session.save();
 
-        await updateStreak(userId, 'study');
+        let goalCompleted = false;
+        let goalTitle = '';
 
         // Update UserStats streak and totals if it's a study session
         if (type === 'study' || !type) {
+            await updateStreak(userId, 'study');
+
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
@@ -44,12 +50,29 @@ export const createSession = async (req, res) => {
             stats.lastStudyDate = today;
             stats.totalStudyMinutes += parseInt(duration);
             stats.sessionsCompleted += 1;
+
+            // If a goal was linked, update its progress
+            if (goalId && stats.goals) {
+                const goal = stats.goals.id(goalId);
+                if (goal) {
+                    goal.completedMinutes += parseInt(duration);
+
+                    // Check if newly completed
+                    if (goal.completedMinutes >= goal.targetMinutes) {
+                        goalCompleted = true;
+                        goalTitle = goal.title;
+                    }
+                }
+            }
+
             await stats.save();
         }
 
         res.status(201).json({
             success: true,
-            data: session
+            data: session,
+            goalCompleted,
+            goalTitle
         });
     } catch (error) {
         console.error('Error logging study session:', error);

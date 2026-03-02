@@ -40,7 +40,8 @@ const userStatsSchema = new mongoose.Schema(
             sessionType: { type: String, enum: ['work', 'break'] },
             subject: String,
             pomodoroCount: Number,
-            sessionStartTime: Date
+            sessionStartTime: Date,
+            selectedGoalId: String
         },
         goals: [{
             title: String,
