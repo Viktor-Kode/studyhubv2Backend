@@ -61,52 +61,61 @@ export const createFlashCard = async (req, res) => {
     }
 };
 
-// Get all flashcards for a user
+// Get all flashcards joined with progress
 export const getFlashCards = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const studentId = req.user._id;
         const { category, deckId, favorite, search, shuffle, limit = 0 } = req.query;
 
-        const query = { userId };
+        const match = { userId: studentId };
 
-        if (category) {
-            query.category = category;
-        }
-
-        if (deckId) {
-            query.deckId = deckId;
-        }
-
-        if (favorite === 'true') {
-            query.isFavorite = true;
-        }
-
+        if (category) match.category = category;
+        if (deckId) match.deckId = new mongoose.Types.ObjectId(deckId);
+        if (favorite === 'true') match.isFavorite = true;
         if (search) {
-            query.$or = [
+            match.$or = [
                 { front: { $regex: search, $options: 'i' } },
                 { back: { $regex: search, $options: 'i' } }
             ];
         }
 
-        let flashCards;
-        if (shuffle === 'true') {
-            flashCards = await FlashCard.aggregate([
-                { $match: query },
-                { $sample: { size: parseInt(limit) || 100 } }
-            ]);
-            // Populate deck manually for aggregate
-            flashCards = await FlashCard.populate(flashCards, { path: 'deckId', select: 'name color icon' });
-        } else {
-            flashCards = await FlashCard.find(query)
-                .populate('deckId', 'name color icon')
-                .sort({ createdAt: -1 })
-                .limit(parseInt(limit) || 0);
-        }
+        const pipeline = [
+            { $match: match },
+            {
+                $lookup: {
+                    from: 'flashcardprogresses',
+                    let: { cardId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $eq: ['$cardId', '$$cardId'] },
+                                        { $eq: ['$studentId', studentId] }
+                                    ]
+                                }
+                            }
+                        }
+                    ],
+                    as: 'progress'
+                }
+            },
+            {
+                $addFields: {
+                    status: { $ifNull: [{ $arrayElemAt: ['$progress.status', 0] }, 'unseen'] },
+                    nextReviewDate: { $arrayElemAt: ['$progress.nextReviewDate', 0] }
+                }
+            },
+            { $limit: parseInt(limit) || 1000 }
+        ];
+
+        let result = await FlashCard.aggregate(pipeline);
+        await FlashCard.populate(result, { path: 'deckId', select: 'name color icon' });
 
         res.json({
             success: true,
-            count: flashCards.length,
-            flashCards
+            count: result.length,
+            flashCards: result
         });
 
     } catch (error) {
@@ -118,27 +127,28 @@ export const getFlashCards = async (req, res) => {
     }
 };
 
-// Get cards due for review (Spaced Repetition)
+// Get cards due for review today
 export const getDueCards = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const studentId = new mongoose.Types.ObjectId(req.user._id);
+        const { deckId, subject } = req.query;
         const now = new Date();
 
-        const dueCards = await FlashCard.find({
-            userId,
-            $or: [
-                { nextReviewDate: { $lte: now } },
-                { nextReviewDate: { $exists: false } }
-            ]
-        })
-            .populate('deckId', 'name color icon')
-            .sort({ nextReviewDate: 1 })
-            .limit(50);
+        const query = { studentId };
+        if (deckId) query.deckId = deckId;
+        if (subject) query.subject = subject;
+
+        // Cards due for review (nextReviewDate <= now)
+        const dueProgress = await FlashcardProgress.find({
+            ...query,
+            nextReviewDate: { $lte: now },
+            status: { $ne: 'mastered' }
+        }).lean();
 
         res.json({
             success: true,
-            count: dueCards.length,
-            flashCards: dueCards
+            flashCards: dueProgress,
+            count: dueProgress.length
         });
 
     } catch (error) {
@@ -224,56 +234,82 @@ export const deleteFlashCard = async (req, res) => {
     }
 };
 
-// Review a card (Spaced Repetition Algorithm)
+/**
+ * Review a card using SM-2 algorithm
+ */
 export const reviewCard = async (req, res) => {
     try {
-        const { cardId } = req.params;
-        const { wasCorrect } = req.body;
-        const userId = req.user._id;
+        const { cardId, deckId, subject, topic, rating } = req.body;
+        // rating: 1=Blackout/Wrong, 2=Hard, 3=Good, 4=Easy (Mapping 4 values from UI to SM-2)
 
-        if (!cardId) {
-            return res.status(400).json({
-                success: false,
-                message: 'Card ID is required'
+        if (rating === undefined) {
+            return res.status(400).json({ success: false, message: 'Rating is required' });
+        }
+
+        const studentId = req.user._id;
+        let progress = await FlashcardProgress.findOne({ studentId, cardId, deckId });
+
+        if (!progress) {
+            progress = new FlashcardProgress({
+                studentId, cardId, deckId, subject, topic
             });
         }
 
-        const flashCard = await FlashCard.findOne({ _id: cardId, userId });
+        // SM-2 Algorithm Implementation
+        // map UI ratings [1,2,3,4] to quality [1,2,3,5] or similar
+        const q = rating === 4 ? 5 : rating; // If user says Easy (4), we treat it as Perfect (5) in SM-2
 
-        if (!flashCard) {
-            return res.status(404).json({
-                success: false,
-                message: 'Flashcard not found or access denied'
-            });
-        }
-
-        // Update review stats
-        flashCard.reviewCount = (flashCard.reviewCount || 0) + 1;
-        flashCard.lastReviewed = new Date();
-
-        if (wasCorrect) {
-            flashCard.correctCount = (flashCard.correctCount || 0) + 1;
-            flashCard.masteryLevel = Math.min(5, (flashCard.masteryLevel || 0) + 1);
+        if (q >= 3) {
+            // Correct response
+            if (progress.reviewCount === 0) {
+                progress.intervalDays = 1;
+            } else if (progress.reviewCount === 1) {
+                progress.intervalDays = 6;
+            } else {
+                progress.intervalDays = Math.round(
+                    progress.intervalDays * progress.easeFactor
+                );
+            }
+            progress.correctStreak += 1;
         } else {
-            flashCard.incorrectCount = (flashCard.incorrectCount || 0) + 1;
-            flashCard.masteryLevel = Math.max(0, (flashCard.masteryLevel || 0) - 1);
+            // Wrong response — reset interval
+            progress.intervalDays = 1;
+            progress.correctStreak = 0;
+            progress.incorrectCount += 1;
         }
 
-        // Spaced repetition intervals in days
-        const intervals = [1, 3, 7, 14, 30];
-        const intervalDays = intervals[flashCard.masteryLevel] || 30;
+        // Update ease factor (SM-2 formula)
+        progress.easeFactor = Math.max(
+            1.3,
+            progress.easeFactor + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)
+        );
 
-        const nextReview = new Date();
-        nextReview.setDate(nextReview.getDate() + intervalDays);
-        flashCard.nextReviewDate = nextReview;
+        // Update status based on performance
+        if (progress.correctStreak >= 5 && q >= 4) {
+            progress.status = 'mastered';
+        } else if (progress.correctStreak >= 2 && q >= 3) {
+            progress.status = 'reviewing';
+        } else if (progress.reviewCount > 0) {
+            progress.status = 'learning';
+        }
 
-        await flashCard.save();
+        // Schedule next review
+        const nextDate = new Date();
+        nextDate.setDate(nextDate.getDate() + progress.intervalDays);
+        progress.nextReviewDate = nextDate;
+        progress.reviewCount += 1;
+        progress.confidence = q;
+        progress.lastReviewed = new Date();
+
+        await progress.save();
+        await updateStreak(studentId, 'flashcard');
 
         res.json({
             success: true,
-            message: wasCorrect ? 'Great job! Card mastery increased.' : 'Keep practicing! Card scheduled for sooner review.',
-            flashCard,
-            nextReviewIn: intervalDays
+            status: progress.status,
+            nextReview: progress.nextReviewDate,
+            intervalDays: progress.intervalDays,
+            correctStreak: progress.correctStreak
         });
 
     } catch (error) {
@@ -425,79 +461,60 @@ export const deleteDeck = async (req, res) => {
     }
 };
 
-// Stats with safe aggregate
+// Updated stats using SM-2 Progress model
 export const getFlashCardStats = async (req, res) => {
     try {
-        const userId = req.user._id;
-        const userObjectId = new mongoose.Types.ObjectId(userId);
+        const studentId = req.user._id;
+        const studentObjectId = new mongoose.Types.ObjectId(studentId);
 
-        const totalCards = await FlashCard.countDocuments({ userId });
-        const masteredCards = await FlashCard.countDocuments({
-            userId,
-            masteryLevel: 5
-        });
-        const dueCards = await FlashCard.countDocuments({
-            userId,
-            $or: [
-                { nextReviewDate: { $lte: new Date() } },
-                { nextReviewDate: { $exists: false } }
-            ]
-        });
-
-        const categoryBreakdown = await FlashCard.aggregate([
-            { $match: { userId: userObjectId } },
+        const stats = await FlashcardProgress.aggregate([
+            { $match: { studentId: studentObjectId } },
             {
                 $group: {
-                    _id: '$category',
-                    count: { $sum: 1 },
-                    avgMastery: { $avg: '$masteryLevel' }
+                    _id: null,
+                    totalCards: { $sum: 1 },
+                    masteredCards: { $sum: { $cond: [{ $eq: ['$status', 'mastered'] }, 1, 0] } },
+                    dueCards: {
+                        $sum: {
+                            $cond: [{
+                                $and: [
+                                    { $lte: ['$nextReviewDate', new Date()] },
+                                    { $ne: ['$status', 'mastered'] }
+                                ]
+                            }, 1, 0]
+                        }
+                    },
+                    totalReviews: { $sum: '$reviewCount' },
+                    correctStreakAvg: { $avg: '$correctStreak' }
+                }
+            }
+        ]);
+
+        const categoryBreakdown = await FlashcardProgress.aggregate([
+            { $match: { studentId: studentObjectId } },
+            {
+                $group: {
+                    _id: '$subject',
+                    count: { $sum: 1 }
                 }
             },
             { $sort: { count: -1 } }
         ]);
 
-        const difficultyBreakdown = await FlashCard.aggregate([
-            { $match: { userId: userObjectId } },
-            {
-                $group: {
-                    _id: '$difficulty',
-                    count: { $sum: 1 }
-                }
-            }
-        ]);
-
-        const recentSessions = await FlashCardSession.find({ userId })
-            .sort({ createdAt: -1 })
-            .limit(10);
-
-        const totalReviews = await FlashCard.aggregate([
-            { $match: { userId: userObjectId } },
-            {
-                $group: {
-                    _id: null,
-                    total: { $sum: '$reviewCount' },
-                    correct: { $sum: '$correctCount' },
-                    incorrect: { $sum: '$incorrectCount' }
-                }
-            }
-        ]);
-
-        const totalRevCount = totalReviews.length > 0 ? (totalReviews[0].correct + totalReviews[0].incorrect) : 0;
-        const accuracy = totalRevCount > 0
-            ? Math.round((totalReviews[0].correct / totalRevCount) * 100)
-            : 0;
+        const result = stats[0] || {
+            totalCards: 0,
+            masteredCards: 0,
+            dueCards: 0,
+            totalReviews: 0,
+            accuracy: 0
+        };
 
         res.json({
             success: true,
             stats: {
-                totalCards,
-                masteredCards,
-                dueCards,
+                ...result,
                 categoryBreakdown,
-                difficultyBreakdown,
-                accuracy,
-                totalReviews: totalReviews.length > 0 ? totalReviews[0].total : 0,
-                recentSessions
+                accuracy: result.totalCards > 0 ? Math.round((result.masteredCards / result.totalCards) * 100) : 0
             }
         });
 

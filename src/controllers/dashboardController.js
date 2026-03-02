@@ -15,7 +15,7 @@ export const getDashboardSummary = async (req, res) => {
         const [
             studyStats,
             cbtStats,
-            flashcardStats,
+            flashStatsData,
             streakData,
             recentSessions,
             goals
@@ -57,15 +57,20 @@ export const getDashboardSummary = async (req, res) => {
                 }
             ]),
 
-            // Flashcard Stats
+            // Advanced Flashcard Stats
             FlashcardProgress.aggregate([
                 { $match: { studentId: new mongoose.Types.ObjectId(studentId) } },
                 {
                     $group: {
                         _id: null,
-                        totalMastered: { $sum: '$masteredCount' },
-                        totalSeen: { $sum: '$seenCount' },
-                        totalDecks: { $addToSet: '$deckId' }
+                        totalCards: { $sum: 1 },
+                        mastered: {
+                            $sum: { $cond: [{ $eq: ['$status', 'mastered'] }, 1, 0] }
+                        },
+                        stillLearning: {
+                            $sum: { $cond: [{ $in: ['$status', ['learning', 'reviewing']] }, 1, 0] }
+                        },
+                        totalReviews: { $sum: '$reviewCount' }
                     }
                 }
             ]),
@@ -95,8 +100,9 @@ export const getDashboardSummary = async (req, res) => {
             totalQuestions: 0, avgAccuracy: 0
         };
 
-        const flash = flashcardStats[0] || {
-            totalMastered: 0, totalSeen: 0, totalDecks: []
+        const flash = flashStatsData[0] || {
+            totalCards: 0, mastered: 0,
+            stillLearning: 0, totalReviews: 0
         };
 
         const formatTime = (secs) => {
@@ -149,11 +155,12 @@ export const getDashboardSummary = async (req, res) => {
                     bestSubject: topSubject
                 },
                 flashcards: {
-                    cardsMastered: flash.totalMastered,
-                    cardsSeen: flash.totalSeen,
-                    decksStudied: flash.totalDecks.length || 0,
-                    masteryRate: flash.totalSeen > 0
-                        ? Math.round((flash.totalMastered / flash.totalSeen) * 100) + '%'
+                    totalCards: flash.totalCards,
+                    mastered: flash.mastered,
+                    stillLearning: flash.stillLearning,
+                    totalReviews: flash.totalReviews,
+                    masteryRate: flash.totalCards > 0
+                        ? Math.round((flash.mastered / flash.totalCards) * 100) + '%'
                         : '0%'
                 },
                 streak: {

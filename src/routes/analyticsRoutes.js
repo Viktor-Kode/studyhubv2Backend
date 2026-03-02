@@ -1,9 +1,4 @@
 import express from 'express';
-import {
-    getClassAnalytics,
-    getExamAnalytics,
-    getStudentPerformance
-} from '../controllers/analyticsController.js';
 import { protect, restrictTo } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
