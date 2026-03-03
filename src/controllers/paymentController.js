@@ -228,49 +228,76 @@ export const getPaymentStatus = async (req, res) => {
 
 // ─── Shared Activation Function ───────────────────────────────
 const activateSubscription = async (userId, plan, reference) => {
-    const planConfig = PLANS[plan];
-    const now = new Date();
+    try {
+        console.log(`🔄 Activating subscription: plan=${plan} userId=${userId}`);
 
-    const user = await User.findById(userId);
+        const planConfig = PLANS[plan];
+        if (!planConfig) throw new Error(`Unknown plan: ${plan}`);
 
-    let updateFields = {};
+        const now = new Date();
+        const user = await User.findById(userId);
 
-    if (plan === 'addon') {
-        // Add-on: just add AI credits, don't change subscription dates
-        updateFields = {
-            $inc: { aiUsageLimit: planConfig.aiLimit }
-        };
-    } else {
-        // Weekly or Monthly plan
-        const isAlreadyActive =
-            user.subscriptionStatus === 'active' &&
-            user.subscriptionEnd &&
-            new Date(user.subscriptionEnd) > now;
+        if (!user) throw new Error(`User not found: ${userId}`);
 
-        // Never reset existing time — stack on top
-        const startFrom = isAlreadyActive ? new Date(user.subscriptionEnd) : now;
-        const newEnd = new Date(startFrom);
-        newEnd.setDate(newEnd.getDate() + planConfig.durationDays);
+        console.log('📋 User before activation:', {
+            status: user.subscriptionStatus,
+            plan: user.subscriptionPlan,
+            end: user.subscriptionEnd
+        });
 
-        updateFields = {
-            subscriptionStatus: 'active',
-            subscriptionPlan: plan,
-            subscriptionStart: isAlreadyActive ? user.subscriptionStart : now,
-            subscriptionEnd: newEnd,
-            aiUsageCount: 0,
-            aiUsageLimit: planConfig.aiLimit,
-            flashcardUsageCount: 0,
-            flashcardUsageLimit: planConfig.flashcardLimit
-        };
+        let updateFields = {};
+
+        if (plan === 'addon') {
+            updateFields = {
+                $inc: { aiUsageLimit: planConfig.aiLimit }
+            };
+        } else {
+            const isAlreadyActive =
+                user.subscriptionStatus === 'active' &&
+                user.subscriptionEnd &&
+                new Date(user.subscriptionEnd) > now;
+
+            const startFrom = isAlreadyActive
+                ? new Date(user.subscriptionEnd)
+                : now;
+
+            const newEnd = new Date(startFrom);
+            newEnd.setDate(newEnd.getDate() + planConfig.durationDays);
+
+            updateFields = {
+                subscriptionStatus: 'active',
+                subscriptionPlan: plan,
+                subscriptionStart: isAlreadyActive ? user.subscriptionStart : now,
+                subscriptionEnd: newEnd,
+                aiUsageCount: 0,
+                aiUsageLimit: planConfig.aiLimit,
+                flashcardUsageCount: 0,
+                flashcardUsageLimit: planConfig.flashcardLimit
+            };
+        }
+
+        const updated = await User.findByIdAndUpdate(
+            userId,
+            { $set: updateFields },
+            { new: true }
+        );
+
+        console.log('✅ User after activation:', {
+            status: updated.subscriptionStatus,
+            plan: updated.subscriptionPlan,
+            end: updated.subscriptionEnd,
+            aiLimit: updated.aiUsageLimit
+        });
+
+        await Transaction.findOneAndUpdate(
+            { reference },
+            { $set: { status: 'success', processed: true } }
+        );
+
+        console.log(`✅ Transaction marked processed: ${reference}`);
+        return updated;
+    } catch (err) {
+        console.error('❌ activateSubscription error:', err.message);
+        throw err;
     }
-
-    await User.findByIdAndUpdate(userId, updateFields);
-
-    // Mark transaction as processed
-    await Transaction.findOneAndUpdate(
-        { reference },
-        { status: 'success', processed: true }
-    );
-
-    console.log(`✅ Subscription activated: ${plan} for user ${userId}`);
 };

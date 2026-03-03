@@ -1,5 +1,8 @@
 import express from 'express';
 import { getEnv } from '../config/env.js';
+import User from '../models/User.js';
+import Transaction from '../models/Transaction.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -38,6 +41,24 @@ router.get('/env', (req, res) => {
         timestamp: new Date().toISOString(),
         envStatus,
         message: 'Ensure either MONGODB_URI or MONGO_URI is set in Render settings.'
+    });
+});
+
+// GET /api/debug/user-subscription
+router.get('/user-subscription', protect, async (req, res) => {
+    const user = await User.findById(req.user.id)
+        .select('email subscriptionStatus subscriptionPlan subscriptionEnd aiUsageLimit aiUsageCount flashcardUsageLimit flashcardUsageCount');
+
+    const transaction = await Transaction.findOne({ userId: req.user.id })
+        .sort({ createdAt: -1 });
+
+    res.json({
+        user,
+        latestTransaction: transaction,
+        now: new Date(),
+        isExpired: user.subscriptionEnd
+            ? new Date(user.subscriptionEnd) < new Date()
+            : true
     });
 });
 

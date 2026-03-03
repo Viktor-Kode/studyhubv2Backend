@@ -86,14 +86,35 @@ export const login = async (req, res, next) => {
 };
 
 /**
- * Get current user details
+ * Get current user details (fresh from DB, including subscription info)
  */
 export const getMe = async (req, res, next) => {
     try {
+        const user = await User.findById(req.user.id || req.user._id).select(
+            'name email role phoneNumber ' +
+            'subscriptionStatus subscriptionPlan subscriptionEnd ' +
+            'aiUsageCount aiUsageLimit ' +
+            'flashcardUsageCount flashcardUsageLimit'
+        );
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const daysLeft = user.subscriptionEnd
+            ? Math.max(0, Math.ceil(
+                (new Date(user.subscriptionEnd) - new Date()) / (1000 * 60 * 60 * 24)
+            ))
+            : 0;
+
         res.status(200).json({
             status: 'success',
             data: {
-                user: req.user
+                user: {
+                    ...user.toObject(),
+                    daysLeft,
+                    isActive: user.subscriptionStatus === 'active' && daysLeft > 0
+                }
             }
         });
     } catch (err) {
