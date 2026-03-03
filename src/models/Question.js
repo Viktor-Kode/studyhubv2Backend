@@ -49,7 +49,24 @@ const questionSchema = new mongoose.Schema({
     enum: ['AI', 'manual', 'upload'],
     default: 'manual'
   }
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Backward compatibility virtuals
+questionSchema.virtual('content').get(function () {
+  return this.question;
+}).set(function (val) {
+  this.question = val;
+});
+
+questionSchema.virtual('answer').get(function () {
+  return this.correctAnswer;
+}).set(function (val) {
+  this.correctAnswer = val;
+});
 
 const Question = mongoose.model('Question', questionSchema);
 export default Question;

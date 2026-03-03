@@ -65,7 +65,7 @@ export const generateAIQuestions = async (req, res) => {
         const prompt = `Generate ${count} ${type} questions on ${topic} for ${subject}. 
     Difficulty: ${difficulty}. 
     Return a JSON array of objects with the following fields: 
-    question, options (array or null), correctAnswer, modelAnswer, workingSolution, markingScheme, totalMarks (number).`;
+    question, options (array or null), correctAnswer, modelAnswer, workingSolution, markingScheme, totalMarks (number), knowledgeDeepDive (detailed explanation).`;
 
         const response = await aiClient.generateChatResponse([
             { role: 'system', content: 'You are an educational AI that generates high-quality exam questions in JSON format.' },
@@ -84,6 +84,9 @@ export const generateAIQuestions = async (req, res) => {
                 subject,
                 topic,
                 difficulty,
+                question: q.question || q.content || q.text || "",
+                correctAnswer: q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : q.modelAnswer),
+                knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || q.modelAnswer || "No deep-dive available.",
                 type: (type === 'multiple-choice') ? 'obj' : type,
                 source: 'AI'
             }))

@@ -188,10 +188,10 @@ export const generateQuiz = async (req, res) => {
     const parsedQuestions = JSON.parse(cleanJsonString);
     const formattedQuestions = parsedQuestions.map((q) => ({
       teacherId: userId,
-      question: q.question || q.content,
+      question: q.question || q.content || q.text || "",
       options: q.options || [],
-      correctAnswer: q.answer,
-      knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || "No deep-dive available.",
+      correctAnswer: q.answer !== undefined ? q.answer : q.correctAnswer,
+      knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || q.modelAnswer || "No deep-dive available.",
       subject: subject || "General Study",
       type: questionType === 'multiple-choice' ? 'obj' : questionType
     }));
@@ -262,7 +262,7 @@ export const deleteQuizSession = async (req, res) => {
 
     if (!session) return res.status(404).json({ success: false, message: 'Quiz session not found' });
 
-    await Question.deleteMany({ _id: { $in: session.questions }, userId });
+    await Question.deleteMany({ _id: { $in: session.questions }, teacherId: userId });
     await DocumentHash.updateOne({ userId, quizSessionIds: session._id }, { $pull: { quizSessionIds: session._id } });
     await session.deleteOne();
 
@@ -306,7 +306,7 @@ export const chatWithTutor = async (req, res) => {
 export const getQuestions = async (req, res) => {
   try {
     const userId = req.user._id;
-    const questions = await Question.find({ userId }).sort({ createdAt: -1 });
+    const questions = await Question.find({ teacherId: userId }).sort({ createdAt: -1 });
     return res.status(200).json({ success: true, count: questions.length, questions });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -316,7 +316,7 @@ export const getQuestions = async (req, res) => {
 export const deleteQuestion = async (req, res) => {
   try {
     const userId = req.user._id;
-    const deleted = await Question.findOneAndDelete({ _id: req.params.id, userId });
+    const deleted = await Question.findOneAndDelete({ _id: req.params.id, teacherId: userId });
     if (!deleted) return res.status(404).json({ success: false, message: 'Question not found' });
     return res.status(200).json({ success: true, message: 'Question deleted' });
   } catch (error) {
@@ -393,10 +393,10 @@ export const generateQuestionsFromPDF = async (req, res) => {
     // 4. Format and Save to DB
     const formattedQuestions = parsedQuestions.map((q) => ({
       teacherId: userId,
-      question: q.question || q.content,
+      question: q.question || q.content || q.text || "",
       options: q.options || [],
-      correctAnswer: q.answer,
-      knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || "No deep-dive available.",
+      correctAnswer: q.answer !== undefined ? q.answer : q.correctAnswer,
+      knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || q.modelAnswer || "No deep-dive available.",
       subject: subject || "General Study",
       difficulty: difficulty,
       type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType),

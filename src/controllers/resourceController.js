@@ -83,7 +83,7 @@ export const generateQuestionsFromResource = async (req, res) => {
 
         const prompt = `Based on the following text, generate 5 objective questions. 
     Text: ${resource.extractedText.substring(0, 4000)}
-    Return JSON array: [{ question, options, correctAnswer, totalMarks }]`;
+    Return JSON array: [{ question, options, correctAnswer, knowledgeDeepDive, totalMarks }]`;
 
         const response = await aiClient.generateChatResponse([
             { role: 'user', content: prompt }
@@ -98,6 +98,9 @@ export const generateQuestionsFromResource = async (req, res) => {
                 teacherId: req.user._id,
                 classId: resource.classId,
                 subject: 'Extracted',
+                question: q.question || q.content || q.text || "",
+                correctAnswer: q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : q.modelAnswer),
+                knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || q.modelAnswer || "No deep-dive available.",
                 type: 'obj',
                 source: 'AI'
             }))
