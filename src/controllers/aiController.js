@@ -186,15 +186,37 @@ export const generateQuiz = async (req, res) => {
     }
 
     const parsedQuestions = JSON.parse(cleanJsonString);
-    const formattedQuestions = parsedQuestions.map((q) => ({
-      teacherId: userId,
-      question: q.question || q.content || q.text || "",
-      options: q.options || [],
-      correctAnswer: q.answer !== undefined ? q.answer : q.correctAnswer,
-      knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || q.modelAnswer || "No deep-dive available.",
-      subject: subject || "General Study",
-      type: questionType === 'multiple-choice' ? 'obj' : questionType
-    }));
+    const formattedQuestions = parsedQuestions.map((q) => {
+      const options = q.options || q.choices || [];
+      let correctAnswer = q.answer !== undefined ? q.answer : q.correctAnswer;
+
+      // If correctAnswer is text and we have options, find the index
+      if (typeof correctAnswer === 'string' && options.length > 0) {
+        // Try direct match with option text
+        let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
+
+        // Try letter match (A, B, C, D, E)
+        if (idx === -1 && correctAnswer.trim().length === 1) {
+          const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+          const char = correctAnswer.trim().toLowerCase();
+          if (letterMap[char] !== undefined && letterMap[char] < options.length) {
+            idx = letterMap[char];
+          }
+        }
+
+        if (idx !== -1) correctAnswer = idx;
+      }
+
+      return {
+        teacherId: userId,
+        question: q.question || q.content || q.text || q.prompt || "",
+        options: options,
+        correctAnswer: correctAnswer,
+        knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || "No deep-dive available.",
+        subject: subject || "General Study",
+        type: questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-blank' ? 'fill-blank' : questionType))
+      };
+    });
 
     const savedQuestions = await Question.insertMany(formattedQuestions);
 
@@ -391,18 +413,37 @@ export const generateQuestionsFromPDF = async (req, res) => {
     const parsedQuestions = JSON.parse(cleanJsonString);
 
     // 4. Format and Save to DB
-    const formattedQuestions = parsedQuestions.map((q) => ({
-      teacherId: userId,
-      question: q.question || q.content || q.text || "",
-      options: q.options || [],
-      correctAnswer: q.answer !== undefined ? q.answer : q.correctAnswer,
-      knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || q.modelAnswer || "No deep-dive available.",
-      subject: subject || "General Study",
-      difficulty: difficulty,
-      type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType),
-      totalMarks: parseInt(marksPerQuestion) || 1,
-      source: 'AI'
-    }));
+    const formattedQuestions = parsedQuestions.map((q) => {
+      const options = q.options || q.choices || [];
+      let correctAnswer = q.answer !== undefined ? q.answer : q.correctAnswer;
+
+      if (typeof correctAnswer === 'string' && options.length > 0) {
+        let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
+
+        if (idx === -1 && correctAnswer.trim().length === 1) {
+          const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+          const char = correctAnswer.trim().toLowerCase();
+          if (letterMap[char] !== undefined && letterMap[char] < options.length) {
+            idx = letterMap[char];
+          }
+        }
+
+        if (idx !== -1) correctAnswer = idx;
+      }
+
+      return {
+        teacherId: userId,
+        question: q.question || q.content || q.text || q.prompt || "",
+        options: options,
+        correctAnswer: correctAnswer,
+        knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || "No deep-dive available.",
+        subject: subject || "General Study",
+        difficulty: difficulty,
+        type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType),
+        totalMarks: parseInt(marksPerQuestion) || 1,
+        source: 'AI'
+      };
+    });
 
     const savedQuestions = await Question.insertMany(formattedQuestions);
 

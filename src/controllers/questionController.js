@@ -77,19 +77,42 @@ export const generateAIQuestions = async (req, res) => {
         const generatedQuestions = JSON.parse(jsonString);
 
         const savedQuestions = await Question.insertMany(
-            generatedQuestions.map(q => ({
-                ...q,
-                teacherId: req.user._id,
-                classId,
-                subject,
-                topic,
-                difficulty,
-                question: q.question || q.content || q.text || "",
-                correctAnswer: q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : q.modelAnswer),
-                knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || q.modelAnswer || "No deep-dive available.",
-                type: (type === 'multiple-choice') ? 'obj' : type,
-                source: 'AI'
-            }))
+            generatedQuestions.map(q => {
+                const options = q.options || q.choices || q.answers || [];
+                let correctAnswer = q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : (q.correct_answer !== undefined ? q.correct_answer : (q.modelAnswer !== undefined ? q.modelAnswer : q.model_answer)));
+
+                if (typeof correctAnswer === 'string' && options.length > 0) {
+                    let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
+
+                    if (idx === -1) {
+                        const trimmed = correctAnswer.trim().toLowerCase();
+                        if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+                            idx = parseInt(trimmed);
+                        } else if (trimmed.length === 1) {
+                            const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+                            if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
+                                idx = letterMap[trimmed];
+                            }
+                        }
+                    }
+                    if (idx !== -1) correctAnswer = idx;
+                }
+
+                return {
+                    ...q,
+                    teacherId: req.user._id,
+                    classId,
+                    subject,
+                    topic,
+                    difficulty,
+                    question: q.question || q.content || q.text || q.prompt || q.questionText || "",
+                    options: options,
+                    correctAnswer: correctAnswer,
+                    knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
+                    type: (type === 'multiple-choice') ? 'obj' : type,
+                    source: 'AI'
+                };
+            })
         );
 
         res.status(200).json({ success: true, questions: savedQuestions });
