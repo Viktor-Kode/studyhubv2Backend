@@ -187,32 +187,35 @@ export const generateQuiz = async (req, res) => {
 
     const parsedQuestions = JSON.parse(cleanJsonString);
     const formattedQuestions = parsedQuestions.map((q) => {
-      const options = q.options || q.choices || [];
-      let correctAnswer = q.answer !== undefined ? q.answer : q.correctAnswer;
+      const options = q.options || q.choices || q.answers || [];
+      let correctAnswer = q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : (q.correct_answer !== undefined ? q.correct_answer : (q.modelAnswer !== undefined ? q.modelAnswer : q.model_answer)));
 
-      // If correctAnswer is text and we have options, find the index
+      // Convert text/letter answer to index if options exist
       if (typeof correctAnswer === 'string' && options.length > 0) {
-        // Try direct match with option text
         let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
 
-        // Try letter match (A, B, C, D, E)
-        if (idx === -1 && correctAnswer.trim().length === 1) {
-          const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
-          const char = correctAnswer.trim().toLowerCase();
-          if (letterMap[char] !== undefined && letterMap[char] < options.length) {
-            idx = letterMap[char];
+        if (idx === -1) {
+          const trimmed = correctAnswer.trim().toLowerCase();
+          // Try handles "0", "1", etc.
+          if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+            idx = parseInt(trimmed);
+          } else if (trimmed.length === 1) {
+            // Try handles "A", "B", etc.
+            const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+            if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
+              idx = letterMap[trimmed];
+            }
           }
         }
-
         if (idx !== -1) correctAnswer = idx;
       }
 
       return {
         teacherId: userId,
-        question: q.question || q.content || q.text || q.prompt || "",
+        question: q.question || q.content || q.text || q.prompt || q.questionText || "",
         options: options,
         correctAnswer: correctAnswer,
-        knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || "No deep-dive available.",
+        knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
         subject: subject || "General Study",
         type: questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-blank' ? 'fill-blank' : questionType))
       };
@@ -414,32 +417,38 @@ export const generateQuestionsFromPDF = async (req, res) => {
 
     // 4. Format and Save to DB
     const formattedQuestions = parsedQuestions.map((q) => {
-      const options = q.options || q.choices || [];
-      let correctAnswer = q.answer !== undefined ? q.answer : q.correctAnswer;
+      const options = q.options || q.choices || q.answers || [];
+      let correctAnswer = q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : (q.correct_answer !== undefined ? q.correct_answer : (q.modelAnswer !== undefined ? q.modelAnswer : q.model_answer)));
 
+      // Convert text/letter answer to index if options exist
       if (typeof correctAnswer === 'string' && options.length > 0) {
         let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
 
-        if (idx === -1 && correctAnswer.trim().length === 1) {
-          const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
-          const char = correctAnswer.trim().toLowerCase();
-          if (letterMap[char] !== undefined && letterMap[char] < options.length) {
-            idx = letterMap[char];
+        if (idx === -1) {
+          const trimmed = correctAnswer.trim().toLowerCase();
+          // Try handles "0", "1", etc.
+          if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+            idx = parseInt(trimmed);
+          } else if (trimmed.length === 1) {
+            // Try handles "A", "B", etc.
+            const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+            if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
+              idx = letterMap[trimmed];
+            }
           }
         }
-
         if (idx !== -1) correctAnswer = idx;
       }
 
       return {
         teacherId: userId,
-        question: q.question || q.content || q.text || q.prompt || "",
+        question: q.question || q.content || q.text || q.prompt || q.questionText || "",
         options: options,
         correctAnswer: correctAnswer,
-        knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || "No deep-dive available.",
+        knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
         subject: subject || "General Study",
         difficulty: difficulty,
-        type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType),
+        type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-gap' ? 'fill-blank' : questionType))),
         totalMarks: parseInt(marksPerQuestion) || 1,
         source: 'AI'
       };

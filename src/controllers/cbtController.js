@@ -214,6 +214,11 @@ export const getQuestionsProxy = async (req, res) => {
             const qYear = q.year || year || 'any';
             const qType = q.examType || typesToTry[0];
 
+            // Robust explanation/deep-dive mapping
+            const explanation = q.solution || q.explanation || q.note || q.discussion ||
+                q.answer_explanation || q.knowledge_deep_dive ||
+                q.knowledgeDeepDive || q.modelAnswer || q.reason || null;
+
             return {
                 updateOne: {
                     filter: { subject: subjectSlug, examType: qType, year: qYear, questionNumber: q.id || i + 1 },
@@ -221,7 +226,7 @@ export const getQuestionsProxy = async (req, res) => {
                         $setOnInsert: {
                             subject: subjectSlug, examType: qType, year: qYear, questionNumber: q.id || i + 1,
                             questionText: q.question, options: opts, correctAnswer: q.answer,
-                            explanation: q.solution || null, source: 'API'
+                            explanation: explanation, source: 'API'
                         }
                     },
                     upsert: true
@@ -253,6 +258,13 @@ export const saveCBTResult = async (req, res) => {
         const studentId = req.user._id;
         const resultData = { ...req.body, studentId };
 
+        // Ensure accuracy is a number
+        if (resultData.accuracy !== undefined) {
+            resultData.accuracy = Number(resultData.accuracy);
+        }
+
+        console.log(`[CBT] Saving result for user ${studentId}, accuracy: ${resultData.accuracy}%`);
+
         const newResult = new CBTResult(resultData);
         await newResult.save();
 
@@ -278,7 +290,7 @@ export const getCBTResultsSummary = async (req, res) => {
             });
         }
 
-        const totalAccuracy = results.reduce((acc, curr) => acc + curr.accuracy, 0);
+        const totalAccuracy = results.reduce((acc, curr) => acc + (Number(curr.accuracy) || 0), 0);
         const overallAccuracy = Math.round(totalAccuracy / results.length);
 
         const subjectStats = {};
@@ -328,7 +340,13 @@ export const explainQuestion = async (req, res) => {
         if (cached) return res.status(200).json({ status: 'success', explanation: cached.explanation });
 
         const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
-        const prompt = `Question: ${question}\nOptions: ${options.join(', ')}\nCorrect Answer: ${correctAnswer}\nGive a short, clear explanation of why "${correctAnswer}" is correct.`;
+        const prompt = `Act as an expert tutor. I need a clear, educational explanation for this question.
+        
+        Question: ${question}
+        Options: ${options.join(', ')}
+        Correct Answer: ${correctAnswer}
+        
+        Instruction: Provide a 3-4 sentence explanation of why "${correctAnswer}" is the correct answer. Focus on the underlying concept and help the student understand the logic or rule behind it. If it involves a calculation, explain the steps briefly.`;
 
         const response = await aiClient.chatCompletion({
             model: selectedModel.id,

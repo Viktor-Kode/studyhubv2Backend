@@ -7,21 +7,24 @@ export const quizPrompt = (text, amount = 3, typeInstructions = 'multiple-choice
 
   return `Generate exactly ${amount} ${typeInstructions} based on the text below.${exclusionClause}
 
-  For each question, you MUST provide:
-  1. The question content
-  2. Options (for multiple-choice) labeled A, B, C, D
-  3. The correct answer (index 0-3 for multiple-choice, or full string for others)
-  4. A detailed "knowledgeDeepDive" that explains the concept in 2-3 sentences, providing educational context and background.
+  CRITICAL REQUIREMENT: For EVERY single question, you must provide a "knowledgeDeepDive" field. 
+  This field is NOT just the answer, but a 3-4 sentence educational explanation that teaches the underlying concept. If there is a calculation, show the steps.
+  
+  Each question object MUST have:
+  1. "question": The clear question text.
+  2. "options": Array of 4 strings (only for multiple-choice).
+  3. "answer": The correct index (0-3) for multiple-choice, or the full correct answer string for other types.
+  4. "knowledgeDeepDive": COMPULSORY detailed educational explanation.
 
   IMPORTANT: Return ONLY the JSON array. Do not include any conversational text or markdown code blocks.
 
   Text: ${text}
 
   JSON Structure for Multiple Choice:
-  [{"content": "string", "options": ["A", "B", "C", "D"], "answer": 0, "knowledgeDeepDive": "Detailed educational explanation..."}]
+  [{"question": "string", "options": ["A", "B", "C", "D"], "answer": 0, "knowledgeDeepDive": "Detailed educational explanation..."}]
   
   JSON Structure for Theory/Blank:
-  [{"content": "string", "options": [], "answer": "string", "knowledgeDeepDive": "Detailed educational explanation..."}]`;
+  [{"question": "string", "options": [], "answer": "string", "knowledgeDeepDive": "Detailed educational explanation..."}]`;
 };
 
 export const flashCardPrompt = (text, amount = 10) => {
