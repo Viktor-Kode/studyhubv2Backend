@@ -5,6 +5,7 @@ import aiClient from '../utils/aiClient.js';
 import { flashCardPrompt } from '../utils/prompts.js';
 import { getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import mongoose from 'mongoose';
+import { incrementFlashcardUsage } from '../middleware/usageMiddleware.js';
 
 // Create a new flashcard
 export const createFlashCard = async (req, res) => {
@@ -562,6 +563,9 @@ export const generateAIFlashCards = async (req, res) => {
         if (deckId) {
             await FlashCardDeck.findOneAndUpdate({ _id: deckId, userId }, { $inc: { cardCount: savedCards.length } });
         }
+
+        // Count this as one flashcard generation usage
+        await incrementFlashcardUsage(userId);
 
         res.status(201).json({ success: true, count: savedCards.length, flashCards: savedCards });
     } catch (error) {

@@ -44,10 +44,11 @@ export const registerNotificationJobs = () => {
                 }
             }
 
-            // 2. Plan expiry warnings — plans expiring in 2 days
+            // 2. Plan expiry warnings — active subscriptions expiring in 2 days
             const expiringUsers = await User.find({
                 phoneNumber: { $exists: true, $ne: null },
-                'plan.expiresAt': {
+                subscriptionStatus: 'active',
+                subscriptionEnd: {
                     $gte: new Date(),
                     $lte: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
                 }
@@ -56,10 +57,10 @@ export const registerNotificationJobs = () => {
             for (const user of expiringUsers) {
                 try {
                     const daysLeft = Math.ceil(
-                        (new Date(user.plan.expiresAt) - new Date()) / (1000 * 60 * 60 * 24)
+                        (new Date(user.subscriptionEnd) - new Date()) / (1000 * 60 * 60 * 24)
                     );
                     await sendPlanExpiryWarning(user.phoneNumber, {
-                        planName: user.plan.type,
+                        planName: user.subscriptionPlan || 'current',
                         daysLeft
                     });
                     await new Promise(r => setTimeout(r, 500));

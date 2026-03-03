@@ -15,6 +15,7 @@ import {
     generateQuestionsFromPDF
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import { checkAIUsage } from '../middleware/usageMiddleware.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -22,8 +23,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 // All AI routes require authentication for user data isolation
 router.use(protect);
 
-// Generate study notes (POST)
-router.post('/notes', generateNotes);
+// Generate study notes (POST) - counts as AI usage
+router.post('/notes', checkAIUsage, generateNotes);
 // Save a study note (POST)
 router.post('/notes/save', saveStudyNote);
 // Get all study notes (GET)
@@ -32,9 +33,9 @@ router.get('/notes', getStudyNotes);
 router.delete('/notes/:id', deleteStudyNote);
 
 // Generate a new quiz (POST)
-router.post('/generate', generateQuiz);
+router.post('/generate', checkAIUsage, generateQuiz);
 // AI Tutor Chat (POST)
-router.post('/chat', chatWithTutor);
+router.post('/chat', checkAIUsage, chatWithTutor);
 
 // Fetch all individual questions (GET)
 router.get('/questions', getQuestions);
@@ -42,7 +43,7 @@ router.get('/questions', getQuestions);
 router.delete('/questions/:id', deleteQuestion);
 
 // Generate questions from PDF (POST)
-router.post('/generate-from-pdf', upload.single('pdf'), generateQuestionsFromPDF);
+router.post('/generate-from-pdf', upload.single('pdf'), checkAIUsage, generateQuestionsFromPDF);
 
 // Quiz Sessions (History grouped by quiz)
 router.get('/sessions', getQuizSessions);

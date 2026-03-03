@@ -7,6 +7,7 @@ import StudyNote from '../models/StudyNote.js';
 import { AI_PROVIDERS, getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import crypto from 'crypto';
 import { createRequire } from 'module';
+import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
 
@@ -37,6 +38,9 @@ export const generateNotes = async (req, res) => {
 
     console.log("✅ AI Response received successfully.");
     const notes = response.choices[0].message.content;
+
+    // Count this as one AI usage
+    await incrementAIUsage(req.user._id);
 
     return res.status(200).json({
       success: true,
@@ -244,6 +248,9 @@ export const generateQuiz = async (req, res) => {
       });
     }
 
+    // Count this as one AI usage
+    await incrementAIUsage(req.user._id);
+
     return res.status(201).json({
       success: true,
       isDuplicate: false,
@@ -321,8 +328,12 @@ export const chatWithTutor = async (req, res) => {
       max_tokens: 1000,
       temperature: 0.7,
     });
+    const reply = response.choices[0].message.content;
 
-    return res.status(200).json({ success: true, reply: response.choices[0].message.content });
+    // Count this as one AI usage
+    await incrementAIUsage(req.user._id);
+
+    return res.status(200).json({ success: true, reply });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message || "Tutor offline" });
   }
@@ -455,6 +466,9 @@ export const generateQuestionsFromPDF = async (req, res) => {
     });
 
     const savedQuestions = await Question.insertMany(formattedQuestions);
+
+    // Count this as one AI usage
+    await incrementAIUsage(req.user._id);
 
     return res.status(201).json({
       success: true,

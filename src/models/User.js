@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema({
+    // Core identity
+    name: { type: String, required: true },
     email: {
         type: String,
         required: [true, 'Please provide an email'],
@@ -10,49 +12,74 @@ const userSchema = new mongoose.Schema({
         lowercase: true,
         trim: true
     },
+
+    // Local password (for legacy / non-Firebase flows)
     password: {
         type: String,
         required: function () {
-            return !this.googleId && !this.firebaseUid; // Password not required for OAuth/Firebase users
+            return !this.googleId && !this.firebaseUid;
         },
         minlength: 8,
-        select: false // Don't return password by default
+        select: false
     },
+
+    // Optional separate hash field for future migrations
+    passwordHash: { type: String },
+
     role: {
         type: String,
-        enum: ['student', 'teacher'],
+        enum: ['student', 'teacher', 'admin'],
         default: 'student'
     },
+
     googleId: {
         type: String,
         unique: true,
-        sparse: true // Allows multiple null values for non-Google users
+        sparse: true
     },
     firebaseUid: {
         type: String,
         unique: true,
         sparse: true
     },
-    name: String,
+
     schoolName: String,
+
+    // Phone fields (keep legacy `phone` for backward compatibility)
     phone: String,
+    phoneNumber: { type: String, default: null },
+
     passwordResetToken: String,
     passwordResetExpires: Date,
+
     settings: {
         type: Object,
         default: {}
     },
-    plan: {
-        type: { type: String, enum: ['free', 'starter', 'growth', 'premium'], default: 'free' },
-        testsAllowed: { type: Number, default: 1 },
-        testsUsed: { type: Number, default: 0 },
-        aiExplanationsAllowed: { type: Number, default: 5 },
-        aiExplanationsUsed: { type: Number, default: 0 },
-        subjectsAllowed: { type: [String], default: ['english'] },
-        allSubjects: { type: Boolean, default: false },
-        expiresAt: { type: Date, default: null },
-        paystackReference: { type: String, default: null }
-    }
+
+    // ─── Subscription & Usage (New System) ───────────────────────────────
+    subscriptionStatus: {
+        type: String,
+        enum: ['free', 'active', 'expired'],
+        default: 'free'
+    },
+    subscriptionPlan: {
+        type: String,
+        enum: ['weekly', 'monthly'],
+        default: null
+    },
+    subscriptionStart: { type: Date, default: null },
+    subscriptionEnd: { type: Date, default: null },
+
+    // AI usage (server‑side enforced)
+    aiUsageCount: { type: Number, default: 0 },
+    aiUsageLimit: { type: Number, default: 5 },
+    aiLastReset: { type: Date, default: Date.now },
+
+    // Flashcard generation usage
+    flashcardUsageCount: { type: Number, default: 0 },
+    flashcardUsageLimit: { type: Number, default: 3 }
+
 }, { timestamps: true });
 
 // Hash password before saving

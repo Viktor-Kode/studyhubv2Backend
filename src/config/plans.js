@@ -1,34 +1,31 @@
+// ─── Single Source of Truth for all plan configurations ───────────────────────
 export const PLANS = {
     free: {
-        testsAllowed: 1,
-        aiExplanationsAllowed: 5,
-        allSubjects: false,
-        subjectsAllowed: ['english'],
+        aiLimit: 5,
+        flashcardLimit: 3,
+        durationDays: null,
         price: 0,
         label: 'Free'
     },
-    starter: {
-        testsAllowed: 5,
-        aiExplanationsAllowed: 10,
-        allSubjects: false,
-        subjectsAllowed: ['english'],  // 1 subject
-        price: 50000,   // ₦500 in kobo for Paystack
-        label: 'Starter – ₦500'
+    weekly: {
+        aiLimit: 80,
+        flashcardLimit: 40,
+        durationDays: 7,
+        price: 60000, // ₦600 in kobo
+        label: 'Weekly — ₦600'
     },
-    growth: {
-        testsAllowed: 20,
-        aiExplanationsAllowed: 50,
-        allSubjects: true,
-        subjectsAllowed: [],
-        price: 150000,  // ₦1,500 in kobo
-        label: 'Growth – ₦1,500'
+    monthly: {
+        aiLimit: 250,
+        flashcardLimit: 120,
+        durationDays: 30,
+        price: 230000, // ₦2,300 in kobo
+        label: 'Monthly — ₦2,300'
     },
-    premium: {
-        testsAllowed: 60,
-        aiExplanationsAllowed: 200,
-        allSubjects: true,
-        subjectsAllowed: [],
-        price: 300000,  // ₦3,000 in kobo
-        label: 'Premium – ₦3,000'
+    addon: {
+        aiLimit: 100, // adds 100 on top of existing limit
+        flashcardLimit: 0,
+        durationDays: 0, // no duration extension
+        price: 50000, // ₦500 in kobo
+        label: 'AI Add-On — ₦500'
     }
 };

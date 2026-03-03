@@ -8,6 +8,7 @@ import aiClient from '../utils/aiClient.js';
 import crypto from 'crypto';
 import { MODEL_REGISTRY } from '../config/aiConfig.js';
 import { updateStreak } from '../utils/streakUtils.js';
+import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -385,8 +386,8 @@ export const explainQuestion = async (req, res) => {
             explanation
         });
 
-        // 5. Increment Usage
-        await User.findByIdAndUpdate(studentId, { $inc: { 'plan.aiExplanationsUsed': 1 } });
+        // 5. Increment AI usage (one credit per new explanation)
+        await incrementAIUsage(studentId);
 
         return res.status(200).json({ status: 'success', explanation });
     } catch (error) {

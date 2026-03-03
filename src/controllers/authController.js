@@ -45,7 +45,8 @@ export const signup = async (req, res, next) => {
             role: role || 'student',
             name,
             schoolName,
-            phone
+            phone,
+            phoneNumber: phone || null
         });
 
         createSendToken(newUser, 201, res);
@@ -225,7 +226,10 @@ export const updateMe = async (req, res, next) => {
         if (name) updateData.name = name;
         if (role) updateData.role = role;
         if (schoolName) updateData.schoolName = schoolName;
-        if (phone) updateData.phone = phone;
+        if (phone) {
+            updateData.phone = phone;
+            updateData.phoneNumber = phone;
+        }
 
         if (Object.keys(updateData).length === 0) {
             return res.status(200).json({

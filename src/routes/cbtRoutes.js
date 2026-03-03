@@ -9,7 +9,8 @@ import {
     explainQuestion,
 } from '../controllers/cbtController.js';
 import { protect } from '../middleware/authMiddleware.js';
-import { checkCBTAccess, checkAIAccess } from '../middleware/planMiddleware.js';
+import { checkCBTAccess } from '../middleware/planMiddleware.js';
+import { checkAIUsage } from '../middleware/usageMiddleware.js';
 
 const router = express.Router();
 
@@ -29,6 +30,6 @@ router.get('/questions', protect, checkCBTAccess, getQuestionsProxy);
 router.post('/results', protect, saveCBTResult);
 router.get('/results', protect, getCBTResults);
 router.get('/results/summary', protect, getCBTResultsSummary);
-router.post('/explain', protect, explainQuestion);
+router.post('/explain', protect, checkAIUsage, explainQuestion);
 
 export default router;

@@ -69,6 +69,9 @@ app.use(cors({
   credentials: true
 }));
 
+// Paystack webhook must receive raw body for HMAC verification
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 
 // HEALTH CHECK (For Render/uptime monitoring)
@@ -107,7 +110,7 @@ app.use('/api/ai', cbtAILimiter, aiRoutes);
 app.use('/api/study', studyRoutes);
 app.use('/api/flashcards', flashCardRoutes);
 app.use('/api/users', authRoutes);
-app.use('/api/payments', paymentRoutes);
+app.use('/api/payment', paymentRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/questions', questionRoutes);

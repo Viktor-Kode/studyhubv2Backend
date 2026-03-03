@@ -3,6 +3,7 @@ import app from './app.js';
 import connectDB from './config/db.js';
 import mongoose from 'mongoose';
 import { registerNotificationJobs } from './jobs/notificationJobs.js';
+import './jobs/subscriptionJobs.js';
 
 // Connect to Database
 connectDB().then(() => {
