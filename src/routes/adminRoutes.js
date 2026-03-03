@@ -79,7 +79,7 @@ router.post('/migrate-subscriptions', async (req, res) => {
 
         if (!oldPlan || oldPlan === 'free') continue;
 
-        const planMap: Record<string, string> = {
+        const planMap = {
             starter: 'weekly',
             growth: 'monthly',
             premium: 'monthly',
