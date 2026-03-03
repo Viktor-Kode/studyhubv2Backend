@@ -1,9 +1,13 @@
-import axios from 'axios';
+import Flutterwave from 'flutterwave-node-v3';
 import crypto from 'crypto';
 import { PLANS } from '../config/plans.js';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
-import { getEnv } from '../config/env.js';
+
+const flw = new Flutterwave(
+    process.env.FLW_PUBLIC_KEY,
+    process.env.FLW_SECRET_KEY
+);
 
 // POST /api/payment/initialize
 export const initializePayment = async (req, res) => {
@@ -25,51 +29,54 @@ export const initializePayment = async (req, res) => {
         // Generate unique reference
         const reference = `SH-${userId.toString().slice(-6)}-${Date.now()}`;
 
-        // Save pending transaction
+        // Save pending transaction (amount stored in naira for Flutterwave)
         await Transaction.create({
             userId,
             reference,
-            amount: planConfig.price,
+            amount: planConfig.price / 100,
             plan,
             status: 'pending',
             processed: false
         });
 
-        const secretKey = getEnv('PAYSTACK_SECRET_KEY');
-        const frontendUrl = getEnv('FRONTEND_URL');
-
-        // Call Paystack
-        const response = await axios.post(
-            'https://api.paystack.co/transaction/initialize',
-            {
+        // Flutterwave payment payload
+        const payload = {
+            tx_ref: reference,
+            amount: planConfig.price / 100,
+            currency: 'NGN',
+            redirect_url: `${process.env.FRONTEND_URL}/payment/verify`,
+            customer: {
                 email: user.email,
-                amount: planConfig.price,
-                reference,
-                metadata: {
-                    userId: userId.toString(),
-                    plan,
-                    userName: user.name
-                },
-                callback_url: `${frontendUrl}/payment/verify`
+                name: user.name,
+                phonenumber: user.phoneNumber || ''
             },
-            {
-                headers: {
-                    Authorization: `Bearer ${secretKey}`,
-                    'Content-Type': 'application/json'
-                }
+            customizations: {
+                title: 'StudyHelp',
+                description: `${planConfig.label} Subscription`,
+                logo: `${process.env.FRONTEND_URL}/logo.png`
+            },
+            meta: {
+                userId: userId.toString(),
+                plan
             }
-        );
+        };
+
+        const response = await flw.Payment.initiate(payload);
+
+        if (response.status !== 'success') {
+            throw new Error(response.message || 'Payment initialization failed');
+        }
 
         res.json({
             success: true,
-            authorizationUrl: response.data.data.authorization_url,
+            authorizationUrl: response.data.link,
             reference,
-            amount: planConfig.price,
+            amount: planConfig.price / 100,
             plan: planConfig.label
         });
 
     } catch (err) {
-        console.error('Payment init error:', err.response?.data || err.message);
+        console.error('❌ Payment init error:', err.message);
         res.status(500).json({ error: 'Payment initialization failed' });
     }
 };
@@ -77,13 +84,13 @@ export const initializePayment = async (req, res) => {
 // POST /api/payment/verify
 export const verifyPayment = async (req, res) => {
     try {
-        const { reference } = req.body;
+        const { transaction_id, tx_ref } = req.body;
+        const reference = tx_ref;
 
         if (!reference) {
             return res.status(400).json({ error: 'Reference is required' });
         }
 
-        // Check transaction exists
         const transaction = await Transaction.findOne({ reference });
         if (!transaction) {
             return res.status(404).json({ error: 'Transaction not found' });
@@ -91,30 +98,30 @@ export const verifyPayment = async (req, res) => {
 
         // Prevent double processing
         if (transaction.processed) {
-            return res.json({ success: true, message: 'Already activated', alreadyProcessed: true });
+            return res.json({
+                success: true,
+                message: 'Already activated',
+                alreadyProcessed: true
+            });
         }
 
-        const secretKey = getEnv('PAYSTACK_SECRET_KEY');
+        // Verify with Flutterwave using transaction_id
+        const response = await flw.Transaction.verify({ id: transaction_id });
 
-        // Verify with Paystack
-        const response = await axios.get(
-            `https://api.paystack.co/transaction/verify/${reference}`,
-            {
-                headers: { Authorization: `Bearer ${secretKey}` }
-            }
-        );
-
-        const { status, amount } = response.data.data;
-
-        if (status !== 'success') {
+        if (
+            response.data.status !== 'successful' ||
+            response.data.tx_ref !== reference ||
+            response.data.currency !== 'NGN'
+        ) {
             await Transaction.findOneAndUpdate({ reference }, { status: 'failed' });
-            return res.status(400).json({ error: 'Payment was not successful' });
+            return res.status(400).json({ error: 'Payment verification failed' });
         }
 
         // Verify amount matches plan (prevent tampering)
         const planConfig = PLANS[transaction.plan];
-        if (amount !== planConfig.price) {
-            console.error(`Amount mismatch: expected ${planConfig.price}, got ${amount}`);
+        const expectedAmount = planConfig.price / 100;
+        if (response.data.amount < expectedAmount) {
+            console.error(`Amount mismatch: expected ${expectedAmount}, got ${response.data.amount}`);
             return res.status(400).json({ error: 'Payment amount mismatch' });
         }
 
@@ -128,7 +135,7 @@ export const verifyPayment = async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Payment verify error:', err.response?.data || err.message);
+        console.error('❌ Payment verify error:', err.message);
         res.status(500).json({ error: 'Payment verification failed' });
     }
 };
@@ -136,32 +143,34 @@ export const verifyPayment = async (req, res) => {
 // POST /api/payment/webhook
 export const handleWebhook = async (req, res) => {
     try {
-        const secretKey = getEnv('PAYSTACK_SECRET_KEY');
+        // Verify Flutterwave webhook signature
+        const secretHash = process.env.FLW_SECRET_HASH;
+        const signature = req.headers['verif-hash'];
 
-        // Verify Paystack signature
-        const hash = crypto
-            .createHmac('sha512', secretKey)
-            .update(JSON.stringify(req.body))
-            .digest('hex');
-
-        if (hash !== req.headers['x-paystack-signature']) {
+        if (!signature || signature !== secretHash) {
             return res.status(401).send('Invalid signature');
         }
 
-        const { event, data } = req.body;
+        const rawBody = req.body;
+        const body = Buffer.isBuffer(rawBody) || typeof rawBody === 'string'
+            ? JSON.parse(rawBody.toString())
+            : rawBody;
 
-        if (event === 'charge.success') {
-            const { reference, amount } = data;
+        const { event, data } = body;
+
+        if (event === 'charge.completed' && data.status === 'successful') {
+            const reference = data.tx_ref;
 
             const transaction = await Transaction.findOne({ reference });
             if (!transaction || transaction.processed) {
-                return res.sendStatus(200); // already handled
+                return res.sendStatus(200);
             }
 
             // Verify amount
             const planConfig = PLANS[transaction.plan];
-            if (amount !== planConfig.price) {
-                console.error(`Webhook amount mismatch for ref: ${reference}`);
+            const expectedAmount = planConfig.price / 100;
+            if (data.amount < expectedAmount) {
+                console.error(`Webhook amount mismatch: ${reference}`);
                 return res.sendStatus(200);
             }
 
@@ -171,7 +180,7 @@ export const handleWebhook = async (req, res) => {
 
         res.sendStatus(200);
     } catch (err) {
-        console.error('Webhook error:', err.message);
+        console.error('❌ Webhook error:', err.message);
         res.sendStatus(500);
     }
 };
@@ -182,7 +191,9 @@ export const getPaymentStatus = async (req, res) => {
         .select('subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit flashcardUsageCount flashcardUsageLimit');
 
     const daysLeft = user.subscriptionEnd
-        ? Math.max(0, Math.ceil((new Date(user.subscriptionEnd) - new Date()) / (1000 * 60 * 60 * 24)))
+        ? Math.max(0, Math.ceil(
+            (new Date(user.subscriptionEnd) - new Date()) / (1000 * 60 * 60 * 24)
+        ))
         : 0;
 
     res.json({
