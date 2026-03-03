@@ -326,37 +326,58 @@ export const getCBTResults = async (req, res) => {
 };
 
 export const explainQuestion = async (req, res) => {
-    const { question, correctAnswer, options } = req.body;
-    if (!question || !correctAnswer || !options) {
-        return res.status(400).json({ status: 'error', message: 'Missing fields' });
+    const { question, correctAnswer, options = [] } = req.body;
+    if (!question || !correctAnswer) {
+        return res.status(400).json({ status: 'error', message: 'Missing required fields' });
     }
 
     try {
+        const studentId = req.user._id;
         const qHash = crypto.createHash('sha256')
             .update(`${question}|${correctAnswer}|${options.sort().join(',')}`)
             .digest('hex');
 
+        // 1. Check Cache First (Doesn't cost a credit)
         const cached = await ExplanationCache.findOne({ questionHash: qHash });
         if (cached) return res.status(200).json({ status: 'success', explanation: cached.explanation });
 
+        // 2. Check Plan Limit (Only for new generations)
+        const user = await User.findById(studentId);
+        const plan = user.plan || { aiExplanationsUsed: 0, aiExplanationsAllowed: 5 };
+
+        if (plan.aiExplanationsUsed >= (plan.aiExplanationsAllowed || 5)) {
+            return res.status(403).json({
+                error: 'AI limit reached',
+                message: 'You have used all your AI explanations for this plan. Upgrade for unlimited access!',
+                showUpgrade: true
+            });
+        }
+
+        // 3. Generate New Explanation
         const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
-        const prompt = `Act as an expert tutor. I need a clear, educational explanation for this question.
+
+        const typeDesc = options.length > 0 ? "Multiple Choice" : "Fill-in-the-blank";
+        const optionsText = options.length > 0 ? `Options: ${options.join(', ')}` : "";
+
+        const prompt = `Act as an expert tutor. Provide an educational explanation for this ${typeDesc} question.
         
         Question: ${question}
-        Options: ${options.join(', ')}
+        ${optionsText}
         Correct Answer: ${correctAnswer}
         
-        Instruction: Provide a 3-4 sentence explanation of why "${correctAnswer}" is the correct answer. Focus on the underlying concept and help the student understand the logic or rule behind it. If it involves a calculation, explain the steps briefly.`;
+        Instruction: Briefly explain (in 3-4 sentences) why "${correctAnswer}" is the correct answer. 
+        Focus on the core concept and logic. Help the student understand the principle so they don't make similar mistakes.`;
 
         const response = await aiClient.chatCompletion({
             model: selectedModel.id,
             messages: [{ role: "user", content: prompt }],
-            max_tokens: 150,
+            max_tokens: 250,
             temperature: 0.5,
         });
 
         const explanation = response.choices[0].message.content.trim();
 
+        // 4. Save to Cache
         await ExplanationCache.create({
             questionHash: qHash,
             questionText: question,
@@ -364,10 +385,12 @@ export const explainQuestion = async (req, res) => {
             explanation
         });
 
-        await User.findByIdAndUpdate(req.user._id, { $inc: { 'plan.aiExplanationsUsed': 1 } });
-        res.status(200).json({ status: 'success', explanation });
+        // 5. Increment Usage
+        await User.findByIdAndUpdate(studentId, { $inc: { 'plan.aiExplanationsUsed': 1 } });
+
+        return res.status(200).json({ status: 'success', explanation });
     } catch (error) {
-        res.status(500).json({ error: 'Failed to generate explanation' });
+        console.error('Explanation Error:', error);
+        res.status(500).json({ error: 'Failed to generate explanation', details: error.message });
     }
 };
-

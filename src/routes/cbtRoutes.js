@@ -29,6 +29,6 @@ router.get('/questions', protect, checkCBTAccess, getQuestionsProxy);
 router.post('/results', protect, saveCBTResult);
 router.get('/results', protect, getCBTResults);
 router.get('/results/summary', protect, getCBTResultsSummary);
-router.post('/explain', protect, checkAIAccess, explainQuestion);
+router.post('/explain', protect, explainQuestion);
 
 export default router;
