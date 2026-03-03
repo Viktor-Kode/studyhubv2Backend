@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { PLANS } from '../config/plans.js';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
+import { getEnv } from '../config/env.js';
 
 const flw = new Flutterwave(
     process.env.FLW_PUBLIC_KEY,
@@ -40,12 +41,15 @@ export const initializePayment = async (req, res) => {
             processed: false
         });
 
+        // Determine frontend URL (production-safe default)
+        const frontendUrl = getEnv('FRONTEND_URL', 'https://studyhubv2-self.vercel.app');
+
         // Flutterwave payment payload
         const payload = {
             tx_ref: reference,
             amount: planConfig.price / 100,
             currency: 'NGN',
-            redirect_url: `${process.env.FRONTEND_URL}/payment/verify`,
+            redirect_url: `${frontendUrl}/payment/verify`,
             customer: {
                 email: user.email,
                 name: user.name,
