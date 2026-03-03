@@ -21,10 +21,10 @@ export const getQuestions = async (req, res) => {
 
 export const createQuestion = async (req, res) => {
     try {
-        const question = await Question.create({
-            ...req.body,
-            teacherId: req.user._id
-        });
+        const data = { ...req.body, teacherId: req.user._id };
+        if (data.type === 'multiple-choice') data.type = 'obj';
+
+        const question = await Question.create(data);
         res.status(201).json({ success: true, question });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });
@@ -33,9 +33,12 @@ export const createQuestion = async (req, res) => {
 
 export const updateQuestion = async (req, res) => {
     try {
+        const updates = { ...req.body };
+        if (updates.type === 'multiple-choice') updates.type = 'obj';
+
         const question = await Question.findOneAndUpdate(
             { _id: req.params.id, teacherId: req.user._id },
-            req.body,
+            updates,
             { new: true }
         );
         if (!question) return res.status(404).json({ success: false, message: 'Question not found' });
@@ -81,7 +84,7 @@ export const generateAIQuestions = async (req, res) => {
                 subject,
                 topic,
                 difficulty,
-                type,
+                type: (type === 'multiple-choice') ? 'obj' : type,
                 source: 'AI'
             }))
         );

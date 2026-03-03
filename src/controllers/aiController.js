@@ -187,13 +187,13 @@ export const generateQuiz = async (req, res) => {
 
     const parsedQuestions = JSON.parse(cleanJsonString);
     const formattedQuestions = parsedQuestions.map((q) => ({
-      userId, // Ensure questions are also tagged with userId
-      content: q.question || q.content,
+      teacherId: userId,
+      question: q.question || q.content,
       options: q.options || [],
-      answer: q.answer,
+      correctAnswer: q.answer,
       knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || "No deep-dive available.",
       subject: subject || "General Study",
-      type: questionType
+      type: questionType === 'multiple-choice' ? 'obj' : questionType
     }));
 
     const savedQuestions = await Question.insertMany(formattedQuestions);
@@ -392,16 +392,16 @@ export const generateQuestionsFromPDF = async (req, res) => {
 
     // 4. Format and Save to DB
     const formattedQuestions = parsedQuestions.map((q) => ({
-      userId,
-      content: q.question || q.content,
+      teacherId: userId,
+      question: q.question || q.content,
       options: q.options || [],
-      answer: q.answer,
+      correctAnswer: q.answer,
       knowledgeDeepDive: q.knowledgeDeepDive || q.explanation || "No deep-dive available.",
       subject: subject || "General Study",
       difficulty: difficulty,
-      type: q.type || questionType,
-      marks: parseInt(marksPerQuestion) || 1,
-      assessmentType: assessmentType
+      type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType),
+      totalMarks: parseInt(marksPerQuestion) || 1,
+      source: 'AI'
     }));
 
     const savedQuestions = await Question.insertMany(formattedQuestions);

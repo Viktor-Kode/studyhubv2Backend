@@ -23,14 +23,14 @@ const questionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['MCQ', 'theory', 'fill-blank', 'mixed'],
+    enum: ['obj', 'theory', 'fill-blank', 'mixed'],
     required: true
   },
   question: {
     type: String,
     required: true
   },
-  options: [String], // for MCQ
+  options: [String], // for objective questions
   correctAnswer: String,
   modelAnswer: String,
   workingSolution: String,

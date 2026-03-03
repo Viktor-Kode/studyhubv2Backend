@@ -81,7 +81,7 @@ export const generateQuestionsFromResource = async (req, res) => {
         const resource = await Resource.findById(req.params.id);
         if (!resource) return res.status(404).json({ success: false, message: 'Resource not found' });
 
-        const prompt = `Based on the following text, generate 5 MCQ questions. 
+        const prompt = `Based on the following text, generate 5 objective questions. 
     Text: ${resource.extractedText.substring(0, 4000)}
     Return JSON array: [{ question, options, correctAnswer, totalMarks }]`;
 
@@ -98,7 +98,7 @@ export const generateQuestionsFromResource = async (req, res) => {
                 teacherId: req.user._id,
                 classId: resource.classId,
                 subject: 'Extracted',
-                type: 'MCQ',
+                type: 'obj',
                 source: 'AI'
             }))
         );
