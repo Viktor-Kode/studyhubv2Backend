@@ -1,3 +1,4 @@
+import axios from 'axios';
 import Flutterwave from 'flutterwave-node-v3';
 import crypto from 'crypto';
 import { PLANS } from '../config/plans.js';
@@ -61,15 +62,25 @@ export const initializePayment = async (req, res) => {
             }
         };
 
-        const response = await flw.Payment.initiate(payload);
+        // Use Flutterwave REST API to create a hosted payment
+        const response = await axios.post(
+            'https://api.flutterwave.com/v3/payments',
+            payload,
+            {
+                headers: {
+                    Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
 
-        if (response.status !== 'success') {
-            throw new Error(response.message || 'Payment initialization failed');
+        if (response.data.status !== 'success') {
+            throw new Error(response.data.message || 'Payment initialization failed');
         }
 
         res.json({
             success: true,
-            authorizationUrl: response.data.link,
+            authorizationUrl: response.data.data.link,
             reference,
             amount: planConfig.price / 100,
             plan: planConfig.label
