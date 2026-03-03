@@ -58,5 +58,66 @@ router.post('/fix-subscription', async (req, res) => {
     }
 });
 
+// POST /api/admin/migrate-subscriptions
+router.post('/migrate-subscriptions', async (req, res) => {
+    const { secretKey } = req.body;
+
+    if (secretKey !== process.env.ADMIN_SECRET_KEY) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const users = await User.find({
+        'plan.type': { $exists: true }
+    });
+
+    console.log(`Found ${users.length} users with old schema`);
+    let migrated = 0;
+
+    for (const user of users) {
+        const oldPlan = user.plan?.type;
+        const oldExpiry = user.plan?.expiresAt;
+
+        if (!oldPlan || oldPlan === 'free') continue;
+
+        const planMap: Record<string, string> = {
+            starter: 'weekly',
+            growth: 'monthly',
+            premium: 'monthly',
+            weekly: 'weekly',
+            monthly: 'monthly'
+        };
+
+        const newPlan = planMap[oldPlan] || 'monthly';
+        const planConfig = PLANS[newPlan];
+
+        const now = new Date();
+        const end = oldExpiry && new Date(oldExpiry) > now
+            ? new Date(oldExpiry)
+            : new Date(now.getTime() + planConfig.durationDays * 24 * 60 * 60 * 1000);
+
+        await User.findByIdAndUpdate(user._id, {
+            $set: {
+                subscriptionStatus: 'active',
+                subscriptionPlan: newPlan,
+                subscriptionStart: user.plan?.createdAt || new Date(),
+                subscriptionEnd: end,
+                aiUsageCount: user.plan?.aiExplanationsUsed || 0,
+                aiUsageLimit: planConfig.aiLimit,
+                flashcardUsageCount: 0,
+                flashcardUsageLimit: planConfig.flashcardLimit
+            }
+        });
+
+        migrated++;
+    }
+
+    res.json({
+        success: true,
+        total: users.length,
+        migrated,
+        message: `✅ Migrated ${migrated} users to new subscription schema`
+    });
+});
+
 export default router;
 

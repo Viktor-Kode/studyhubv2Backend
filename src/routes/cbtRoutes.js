@@ -9,7 +9,7 @@ import {
     explainQuestion,
 } from '../controllers/cbtController.js';
 import { protect } from '../middleware/authMiddleware.js';
-import { checkCBTAccess } from '../middleware/planMiddleware.js';
+import { checkCBTAccess } from '../middleware/cbtMiddleware.js';
 import { checkAIUsage } from '../middleware/usageMiddleware.js';
 
 const router = express.Router();

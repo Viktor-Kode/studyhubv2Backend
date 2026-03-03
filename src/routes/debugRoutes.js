@@ -62,6 +62,33 @@ router.get('/user-subscription', protect, async (req, res) => {
     });
 });
 
+// GET /api/debug/cbt-access
+router.get('/cbt-access', protect, async (req, res) => {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+        userId: user._id,
+        email: user.email,
+        subscriptionStatus: user.subscriptionStatus,
+        subscriptionPlan: user.subscriptionPlan,
+        subscriptionEnd: user.subscriptionEnd,
+        plan: user.plan,
+        planType: user.plan?.type,
+        isActive: user.subscriptionStatus === 'active' &&
+            user.subscriptionEnd &&
+            new Date(user.subscriptionEnd) > new Date(),
+        subscriptionEndInFuture: user.subscriptionEnd
+            ? new Date(user.subscriptionEnd) > new Date()
+            : false,
+        now: new Date(),
+        rawUser: user.toObject()
+    });
+});
+
 
 export default router;
 
