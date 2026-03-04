@@ -220,14 +220,30 @@ export const getQuestionsProxy = async (req, res) => {
                 q.answer_explanation || q.knowledge_deep_dive ||
                 q.knowledgeDeepDive || q.modelAnswer || q.reason || null;
 
+            // Preserve all possible image fields from ALOC for diagrams
+            const image =
+                q.image ||
+                q.diagram ||
+                q.img ||
+                q.image_url ||
+                q.questionImage ||
+                null;
+
             return {
                 updateOne: {
                     filter: { subject: subjectSlug, examType: qType, year: qYear, questionNumber: q.id || i + 1 },
                     update: {
                         $setOnInsert: {
-                            subject: subjectSlug, examType: qType, year: qYear, questionNumber: q.id || i + 1,
-                            questionText: q.question, options: opts, correctAnswer: q.answer,
-                            explanation: explanation, source: 'API'
+                            subject: subjectSlug,
+                            examType: qType,
+                            year: qYear,
+                            questionNumber: q.id || i + 1,
+                            questionText: q.question,
+                            options: opts,
+                            correctAnswer: q.answer,
+                            explanation: explanation,
+                            image,
+                            source: 'API'
                         }
                     },
                     upsert: true

@@ -22,6 +22,7 @@ import paymentRoutes from './routes/paymentRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import noteRoutes from './routes/noteRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 
@@ -125,6 +126,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/notes', noteRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {
