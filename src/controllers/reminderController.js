@@ -1,5 +1,5 @@
 import Reminder from '../models/Reminder.js';
-import { sendWhatsApp } from '../services/yCloudService.js';
+import { sendMessage } from '../services/termiiService.js';
 
 export const getReminders = async (req, res) => {
     try {
@@ -53,8 +53,8 @@ export const sendWhatsAppNotification = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Phone number and message are required' });
         }
 
-        const yCloudRes = await sendWhatsApp(phoneNumber, message);
-        res.status(200).json({ success: true, data: yCloudRes });
+        const result = await sendMessage(phoneNumber, message);
+        res.status(200).json({ success: true, data: result });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

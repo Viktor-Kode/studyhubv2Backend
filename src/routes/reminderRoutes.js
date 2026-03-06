@@ -22,7 +22,7 @@ router.route('/:id')
 
 router.post('/whatsapp', sendWhatsAppNotification);
 import User from '../models/User.js';
-import { sendWhatsApp } from '../services/yCloudService.js';
+import { sendMessage } from '../services/termiiService.js';
 
 router.get('/test-whatsapp', async (req, res) => {
     try {
@@ -32,10 +32,10 @@ router.get('/test-whatsapp', async (req, res) => {
         }
 
         const phone = user.phone || user.phoneNumber;
-        const result = await sendWhatsApp(phone, '✅ StudyHelp WhatsApp test message! Your notifications are working.');
+        const result = await sendMessage(phone, 'StudyHelp test message! Your notifications are working.');
 
         if (result.success) {
-            return res.json({ success: true, sid: result.messageId, method: result.method || 'WhatsApp' });
+            return res.json({ success: true, sid: result.data?.message_id, method: result.channel || 'whatsapp' });
         }
         res.json({ success: false, error: result.error });
     } catch (err) {
