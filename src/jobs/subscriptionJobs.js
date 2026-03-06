@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import User from '../models/User.js';
-import { sendPlanExpiryWarning } from '../services/yCloudService.js';
+import { sendPlanExpiryWarning } from '../services/termiiService.js';
 
 // Runs every day at midnight Nigeria time
 cron.schedule('0 0 * * *', async () => {
