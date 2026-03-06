@@ -180,7 +180,8 @@ export const getQuestionsProxy = async (req, res) => {
                             answer: q.correctAnswer,
                             solution: q.explanation,
                             examType: q.examType,
-                            year: q.year
+                            year: q.year,
+                            image: q.image || null
                         }))
                     });
                 }
@@ -209,6 +210,11 @@ export const getQuestionsProxy = async (req, res) => {
             });
         }
 
+        // Log raw ALOC question for debugging image field names
+        if (finalData.data && finalData.data[0]) {
+            console.log('[ALOC] Sample question raw data:', JSON.stringify(finalData.data[0], null, 2));
+        }
+
         // 3. Cache and serve
         const ops = finalData.data.map((q, i) => {
             const opts = q.option ? Object.values(q.option).filter(v => v !== null && v !== undefined) : [];
@@ -226,7 +232,11 @@ export const getQuestionsProxy = async (req, res) => {
                 q.diagram ||
                 q.img ||
                 q.image_url ||
+                q.imageUrl ||
                 q.questionImage ||
+                q.picture ||
+                q.figure ||
+                q.image_link ||
                 null;
 
             return {
