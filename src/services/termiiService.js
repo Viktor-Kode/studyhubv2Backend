@@ -58,22 +58,22 @@ const sendWhatsApp = async (phone, message) => {
   }
 };
 
-// Send via SMS fallback (dnd for transactional reliability in Nigeria)
+// Send via SMS fallback (generic + talert — no sender ID registration needed)
 const sendSMS = async (phone, message) => {
   try {
     const response = await axios.post(`${BASE_URL}/sms/send`, {
       api_key: TERMII_API_KEY,
       to: phone,
-      from: SENDER_ID,
+      from: 'talert',
       sms: message,
       type: 'plain',
-      channel: 'dnd',
+      channel: 'generic',
     });
 
     console.log('[Termii] SMS sent:', response.data);
     return { success: true, channel: 'sms', data: response.data };
   } catch (err) {
-    console.error('[Termii] SMS error:', err.response?.data || err.message);
+    console.error('[Termii] SMS error:', JSON.stringify(err.response?.data));
     return { success: false, error: err.response?.data };
   }
 };
