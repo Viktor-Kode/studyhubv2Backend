@@ -6,14 +6,18 @@ import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
 import { getEnv } from '../config/env.js';
 
-const flw = new Flutterwave(
-    process.env.FLW_PUBLIC_KEY,
-    process.env.FLW_SECRET_KEY
-);
+// Lazy init: only create Flutterwave instance when keys exist (avoids CI crash on load)
+let flw = null;
+if (process.env.FLW_PUBLIC_KEY && process.env.FLW_SECRET_KEY) {
+    flw = new Flutterwave(process.env.FLW_PUBLIC_KEY, process.env.FLW_SECRET_KEY);
+}
 
 // POST /api/payment/initialize
 export const initializePayment = async (req, res) => {
     try {
+        if (!process.env.FLW_PUBLIC_KEY || !process.env.FLW_SECRET_KEY) {
+            return res.status(503).json({ error: 'Payment service not configured' });
+        }
         const { plan } = req.body;
         const userId = req.user.id;
 
@@ -118,6 +122,10 @@ export const verifyPayment = async (req, res) => {
                 message: 'Already activated',
                 alreadyProcessed: true
             });
+        }
+
+        if (!flw) {
+            return res.status(503).json({ error: 'Payment service not configured' });
         }
 
         // Verify with Flutterwave using transaction_id
