@@ -661,9 +661,7 @@ export const saveStudySession = async (req, res) => {
     }
 };
 
-
 import FlashcardProgress from '../models/FlashcardProgress.js';
-import { updateStreak } from '../utils/streakUtils.js';
 
 export const updateFlashcardProgress = async (req, res) => {
     try {

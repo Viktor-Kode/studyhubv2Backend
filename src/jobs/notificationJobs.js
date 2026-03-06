@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import User from '../models/User.js';
 import Streak from '../models/Streak.js';
-import { sendStreakReminder, sendGoalReminder, sendPlanExpiryWarning } from '../services/yCloudService.js';
+import { sendStreakReminder, sendGoalReminder, sendPlanExpiryWarning } from '../services/termiiService.js';
 
 let jobsRegistered = false;
 
