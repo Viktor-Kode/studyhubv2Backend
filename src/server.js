@@ -4,6 +4,7 @@ import connectDB from './config/db.js';
 import mongoose from 'mongoose';
 import { registerNotificationJobs } from './jobs/notificationJobs.js';
 import './jobs/subscriptionJobs.js';
+import './jobs/streakJobs.js';
 
 // Connect to Database
 connectDB().then(() => {

@@ -123,18 +123,12 @@ export const getDashboardSummary = async (req, res) => {
             topSubject = sorted[0].subject;
         }
 
-        let currentStreak = streakData?.currentStreak || 0;
-        if (streakData && streakData.lastStudiedDate) {
-            const todayDate = new Date();
-            todayDate.setHours(0, 0, 0, 0);
-            const lastStudied = new Date(streakData.lastStudiedDate);
-            lastStudied.setHours(0, 0, 0, 0);
-            const diffDays = Math.round((todayDate - lastStudied) / (1000 * 60 * 60 * 24));
-            // If they missed yesterday entirely, their streak breaks
-            if (diffDays > 1) {
-                currentStreak = 0;
-            }
-        }
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+        const lastDate = streakData?.lastActivityDate
+            ? new Date(streakData.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
+            : (streakData?.lastStudiedDate ? new Date(streakData.lastStudiedDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' }) : null);
+        const currentStreak = streakData?.currentStreak || 0;
+        const studiedToday = lastDate === todayStr;
 
         res.json({
             success: true,
@@ -171,7 +165,8 @@ export const getDashboardSummary = async (req, res) => {
                 streak: {
                     current: currentStreak,
                     longest: streakData?.longestStreak || 0,
-                    lastStudied: streakData?.lastStudiedDate || null
+                    lastStudied: streakData?.lastActivityDate || streakData?.lastStudiedDate || null,
+                    studiedToday
                 },
                 goals
             }

@@ -3,7 +3,7 @@ import UserStats from '../models/UserStats.js';
 import FlashCard from '../models/FlashCard.js';
 import Question from '../models/Question.js';
 import mongoose from 'mongoose';
-import { updateStreak } from '../utils/streakUtils.js';
+import { updateStreak } from '../services/streakService.js';
 
 /**
  * Log a new study session
@@ -35,10 +35,24 @@ export const createSession = async (req, res) => {
         let goalCompleted = false;
         let goalTitle = '';
 
-        // Update UserStats streak and totals if it's a study session
-        if (type === 'study' || !type) {
-            await updateStreak(userId, 'study');
+        // Update UserStats streak and totals if it's a study session (min 1 min to count)
+        let streakData = null;
+        if ((type === 'study' || !type) && parseInt(duration) >= 1) {
+            const streak = await updateStreak(userId, 'timer');
+            if (streak) {
+                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+                const lastDate = streak.lastActivityDate
+                    ? new Date(streak.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
+                    : null;
+                streakData = {
+                    current: streak.currentStreak || 0,
+                    longest: streak.longestStreak || 0,
+                    studiedToday: lastDate === today
+                };
+            }
+        }
 
+        if ((type === 'study' || !type)) {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
@@ -72,7 +86,8 @@ export const createSession = async (req, res) => {
             success: true,
             data: session,
             goalCompleted,
-            goalTitle
+            goalTitle,
+            streak: streakData
         });
     } catch (error) {
         console.error('Error logging study session:', error);

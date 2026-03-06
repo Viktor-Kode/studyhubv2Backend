@@ -8,6 +8,7 @@ import { AI_PROVIDERS, getModelById, MODEL_REGISTRY } from '../config/aiConfig.j
 import crypto from 'crypto';
 import { createRequire } from 'module';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
+import { updateStreak } from '../services/streakService.js';
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
 
@@ -39,12 +40,17 @@ export const generateNotes = async (req, res) => {
     console.log("✅ AI Response received successfully.");
     const notes = response.choices[0].message.content;
 
-    // Count this as one AI usage
     await incrementAIUsage(req.user._id);
+    const streak = await updateStreak(req.user._id, 'question_generator');
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+    const lastDate = streak?.lastActivityDate
+      ? new Date(streak.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
+      : null;
 
     return res.status(200).json({
       success: true,
-      notes: notes
+      notes: notes,
+      streak: streak ? { current: streak.currentStreak || 0, longest: streak.longestStreak || 0, studiedToday: lastDate === today } : null
     });
 
   } catch (error) {
@@ -248,14 +254,19 @@ export const generateQuiz = async (req, res) => {
       });
     }
 
-    // Count this as one AI usage
     await incrementAIUsage(req.user._id);
+    const streak = await updateStreak(req.user._id, 'question_generator');
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+    const lastDate = streak?.lastActivityDate
+      ? new Date(streak.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
+      : null;
 
     return res.status(201).json({
       success: true,
       isDuplicate: false,
       sessionId: session._id,
-      data: savedQuestions
+      data: savedQuestions,
+      streak: streak ? { current: streak.currentStreak || 0, longest: streak.longestStreak || 0, studiedToday: lastDate === today } : null
     });
 
   } catch (error) {
@@ -330,10 +341,18 @@ export const chatWithTutor = async (req, res) => {
     });
     const reply = response.choices[0].message.content;
 
-    // Count this as one AI usage
     await incrementAIUsage(req.user._id);
+    const streak = await updateStreak(req.user._id, 'question_generator');
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+    const lastDate = streak?.lastActivityDate
+      ? new Date(streak.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
+      : null;
 
-    return res.status(200).json({ success: true, reply });
+    return res.status(200).json({
+      success: true,
+      reply,
+      streak: streak ? { current: streak.currentStreak || 0, longest: streak.longestStreak || 0, studiedToday: lastDate === today } : null
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message || "Tutor offline" });
   }

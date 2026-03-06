@@ -6,6 +6,7 @@ import { flashCardPrompt } from '../utils/prompts.js';
 import { getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import mongoose from 'mongoose';
 import { incrementFlashcardUsage } from '../middleware/usageMiddleware.js';
+import { updateStreak } from '../services/streakService.js';
 
 // Create a new flashcard
 export const createFlashCard = async (req, res) => {
@@ -281,11 +282,20 @@ export const reviewCard = async (req, res) => {
         progress.lastReviewed = new Date();
 
         await progress.save();
-        await updateStreak(studentId, 'flashcard');
+        const streak = await updateStreak(studentId, 'flashcard');
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
+        const lastDate = streak?.lastActivityDate
+            ? new Date(streak.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
+            : null;
 
         res.json({
             success: true,
             status: progress.status,
+            streak: streak ? {
+                current: streak.currentStreak || 0,
+                longest: streak.longestStreak || 0,
+                studiedToday: lastDate === today
+            } : null,
             nextReview: progress.nextReviewDate,
             intervalDays: progress.intervalDays,
             correctStreak: progress.correctStreak
