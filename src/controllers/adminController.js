@@ -36,19 +36,6 @@ export const getAdminStats = async (req, res) => {
         const weekAgo = weekStart();
         const monthAgo = monthStart();
 
-        // Test key queries individually for debugging
-        const totalUsers = await User.countDocuments();
-        console.log('[Admin] Total users:', totalUsers);
-
-        const totalCBT = await CBTResult.countDocuments();
-        console.log('[Admin] Total CBT:', totalCBT);
-
-        const revenueAgg = await Transaction.aggregate([
-            { $match: { status: 'success' } },
-            { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]);
-        console.log('[Admin] Revenue:', revenueAgg);
-
         const [
             userCounts,
             activeSubs,
@@ -118,6 +105,7 @@ export const getAdminStats = async (req, res) => {
 
         const weeklyCount = planCounts.find(p => p._id === 'weekly')?.count || 0;
         const monthlyCount = planCounts.find(p => p._id === 'monthly')?.count || 0;
+        console.log('[Admin] userCounts:', userCounts, 'cbt:', cbtStats, 'revenue:', revenueData);
         const totalUsers = Math.max(userCounts, 1);
         const conversionRate = ((activeSubs / totalUsers) * 100).toFixed(1);
 
