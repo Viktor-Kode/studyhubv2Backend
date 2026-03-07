@@ -35,11 +35,12 @@ export const initializePayment = async (req, res) => {
         // Generate unique reference
         const reference = `SH-${userId.toString().slice(-6)}-${Date.now()}`;
 
-        // Save pending transaction (amount stored in naira for Flutterwave)
+        // Save pending transaction (amount in naira for Flutterwave)
+        const amountNaira = planConfig.amount ?? planConfig.price / 100;
         await Transaction.create({
             userId,
             reference,
-            amount: planConfig.price / 100,
+            amount: amountNaira,
             plan,
             status: 'pending',
             processed: false
@@ -48,10 +49,10 @@ export const initializePayment = async (req, res) => {
         // Determine frontend URL (production-safe default)
         const frontendUrl = getEnv('FRONTEND_URL', 'https://studyhubv2-self.vercel.app');
 
-        // Flutterwave payment payload
+        // Flutterwave payment payload (amount in naira)
         const payload = {
             tx_ref: reference,
-            amount: planConfig.price / 100,
+            amount: amountNaira,
             currency: 'NGN',
             redirect_url: `${frontendUrl}/payment/verify`,
             customer: {
@@ -62,7 +63,7 @@ export const initializePayment = async (req, res) => {
             customizations: {
                 title: 'StudyHelp',
                 description: `${planConfig.label} Subscription`,
-                logo: `${process.env.FRONTEND_URL}/logo.png`
+                logo: `${frontendUrl}/icons/icon-192x192.png`
             },
             meta: {
                 userId: userId.toString(),
@@ -90,7 +91,7 @@ export const initializePayment = async (req, res) => {
             success: true,
             authorizationUrl: response.data.data.link,
             reference,
-            amount: planConfig.price / 100,
+            amount: amountNaira,
             plan: planConfig.label
         });
 
@@ -140,9 +141,9 @@ export const verifyPayment = async (req, res) => {
             return res.status(400).json({ error: 'Payment verification failed' });
         }
 
-        // Verify amount matches plan (prevent tampering)
+        // Verify amount matches plan (anti-fraud)
         const planConfig = PLANS[transaction.plan];
-        const expectedAmount = planConfig.price / 100;
+        const expectedAmount = planConfig.amount ?? planConfig.price / 100;
         if (response.data.amount < expectedAmount) {
             console.error(`Amount mismatch: expected ${expectedAmount}, got ${response.data.amount}`);
             return res.status(400).json({ error: 'Payment amount mismatch' });
@@ -189,9 +190,9 @@ export const handleWebhook = async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // Verify amount
+            // Verify amount (anti-fraud)
             const planConfig = PLANS[transaction.plan];
-            const expectedAmount = planConfig.price / 100;
+            const expectedAmount = planConfig.amount ?? planConfig.price / 100;
             if (data.amount < expectedAmount) {
                 console.error(`Webhook amount mismatch: ${reference}`);
                 return res.sendStatus(200);
@@ -204,7 +205,7 @@ export const handleWebhook = async (req, res) => {
         res.sendStatus(200);
     } catch (err) {
         console.error('❌ Webhook error:', err.message);
-        res.sendStatus(500);
+        res.sendStatus(200); // Always 200 so Flutterwave doesn't retry
     }
 };
 
@@ -253,42 +254,42 @@ const activateSubscription = async (userId, plan, reference) => {
             end: user.subscriptionEnd
         });
 
-        let updateFields = {};
-
         if (plan === 'addon') {
-            updateFields = {
+            // Add-on: only add AI credits, no time extension
+            await User.findByIdAndUpdate(userId, {
                 $inc: { aiUsageLimit: planConfig.aiLimit }
-            };
+            });
+            console.log(`[Activation] ✅ Add-on: +${planConfig.aiLimit} AI credits for user ${userId}`);
         } else {
+            // Weekly/Monthly: activate or stack time
             const isAlreadyActive =
                 user.subscriptionStatus === 'active' &&
                 user.subscriptionEnd &&
                 new Date(user.subscriptionEnd) > now;
 
-            const startFrom = isAlreadyActive
-                ? new Date(user.subscriptionEnd)
-                : now;
-
+            const startFrom = isAlreadyActive ? new Date(user.subscriptionEnd) : now;
             const newEnd = new Date(startFrom);
             newEnd.setDate(newEnd.getDate() + planConfig.durationDays);
 
-            updateFields = {
-                subscriptionStatus: 'active',
-                subscriptionPlan: plan,
-                subscriptionStart: isAlreadyActive ? user.subscriptionStart : now,
-                subscriptionEnd: newEnd,
-                aiUsageCount: 0,
-                aiUsageLimit: planConfig.aiLimit,
-                flashcardUsageCount: 0,
-                flashcardUsageLimit: planConfig.flashcardLimit
-            };
+            console.log(`[Activation] Plan: ${plan}, duration: ${planConfig.durationDays}d`);
+            console.log(`[Activation] Start: ${startFrom.toISOString()}, End: ${newEnd.toISOString()}`);
+
+            await User.findByIdAndUpdate(userId, {
+                $set: {
+                    subscriptionStatus: 'active',
+                    subscriptionPlan: plan,
+                    subscriptionStart: isAlreadyActive ? user.subscriptionStart : now,
+                    subscriptionEnd: newEnd,
+                    aiUsageCount: 0,
+                    aiUsageLimit: planConfig.aiLimit,
+                    flashcardUsageCount: 0,
+                    flashcardUsageLimit: planConfig.flashcardLimit
+                }
+            });
+            console.log(`[Activation] ✅ ${plan} activated until ${newEnd.toISOString()}`);
         }
 
-        const updated = await User.findByIdAndUpdate(
-            userId,
-            { $set: updateFields },
-            { new: true }
-        );
+        const updated = await User.findById(userId);
 
         console.log('✅ User after activation:', {
             status: updated.subscriptionStatus,
@@ -299,7 +300,7 @@ const activateSubscription = async (userId, plan, reference) => {
 
         await Transaction.findOneAndUpdate(
             { reference },
-            { $set: { status: 'success', processed: true } }
+            { $set: { status: 'success', processed: true, processedAt: new Date() } }
         );
 
         console.log(`✅ Transaction marked processed: ${reference}`);
