@@ -1,8 +1,21 @@
 import express from 'express';
 import User from '../models/User.js';
 import { PLANS } from '../config/plans.js';
+import { protect, restrictTo } from '../middleware/authMiddleware.js';
+import {
+    getAdminStats,
+    getAdminUsers,
+    grantPlan,
+    deleteUser
+} from '../controllers/adminController.js';
 
 const router = express.Router();
+
+// Dashboard routes — require Firebase auth + admin role
+router.get('/stats', protect, restrictTo('admin'), getAdminStats);
+router.get('/users', protect, restrictTo('admin'), getAdminUsers);
+router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);
+router.delete('/users/:id', protect, restrictTo('admin'), deleteUser);
 
 // POST /api/admin/fix-subscription
 router.post('/fix-subscription', async (req, res) => {

@@ -63,6 +63,13 @@ export const protect = async (req, res, next) => {
             }
         }
 
+        // Sync Firebase admin claim to MongoDB if present
+        if (decodedToken.admin === true && currentUser.role !== 'admin') {
+            currentUser.role = 'admin';
+            await currentUser.save({ validateBeforeSave: false });
+            console.log(`[AUTH] Synced admin claim to MongoDB for ${currentUser.email}`);
+        }
+
         // GRANT ACCESS TO PROTECTED ROUTE
         req.user = currentUser;
         next();
