@@ -81,14 +81,14 @@ export const protect = async (req, res, next) => {
 
 export const restrictTo = (...roles) => {
     return (req, res, next) => {
-        // roles ['teacher', 'student']. role='student'
-        if (!roles.includes(req.user.role)) {
+        const userRole = req.user?.role;
+        if (!roles.includes(userRole)) {
+            console.log(`[AUTH] 403 - Access denied for ${req.user?.email}, role=${userRole}, required=${roles.join(',')}`);
             return res.status(403).json({
                 status: 'fail',
                 message: 'You do not have permission to perform this action'
             });
         }
-
         next();
     };
 };

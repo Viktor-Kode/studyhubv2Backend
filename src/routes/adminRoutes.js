@@ -1,7 +1,10 @@
 import express from 'express';
 import User from '../models/User.js';
+import CBTResult from '../models/CBTResult.js';
+import Transaction from '../models/Transaction.js';
 import { PLANS } from '../config/plans.js';
 import { protect, restrictTo } from '../middleware/authMiddleware.js';
+import { adminAuth } from '../config/firebase-admin.js';
 import {
     getAdminStats,
     getAdminUsers,
@@ -10,6 +13,41 @@ import {
 } from '../controllers/adminController.js';
 
 const router = express.Router();
+
+// ─── Debug endpoints (no auth, temporary for debugging) ──────────────────────
+router.get('/ping', (req, res) => {
+    res.json({ success: true, message: 'Admin routes working' });
+});
+
+router.get('/debug-counts', async (req, res) => {
+    try {
+        const counts = {
+            users: await User.countDocuments(),
+            cbt: await CBTResult.countDocuments(),
+            transactions: await Transaction.countDocuments(),
+        };
+        console.log('[Admin Debug] Counts:', counts);
+        res.json({ success: true, counts });
+    } catch (err) {
+        console.error('[Admin Debug] Counts error:', err.message);
+        res.json({ success: false, error: err.message });
+    }
+});
+
+router.get('/check-claim/:email', async (req, res) => {
+    try {
+        const email = decodeURIComponent(req.params.email);
+        const fbUser = await adminAuth.getUserByEmail(email);
+        res.json({
+            uid: fbUser.uid,
+            customClaims: fbUser.customClaims || {},
+            email: fbUser.email,
+        });
+    } catch (err) {
+        console.error('[Admin Debug] Check claim error:', err.message);
+        res.json({ error: err.message });
+    }
+});
 
 // Dashboard routes — require Firebase auth + admin role
 router.get('/stats', protect, restrictTo('admin'), getAdminStats);

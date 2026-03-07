@@ -30,9 +30,24 @@ const monthStart = () => {
 
 export const getAdminStats = async (req, res) => {
     try {
+        console.log('[Admin] Stats requested by:', req.user?.email || req.user?._id);
+
         const today = todayStart();
         const weekAgo = weekStart();
         const monthAgo = monthStart();
+
+        // Test key queries individually for debugging
+        const totalUsers = await User.countDocuments();
+        console.log('[Admin] Total users:', totalUsers);
+
+        const totalCBT = await CBTResult.countDocuments();
+        console.log('[Admin] Total CBT:', totalCBT);
+
+        const revenueAgg = await Transaction.aggregate([
+            { $match: { status: 'success' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+        console.log('[Admin] Revenue:', revenueAgg);
 
         const [
             userCounts,
@@ -159,9 +174,11 @@ export const getAdminStats = async (req, res) => {
             }))
         };
 
+        console.log('[Admin] Stats built successfully');
         res.json({ success: true, stats });
     } catch (err) {
-        console.error('[Admin] getAdminStats error:', err);
+        console.error('[Admin] getAdminStats error:', err.message);
+        console.error('[Admin] Stack:', err.stack);
         res.status(500).json({ success: false, error: err.message });
     }
 };
