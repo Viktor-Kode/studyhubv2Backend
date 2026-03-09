@@ -80,6 +80,21 @@ const userSchema = new mongoose.Schema({
     flashcardUsageCount: { type: Number, default: 0 },
     flashcardUsageLimit: { type: Number, default: 3 },
 
+    // ─── Teacher Plan & Usage ───────────────────────────────────────────────
+    teacherPlan: { type: String, enum: ['free', 'weekly', 'monthly'], default: 'free' },
+    teacherPlanEnd: { type: Date, default: null },
+    teacherUsage: {
+        question_generator: { type: Number, default: 0 },
+        lesson_note: { type: Number, default: 0 },
+        result_compiler: { type: Number, default: 0 },
+        report_card: { type: Number, default: 0 },
+        scheme_of_work: { type: Number, default: 0 },
+        marking_scheme: { type: Number, default: 0 },
+        differentiated: { type: Number, default: 0 },
+        comprehension: { type: Number, default: 0 },
+        class_record: { type: Number, default: 0 }
+    },
+
     lastSeen: { type: Date, default: null }
 
 }, { timestamps: true });

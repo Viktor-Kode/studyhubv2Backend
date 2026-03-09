@@ -1,6 +1,7 @@
 import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
 import { uploadMiddleware } from '../config/multer.js';
+import { checkTeacherUsage } from '../middleware/teacherUsageMiddleware.js';
 import {
     generateQuestions,
     getQuestionSets,
@@ -14,7 +15,7 @@ const router = express.Router();
 
 router.use(protect);
 
-router.post('/generate', uploadMiddleware.single('document'), generateQuestions);
+router.post('/generate', uploadMiddleware.single('document'), checkTeacherUsage('question_generator'), generateQuestions);
 router.get('/question-sets', getQuestionSets);
 router.get('/question-sets/:id', getQuestionSet);
 router.put('/question-sets/:id', updateQuestionSet);

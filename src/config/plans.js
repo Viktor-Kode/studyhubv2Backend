@@ -84,3 +84,31 @@ export const PLANS = {
         ]
     }
 };
+
+// ─── Teacher Plans (separate from student plans) ─────────────────────────────
+export const TEACHER_PLANS = {
+    free: {
+        name: 'Teacher Free',
+        usagePerFeature: 3,
+        features: ['question_generator', 'lesson_note', 'result_compiler',
+            'report_card', 'scheme_of_work', 'marking_scheme',
+            'differentiated', 'comprehension', 'class_record']
+    },
+    weekly: {
+        name: 'Teacher Weekly',
+        price: 1500,
+        amount: 1500,
+        durationDays: 7,
+        usagePerFeature: 999,
+        label: '₦1,500 / week'
+    },
+    monthly: {
+        name: 'Teacher Monthly',
+        price: 3500,
+        amount: 3500,
+        durationDays: 30,
+        usagePerFeature: 999,
+        label: '₦3,500 / month',
+        badge: 'Best Value'
+    }
+};

@@ -124,4 +124,17 @@ async function handleHFRequest(model, messages, max_tokens, temperature, config)
     }
 }
 
+/**
+ * Simple callAI helper for teacher tools and other single-prompt flows
+ */
+export const callAI = async (prompt, maxTokens = 2000) => {
+    const response = await aiClient.chatCompletion({
+        model: "deepseek-chat",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.7,
+    });
+    return response.choices?.[0]?.message?.content || "";
+};
+
 export default aiClient;
