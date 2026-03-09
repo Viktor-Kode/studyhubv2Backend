@@ -3,13 +3,13 @@ import fs from 'fs';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+const { pdf } = require('pdf-parse');
 
 export const parseFile = async (filePath, mimetype) => {
     try {
         if (mimetype === 'application/pdf') {
             const buffer = fs.readFileSync(filePath);
-            const data = await pdfParse(buffer);
+            const data = await pdf(buffer);
             return data.text;
         }
 
