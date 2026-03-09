@@ -3,12 +3,26 @@
 export const PLANS = {
     free: {
         name: 'Free',
-        aiLimit: 5,
-        flashcardLimit: 3,
+        aiLimit: 10,
+        flashcardLimit: 5,
         durationDays: null,
         price: 0,
         amount: 0,
-        label: 'Free'
+        label: 'Free forever',
+        features: [
+            '10 AI-generated questions',
+            '3 CBT practice tests',
+            '5 flashcard reviews',
+            'Basic study timer',
+            'Limited analytics'
+        ],
+        notIncluded: [
+            'Unlimited CBT tests',
+            'Post-UTME practice',
+            'AI explanations',
+            'Notes & highlights',
+            'Streak tracking'
+        ]
     },
     weekly: {
         name: 'Weekly',
@@ -16,8 +30,20 @@ export const PLANS = {
         flashcardLimit: 40,
         durationDays: 7,
         price: 60000, // kobo — ₦600
-        amount: 600, // naira — what Flutterwave receives
-        label: '₦600 / week'
+        amount: 600, // naira
+        label: '₦600 / week',
+        features: [
+            '80 AI-generated questions',
+            'Unlimited CBT tests',
+            '40 flashcard reviews',
+            'All exam types (JAMB, WAEC, Post-UTME)',
+            'Smart study timer',
+            'Full analytics & progress tracking',
+            'Notes & highlights',
+            'Streak tracking',
+            'AI explanations for answers'
+        ],
+        notIncluded: []
     },
     monthly: {
         name: 'Monthly',
@@ -26,15 +52,35 @@ export const PLANS = {
         durationDays: 30,
         price: 230000, // kobo — ₦2,300
         amount: 2300, // naira
-        label: '₦2,300 / month'
+        label: '₦2,300 / month',
+        badge: 'Best Value',
+        savings: 'Save ₦1,100 vs weekly',
+        features: [
+            '250 AI-generated questions',
+            'Unlimited CBT tests',
+            '120 flashcard reviews',
+            'All exam types (JAMB, WAEC, Post-UTME)',
+            'Smart study timer',
+            'Full analytics & progress tracking',
+            'Notes & highlights',
+            'Streak tracking',
+            'AI explanations for answers',
+            'Priority support'
+        ],
+        notIncluded: []
     },
     addon: {
         name: 'AI Add-on',
         aiLimit: 100,
         flashcardLimit: 0,
-        durationDays: 0, // no time extension
+        durationDays: 0,
         price: 50000, // kobo — ₦500
         amount: 500, // naira
-        label: '₦500 — 100 AI messages'
+        label: '₦500 one-time',
+        features: [
+            '100 extra AI-generated questions',
+            'Added to your current plan',
+            'Never expires'
+        ]
     }
 };
