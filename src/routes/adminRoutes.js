@@ -8,6 +8,8 @@ import { adminAuth } from '../config/firebase-admin.js';
 import {
     getAdminStats,
     getAdminUsers,
+    getOnlineUsers,
+    getUserActivity,
     grantPlan,
     deleteUser
 } from '../controllers/adminController.js';
@@ -52,6 +54,8 @@ router.get('/check-claim/:email', async (req, res) => {
 // Dashboard routes — require Firebase auth + admin role
 router.get('/stats', protect, restrictTo('admin'), getAdminStats);
 router.get('/users', protect, restrictTo('admin'), getAdminUsers);
+router.get('/online-users', protect, restrictTo('admin'), getOnlineUsers);
+router.get('/users/:id/activity', protect, restrictTo('admin'), getUserActivity);
 router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);
 router.delete('/users/:id', protect, restrictTo('admin'), deleteUser);
 

@@ -78,7 +78,9 @@ const userSchema = new mongoose.Schema({
 
     // Flashcard generation usage
     flashcardUsageCount: { type: Number, default: 0 },
-    flashcardUsageLimit: { type: Number, default: 3 }
+    flashcardUsageLimit: { type: Number, default: 3 },
+
+    lastSeen: { type: Date, default: null }
 
 }, { timestamps: true });
 

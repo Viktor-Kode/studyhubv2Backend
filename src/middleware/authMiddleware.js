@@ -72,6 +72,10 @@ export const protect = async (req, res, next) => {
 
         // GRANT ACCESS TO PROTECTED ROUTE
         req.user = currentUser;
+
+        // Update lastSeen silently (fire-and-forget)
+        User.findByIdAndUpdate(currentUser._id, { $set: { lastSeen: new Date() } }).catch(() => {});
+
         next();
     } catch (err) {
         console.error('[AUTH] Unexpected error in protect middleware:', err);

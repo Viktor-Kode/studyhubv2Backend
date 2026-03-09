@@ -8,6 +8,8 @@ import Streak from '../models/Streak.js';
 import StudyNote from '../models/StudyNote.js';
 import { PLANS } from '../config/plans.js';
 
+const userId = (id) => new mongoose.Types.ObjectId(id);
+
 const todayStart = () => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -266,6 +268,100 @@ export const grantPlan = async (req, res) => {
         });
     } catch (err) {
         console.error('[Admin] grantPlan error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+export const getOnlineUsers = async (req, res) => {
+    try {
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const onlineUsers = await User.find({
+            lastSeen: { $gte: fiveMinutesAgo }
+        })
+            .select('name email subscriptionStatus subscriptionPlan lastSeen avatar')
+            .sort({ lastSeen: -1 })
+            .lean();
+        res.json({ success: true, users: onlineUsers, count: onlineUsers.length });
+    } catch (err) {
+        console.error('[Admin] getOnlineUsers error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+export const getUserActivity = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [
+            user,
+            cbtResults,
+            studySessions,
+            flashcardProgress,
+            streak,
+            notes,
+            transactions
+        ] = await Promise.all([
+            User.findById(id)
+                .select('name email phoneNumber subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit flashcardUsageCount flashcardUsageLimit createdAt lastSeen examTarget subjects avatar')
+                .lean(),
+            CBTResult.find({ studentId: userId(id) }).sort({ takenAt: -1 }).limit(20).lean(),
+            StudySession.find({ userId: userId(id) }).sort({ startTime: -1 }).limit(20).lean(),
+            FlashcardProgress.find({ studentId: userId(id) }).sort({ updatedAt: -1 }).limit(20).lean(),
+            Streak.findOne({ studentId: userId(id) }).lean(),
+            StudyNote.find({ userId: userId(id) }).sort({ createdAt: -1 }).limit(10).select('title subject createdAt').lean(),
+            Transaction.find({ userId: userId(id) }).sort({ createdAt: -1 }).lean()
+        ]);
+
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        // StudySession duration is in minutes
+        const totalStudyTimeMinutes = studySessions.reduce((sum, s) => sum + (s.duration || 0), 0);
+        const avgCBTAccuracy = cbtResults.length > 0
+            ? Math.round(cbtResults.reduce((sum, r) => sum + (r.accuracy || 0), 0) / cbtResults.length)
+            : 0;
+
+        const subjectBreakdown = cbtResults.reduce((acc, r) => {
+            const subj = r.subject || 'Unknown';
+            if (!acc[subj]) acc[subj] = { count: 0, totalAccuracy: 0 };
+            acc[subj].count++;
+            acc[subj].totalAccuracy += r.accuracy || 0;
+            return acc;
+        }, {});
+
+        const subjects = Object.entries(subjectBreakdown).map(([subject, data]) => ({
+            subject,
+            attempts: data.count,
+            avgAccuracy: Math.round(data.totalAccuracy / data.count)
+        })).sort((a, b) => b.attempts - a.attempts);
+
+        res.json({
+            success: true,
+            user,
+            stats: {
+                totalCBT: cbtResults.length,
+                avgCBTAccuracy,
+                totalStudyTime: totalStudyTimeMinutes,
+                totalNotes: notes.length,
+                totalTransactions: transactions.length,
+                currentStreak: streak?.currentStreak || 0,
+                longestStreak: streak?.longestStreak || 0,
+                flashcardsReviewed: flashcardProgress.length,
+                subjectBreakdown: subjects
+            },
+            recentCBT: cbtResults.slice(0, 10),
+            recentSessions: studySessions.slice(0, 10).map(s => ({
+                ...s,
+                subject: s.title,
+                durationSeconds: (s.duration || 0) * 60,
+                createdAt: s.startTime || s.createdAt
+            })),
+            notes,
+            transactions
+        });
+    } catch (err) {
+        console.error('[Admin] getUserActivity error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 };
