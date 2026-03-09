@@ -10,6 +10,7 @@ import {
     getAdminUsers,
     getOnlineUsers,
     getUserActivity,
+    getMetricUsers,
     grantPlan,
     deleteUser
 } from '../controllers/adminController.js';
@@ -55,6 +56,7 @@ router.get('/check-claim/:email', async (req, res) => {
 router.get('/stats', protect, restrictTo('admin'), getAdminStats);
 router.get('/users', protect, restrictTo('admin'), getAdminUsers);
 router.get('/online-users', protect, restrictTo('admin'), getOnlineUsers);
+router.get('/metric-users', protect, restrictTo('admin'), getMetricUsers);
 router.get('/users/:id/activity', protect, restrictTo('admin'), getUserActivity);
 router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);
 router.delete('/users/:id', protect, restrictTo('admin'), deleteUser);

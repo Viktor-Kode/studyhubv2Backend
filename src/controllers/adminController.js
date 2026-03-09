@@ -366,6 +366,127 @@ export const getUserActivity = async (req, res) => {
     }
 };
 
+export const getMetricUsers = async (req, res) => {
+    try {
+        const { metric, filter } = req.query;
+        const today = todayStart();
+        let users = [];
+
+        if (metric === 'cbt') {
+            const match = filter === 'today' ? { takenAt: { $gte: today } } : {};
+            const results = await CBTResult.find(match)
+                .sort({ takenAt: -1 })
+                .populate('studentId', 'name email subscriptionStatus subscriptionPlan avatar lastSeen')
+                .lean();
+
+            const userMap = {};
+            results.forEach(r => {
+                if (!r.studentId) return;
+                const uid = r.studentId._id.toString();
+                if (!userMap[uid]) {
+                    userMap[uid] = {
+                        user: r.studentId,
+                        count: 0,
+                        lastActivity: r.takenAt,
+                        details: []
+                    };
+                }
+                userMap[uid].count++;
+                userMap[uid].lastActivity = r.takenAt;
+                userMap[uid].details.push({
+                    subject: r.subject,
+                    accuracy: r.accuracy,
+                    total: r.totalQuestions,
+                    date: r.takenAt
+                });
+            });
+            users = Object.values(userMap).sort((a, b) =>
+                new Date(b.lastActivity) - new Date(a.lastActivity)
+            );
+        } else if (metric === 'sessions') {
+            const match = filter === 'today'
+                ? { type: 'study', startTime: { $gte: today } }
+                : { type: 'study' };
+
+            const sessions = await StudySession.find(match)
+                .sort({ startTime: -1 })
+                .populate('userId', 'name email subscriptionStatus subscriptionPlan avatar lastSeen')
+                .lean();
+
+            const userMap = {};
+            sessions.forEach(s => {
+                if (!s.userId) return;
+                const uid = s.userId._id.toString();
+                if (!userMap[uid]) {
+                    userMap[uid] = {
+                        user: s.userId,
+                        count: 0,
+                        totalMinutes: 0,
+                        lastActivity: s.startTime || s.createdAt,
+                        details: []
+                    };
+                }
+                userMap[uid].count++;
+                userMap[uid].totalMinutes += s.duration || 0;
+                userMap[uid].lastActivity = s.startTime || s.createdAt;
+                userMap[uid].details.push({
+                    subject: s.title || 'General',
+                    duration: s.duration || 0,
+                    date: s.startTime || s.createdAt
+                });
+            });
+            users = Object.values(userMap).sort((a, b) =>
+                new Date(b.lastActivity) - new Date(a.lastActivity)
+            );
+        } else if (metric === 'flashcards') {
+            const reviewed = await FlashcardProgress.find({ reviewCount: { $gt: 0 } })
+                .sort({ updatedAt: -1 })
+                .populate('studentId', 'name email subscriptionStatus subscriptionPlan avatar lastSeen')
+                .lean();
+
+            const userMap = {};
+            reviewed.forEach(f => {
+                if (!f.studentId) return;
+                const uid = f.studentId._id.toString();
+                if (!userMap[uid]) {
+                    userMap[uid] = {
+                        user: f.studentId,
+                        count: 0,
+                        mastered: 0,
+                        lastActivity: f.updatedAt || f.lastReviewed,
+                        details: []
+                    };
+                }
+                userMap[uid].count += f.reviewCount || 0;
+                if (f.status === 'mastered') userMap[uid].mastered++;
+            });
+            users = Object.values(userMap).sort((a, b) =>
+                new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0)
+            );
+        } else if (metric === 'streaks') {
+            const streaks = await Streak.find({ currentStreak: { $gt: 0 } })
+                .sort({ currentStreak: -1 })
+                .populate('studentId', 'name email subscriptionStatus subscriptionPlan avatar lastSeen')
+                .lean();
+
+            users = streaks
+                .filter(s => s.studentId)
+                .map(s => ({
+                    user: s.studentId,
+                    count: s.currentStreak,
+                    longestStreak: s.longestStreak || 0,
+                    lastActivity: s.lastActivityDate,
+                    details: []
+                }));
+        }
+
+        res.json({ success: true, users, metric, filter });
+    } catch (err) {
+        console.error('[Admin] getMetricUsers error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
 export const deleteUser = async (req, res) => {
     try {
         const { id } = req.params;
