@@ -14,6 +14,10 @@ import {
     grantPlan,
     deleteUser
 } from '../controllers/adminController.js';
+import {
+    sendEmailCampaign,
+    getEmailAudienceStats
+} from '../controllers/emailCampaignController.js';
 
 const router = express.Router();
 
@@ -60,6 +64,8 @@ router.get('/metric-users', protect, restrictTo('admin'), getMetricUsers);
 router.get('/users/:id/activity', protect, restrictTo('admin'), getUserActivity);
 router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);
 router.delete('/users/:id', protect, restrictTo('admin'), deleteUser);
+router.get('/email-stats', protect, restrictTo('admin'), getEmailAudienceStats);
+router.post('/email-campaign', protect, restrictTo('admin'), sendEmailCampaign);
 
 // POST /api/admin/fix-subscription
 router.post('/fix-subscription', async (req, res) => {

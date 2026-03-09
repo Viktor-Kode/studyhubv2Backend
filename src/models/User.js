@@ -95,7 +95,9 @@ const userSchema = new mongoose.Schema({
         class_record: { type: Number, default: 0 }
     },
 
-    lastSeen: { type: Date, default: null }
+    lastSeen: { type: Date, default: null },
+
+    emailUnsubscribed: { type: Boolean, default: false }
 
 }, { timestamps: true });
 

@@ -29,6 +29,7 @@ import teacherRoutes from './routes/teacherRoutes.js';
 import teacherToolsRoutes from './routes/teacherToolsRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
+import { unsubscribe } from './controllers/emailCampaignController.js';
 
 
 const app = express();
@@ -102,6 +103,9 @@ app.get('/api/health', (req, res) => {
 
 // SILENCE FAVICON ERRORS
 app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// Public unsubscribe (no auth — link in emails)
+app.get('/api/unsubscribe', unsubscribe);
 
 // Specific rate limiter for CBT and AI endpoints
 const cbtAILimiter = rateLimit({
