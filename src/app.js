@@ -25,6 +25,7 @@ import notificationRoutes from './routes/notificationRoutes.js';
 import noteRoutes from './routes/noteRoutes.js';
 import postutmeRoutes from './routes/postutmeRoutes.js';
 import adminPostutmeRoutes from './routes/adminPostutmeRoutes.js';
+import teacherRoutes from './routes/teacherRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 
@@ -133,6 +134,7 @@ app.use('/api/notes', noteRoutes);
 app.use('/api/postutme', postutmeRoutes);
 app.use('/api/admin/postutme', adminPostutmeRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/teacher', teacherRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');
