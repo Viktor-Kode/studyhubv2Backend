@@ -59,6 +59,7 @@ const allowedOrigins = [
   'http://localhost:3001',
   'https://studyhubv2-self.vercel.app',
   'https://studyhelp-zyqw.onrender.com',
+  'https://mozilla.github.io',
 ].filter(Boolean);
 
 app.use(cors({

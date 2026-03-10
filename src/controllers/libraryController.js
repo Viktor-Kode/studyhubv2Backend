@@ -82,7 +82,7 @@ export const uploadMaterial = async (req, res) => {
     if (usedBytes + req.file.size > limitBytes) {
       // Remove uploaded file from Cloudinary since we can't keep it
       if (req.file.filename) {
-        await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' });
+        await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'image' });
       }
       return res.status(403).json({
         success: false,
@@ -90,6 +90,10 @@ export const uploadMaterial = async (req, res) => {
         showUpgrade: !isPaid,
       });
     }
+
+    const fileUrl = req.file.path.endsWith('.pdf')
+      ? req.file.path
+      : `${req.file.path}.pdf`;
 
     const material = await LibraryMaterial.create({
       userId,
@@ -101,7 +105,7 @@ export const uploadMaterial = async (req, res) => {
       tags: tags ? tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       examType: examType || 'Other',
       color: color || '#4F46E5',
-      fileUrl: req.file.path,
+      fileUrl,
       publicId: req.file.filename,
       fileSize: req.file.size,
     });
@@ -177,7 +181,7 @@ export const deleteMaterial = async (req, res) => {
     if (!material) return res.status(404).json({ success: false, error: 'Not found' });
 
     if (material.publicId) {
-      await cloudinary.uploader.destroy(material.publicId, { resource_type: 'raw' });
+      await cloudinary.uploader.destroy(material.publicId, { resource_type: 'image' });
     }
 
     await LibraryMaterial.findByIdAndDelete(material._id);

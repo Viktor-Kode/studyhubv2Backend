@@ -4,16 +4,14 @@ import cloudinary from './cloudinary.js';
 
 const storage = new CloudinaryStorage({
   cloudinary,
-  params: {
+  params: async (req, file) => ({
     folder: 'studyhelp/library',
-    resource_type: 'raw',
-    allowed_formats: ['pdf'],
+    resource_type: 'image',
+    format: 'pdf',
     use_filename: true,
     unique_filename: true,
-    type: 'upload',
-    // Force inline delivery — prevents download prompt
-    flags: 'attachment:false',
-  },
+    access_mode: 'public',
+  }),
 });
 
 export const pdfUpload = multer({
