@@ -10,6 +10,9 @@ const storage = new CloudinaryStorage({
     allowed_formats: ['pdf'],
     use_filename: true,
     unique_filename: true,
+    type: 'upload',
+    // Force inline delivery — prevents download prompt
+    flags: 'attachment:false',
   },
 });
 
