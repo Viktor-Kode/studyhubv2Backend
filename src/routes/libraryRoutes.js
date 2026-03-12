@@ -15,13 +15,6 @@ const router = express.Router();
 
 router.use(protect);
 
-router.get('/', getMaterials);
-router.post('/upload', pdfUpload.single('pdf'), uploadMaterial);
-router.put('/folder', manageFolder);
-router.put('/:id', updateMaterial);
-router.put('/:id/progress', saveProgress);
-router.delete('/:id', deleteMaterial);
-
 // Proxy a single PDF through backend to avoid Cloudinary CORS issues
 router.get('/proxy-pdf/:id', async (req, res) => {
   try {
@@ -60,6 +53,14 @@ router.get('/proxy-pdf/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Library CRUD routes
+router.get('/', getMaterials);
+router.post('/upload', pdfUpload.single('pdf'), uploadMaterial);
+router.put('/folder', manageFolder);
+router.put('/:id/progress', saveProgress);
+router.put('/:id', updateMaterial);
+router.delete('/:id', deleteMaterial);
 
 export default router;
 
