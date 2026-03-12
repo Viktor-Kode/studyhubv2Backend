@@ -6,8 +6,7 @@ const storage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => ({
     folder: 'studyhelp/library',
-    resource_type: 'image',
-    format: 'pdf',
+    resource_type: 'raw', // store as raw so URLs are stable and work for any file type
     use_filename: true,
     unique_filename: true,
     access_mode: 'public',

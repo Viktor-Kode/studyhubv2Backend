@@ -27,35 +27,51 @@ router.get('/proxy-pdf/:id', async (req, res) => {
       userId: req.user._id,
     });
 
-    console.log('[PDF Proxy] Material found:', material ? 'YES' : 'NO');
-    console.log('[PDF Proxy] File URL:', material?.fileUrl);
-
     if (!material) return res.status(404).json({ error: 'Not found' });
 
-    console.log('[PDF Proxy] Fetching from Cloudinary (direct URL)...');
-    let response = await fetch(material.fileUrl);
-    console.log('[PDF Proxy] Cloudinary response status (direct):', response.status);
+    console.log('[PDF Proxy] Material found:', material ? 'YES' : 'NO');
+    console.log('[PDF Proxy] Stored URL:', material.fileUrl);
 
-    // If direct URL returns 401 (e.g. authenticated resource), fall back to signed Cloudinary URL
-    if (!response.ok && response.status === 401 && material.publicId) {
+    // Try the stored URL first
+    console.log('[PDF Proxy] Fetching stored URL...');
+    let response = await fetch(material.fileUrl);
+    console.log('[PDF Proxy] Status (stored):', response.status);
+
+    // If 404, try raw → image
+    if (!response.ok && material.fileUrl.includes('/raw/upload/')) {
+      const altUrl = material.fileUrl.replace('/raw/upload/', '/image/upload/');
+      console.log('[PDF Proxy] Trying alt URL (raw→image):', altUrl);
+      response = await fetch(altUrl);
+      console.log('[PDF Proxy] Status (raw→image):', response.status);
+    }
+
+    // If still not ok, try image → raw
+    if (!response.ok && material.fileUrl.includes('/image/upload/')) {
+      const altUrl = material.fileUrl.replace('/image/upload/', '/raw/upload/');
+      console.log('[PDF Proxy] Trying alt URL (image→raw):', altUrl);
+      response = await fetch(altUrl);
+      console.log('[PDF Proxy] Status (image→raw):', response.status);
+    }
+
+    // If still failing and we have a publicId, fall back to signed URL for authenticated resources
+    if (!response.ok && material.publicId) {
       try {
-        console.log('[PDF Proxy] 401 from direct URL. Trying signed Cloudinary URL...');
+        console.log('[PDF Proxy] All direct URL variants failed, trying signed Cloudinary URL...');
         const signedUrl = cloudinary.url(material.publicId, {
-          resource_type: 'image',
-          format: 'pdf',
-          type: 'authenticated',
+          resource_type: 'raw',
           secure: true,
           sign_url: true,
         });
         console.log('[PDF Proxy] Signed URL:', signedUrl);
         response = await fetch(signedUrl);
-        console.log('[PDF Proxy] Cloudinary response status (signed):', response.status);
+        console.log('[PDF Proxy] Status (signed):', response.status);
       } catch (signErr) {
         console.error('[PDF Proxy] Failed to generate/fetch signed URL:', signErr.message);
       }
     }
 
     if (!response.ok) {
+      console.error('[PDF Proxy] All URL attempts failed. Final status:', response.status);
       return res
         .status(502)
         .json({ error: `Cloudinary returned ${response.status}` });
