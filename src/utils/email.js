@@ -1,40 +1,28 @@
-import nodemailer from 'nodemailer';
+import { sendEmail as sendHtmlEmail } from '../services/emailService.js';
 import { getEnv } from '../config/env.js';
 
 const sendEmail = async (options) => {
-    const user = getEnv('EMAIL_USERNAME');
-    const pass = getEnv('EMAIL_PASSWORD');
-    const from = getEnv('EMAIL_FROM');
-
-    if (!user || !pass) {
+    if (!getEnv('RESEND_API_KEY')) {
         if (getEnv('NODE_ENV') === 'production') {
-            console.error('❌ CRITICAL: EMAIL_USERNAME or EMAIL_PASSWORD missing in production!');
+            console.error('❌ CRITICAL: RESEND_API_KEY missing in production!');
         } else {
-            console.warn('⚠️ Warning: Email credentials not set. Email delivery disabled.');
+            console.warn('⚠️ Warning: RESEND_API_KEY not set. Email delivery disabled.');
         }
-        return; // Return silently to prevent crashing the server
+        return;
     }
 
+    const subject = options.subject;
+    const text = options.message;
+    const html = `<pre style="font-family:system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; white-space:pre-wrap;">${text}</pre>`;
 
-    // 1) Create a transporter
-    const transporter = nodemailer.createTransport({
-        service: 'Gmail',
-        auth: { user, pass }
-    });
-
-    // 2) Define the email options
-    const mailOptions = {
-        from: `StudyHelp <${from || user}>`,
-        to: options.email,
-        subject: options.subject,
-        text: options.message
-    };
-
-    // 3) Actually send the email
     try {
-        await transporter.sendMail(mailOptions);
+        await sendHtmlEmail({
+            to: options.email,
+            subject,
+            html
+        });
     } catch (error) {
-        console.error('❌ Email failed to send:', error.message);
+        console.error('❌ Email failed to send via Resend:', error.message);
     }
 };
 
