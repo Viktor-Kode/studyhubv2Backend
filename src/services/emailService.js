@@ -1,31 +1,41 @@
-import { Resend } from 'resend';
 import { getEnv } from '../config/env.js';
 
-const resend = new Resend(getEnv('RESEND_API_KEY'));
-const FROM = getEnv('EMAIL_FROM') || 'onboarding@resend.dev';
+const BREVO_API_KEY = getEnv('BREVO_API_KEY');
+const FROM_EMAIL = 'dosunmuvictor16@gmail.com';
+const FROM_NAME = 'StudyHelp';
 
 // ── Send single email ─────────────────────────────────
 export const sendEmail = async ({ to, subject, html }) => {
     try {
-        if (!getEnv('RESEND_API_KEY')) {
-            console.warn('[Email] RESEND_API_KEY not set. Skipping send.');
+        if (!BREVO_API_KEY) {
+            console.warn('[Email] BREVO_API_KEY not set. Skipping send.');
             return { success: false, error: 'Email not configured' };
         }
 
-        const { data, error } = await resend.emails.send({
-            from: `StudyHelp <${FROM}>`,
-            to,
-            subject,
-            html
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+                accept: 'application/json',
+                'api-key': BREVO_API_KEY,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                sender: { name: FROM_NAME, email: FROM_EMAIL },
+                to: [{ email: to }],
+                subject,
+                htmlContent: html
+            })
         });
 
-        if (error) {
-            console.error('[Email] Resend error:', error);
-            return { success: false, error: error.message };
+        const data = await response.json();
+
+        if (!response.ok) {
+            console.error('[Email] Brevo error:', data);
+            return { success: false, error: data.message || 'Send failed' };
         }
 
-        console.log('[Email] Sent successfully. ID:', data.id);
-        return { success: true, id: data.id };
+        console.log('[Email] Sent successfully. ID:', data.messageId);
+        return { success: true, id: data.messageId };
     } catch (err) {
         console.error('[Email] Failed:', err.message);
         return { success: false, error: err.message };

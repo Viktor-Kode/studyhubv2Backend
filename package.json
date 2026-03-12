@@ -35,7 +35,6 @@
     "officeparser": "^6.0.4",
     "openai": "^4.85.4",
     "pdf-parse": "^2.4.5",
-    "resend": "^4.0.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
