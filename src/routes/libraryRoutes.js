@@ -19,11 +19,11 @@ router.use(protect);
 router.get('/proxy-pdf/:id', async (req, res) => {
   try {
     console.log('[PDF Proxy] Request for ID:', req.params.id);
-    console.log('[PDF Proxy] User UID:', req.user?.uid);
+    console.log('[PDF Proxy] User Mongo ID:', req.user?._id);
 
     const material = await LibraryMaterial.findOne({
       _id: req.params.id,
-      userId: req.user.uid,
+      userId: req.user._id,
     });
 
     console.log('[PDF Proxy] Material found:', material ? 'YES' : 'NO');
