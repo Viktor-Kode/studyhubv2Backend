@@ -72,9 +72,18 @@ router.get('/proxy-pdf/:id', async (req, res) => {
 
     if (!response.ok) {
       console.error('[PDF Proxy] All URL attempts failed. Final status:', response.status);
-      return res
-        .status(502)
-        .json({ error: `Cloudinary returned ${response.status}` });
+
+      // If Cloudinary explicitly returns 404, surface that as a 404 to the client
+      if (response.status === 404) {
+        return res.status(404).json({
+          error: 'PDF file not found on Cloudinary (404)',
+        });
+      }
+
+      // For other status codes, keep using a 502 but include the upstream status
+      return res.status(502).json({
+        error: `Cloudinary returned ${response.status}`,
+      });
     }
 
     const buffer = await response.arrayBuffer();
