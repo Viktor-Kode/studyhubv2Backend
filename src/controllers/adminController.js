@@ -288,6 +288,28 @@ export const getOnlineUsers = async (req, res) => {
     }
 };
 
+// Users who have been active (logged in) today, based on lastSeen
+export const getTodayLogins = async (req, res) => {
+    try {
+        const startOfDay = todayStart();
+        const users = await User.find({
+            lastSeen: { $gte: startOfDay }
+        })
+            .select('name email subscriptionStatus subscriptionPlan lastSeen role avatar')
+            .sort({ lastSeen: -1 })
+            .lean();
+
+        res.json({
+            success: true,
+            count: users.length,
+            users
+        });
+    } catch (err) {
+        console.error('[Admin] getTodayLogins error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
 export const getUserActivity = async (req, res) => {
     try {
         const { id } = req.params;
