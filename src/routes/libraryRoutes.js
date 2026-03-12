@@ -2,6 +2,7 @@ import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
 import { pdfUpload } from '../config/pdfUpload.js';
 import LibraryMaterial from '../models/LibraryMaterial.js';
+import cloudinary from '../config/cloudinary.js';
 import {
   getMaterials,
   uploadMaterial,
@@ -31,9 +32,28 @@ router.get('/proxy-pdf/:id', async (req, res) => {
 
     if (!material) return res.status(404).json({ error: 'Not found' });
 
-    console.log('[PDF Proxy] Fetching from Cloudinary...');
-    const response = await fetch(material.fileUrl);
-    console.log('[PDF Proxy] Cloudinary response status:', response.status);
+    console.log('[PDF Proxy] Fetching from Cloudinary (direct URL)...');
+    let response = await fetch(material.fileUrl);
+    console.log('[PDF Proxy] Cloudinary response status (direct):', response.status);
+
+    // If direct URL returns 401 (e.g. authenticated resource), fall back to signed Cloudinary URL
+    if (!response.ok && response.status === 401 && material.publicId) {
+      try {
+        console.log('[PDF Proxy] 401 from direct URL. Trying signed Cloudinary URL...');
+        const signedUrl = cloudinary.url(material.publicId, {
+          resource_type: 'image',
+          format: 'pdf',
+          type: 'authenticated',
+          secure: true,
+          sign_url: true,
+        });
+        console.log('[PDF Proxy] Signed URL:', signedUrl);
+        response = await fetch(signedUrl);
+        console.log('[PDF Proxy] Cloudinary response status (signed):', response.status);
+      } catch (signErr) {
+        console.error('[PDF Proxy] Failed to generate/fetch signed URL:', signErr.message);
+      }
+    }
 
     if (!response.ok) {
       return res
