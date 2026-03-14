@@ -238,11 +238,19 @@ Return ONLY a JSON array of weeks:
 
         const content = await callAI(prompt, 3000);
         const cleaned = content.replace(/```json|```/g, '').trim();
-        const scheme = JSON.parse(cleaned);
+        const parsed = JSON.parse(cleaned);
+        const scheme = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.weeks)
+                ? parsed.weeks
+                : Array.isArray(parsed?.scheme)
+                    ? parsed.scheme
+                    : [];
 
         res.json({ success: true, scheme });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('[SchemeOfWork]', err);
+        res.status(500).json({ error: err.message || 'Failed to generate scheme of work' });
     }
 };
 
