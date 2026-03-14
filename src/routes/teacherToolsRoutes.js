@@ -11,7 +11,11 @@ import {
     generateMarkingScheme,
     generateDifferentiated,
     generateComprehension,
-    generateDiaryEntries
+    generateDiaryEntries,
+    listSaved,
+    getSaved,
+    saveItem,
+    deleteSaved
 } from '../controllers/teacherToolsController.js';
 
 const router = express.Router();
@@ -27,5 +31,10 @@ router.post('/differentiated', checkTeacherUsage('differentiated'), generateDiff
 router.post('/comprehension', checkTeacherUsage('comprehension'), generateComprehension);
 router.post('/diary', checkTeacherUsage('diary'), generateDiaryEntries);
 router.post('/report-comment', checkTeacherUsage('report_comment'), generateReportComment);
+
+router.get('/saved', listSaved);
+router.get('/saved/:type/:id', getSaved);
+router.post('/saved', saveItem);
+router.delete('/saved/:type/:id', deleteSaved);
 
 export default router;

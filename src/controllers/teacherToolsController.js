@@ -2,6 +2,7 @@ import { callAI } from '../utils/aiClient.js';
 import User from '../models/User.js';
 import Result from '../models/Result.js';
 import LessonNote from '../models/LessonNote.js';
+import TeacherSavedItem from '../models/TeacherSavedItem.js';
 import { TEACHER_PLANS } from '../config/plans.js';
 
 // ── GET TEACHER USAGE & PLAN ──────────────────────────
@@ -432,6 +433,153 @@ Nigerian school style. No preamble, just the comment.`;
         res.json({ comment: (comment || '').trim() });
     } catch (err) {
         console.error('[ReportComment]', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ── SAVED ITEMS (list, get, save, delete) ─────────────────────────────────
+const TOOL_TYPE_SLUG = {
+    lesson_note: 'lesson-note',
+    result_compiler: 'result-compiler',
+    scheme_of_work: 'scheme-of-work',
+    marking_scheme: 'marking-scheme',
+    differentiated: 'differentiated',
+    comprehension: 'comprehension',
+    report_comments: 'report-comments',
+    report_sheet: 'report-sheet',
+    teacher_diary: 'teacher-diary',
+    class_register: 'class-register'
+};
+
+function toSavedShape(doc, toolType) {
+    const id = doc._id?.toString?.() || doc._id;
+    if (toolType === 'lesson_note') {
+        return {
+            id,
+            toolType: 'lesson_note',
+            slug: 'lesson-note',
+            title: `${doc.subject || ''} – ${doc.topic || ''}`.trim() || 'Lesson Note',
+            meta: { subject: doc.subject, topic: doc.topic, classLevel: doc.classLevel },
+            content: doc.content,
+            createdAt: doc.createdAt
+        };
+    }
+    if (toolType === 'result_compiler') {
+        return {
+            id,
+            toolType: 'result_compiler',
+            slug: 'result-compiler',
+            title: `${doc.className || ''} ${doc.subject || ''}`.trim() || 'Result',
+            meta: { className: doc.className, subject: doc.subject, term: doc.term, year: doc.year },
+            content: { students: doc.students, stats: doc.stats },
+            createdAt: doc.createdAt
+        };
+    }
+    return {
+        id,
+        toolType: doc.toolType,
+        slug: TOOL_TYPE_SLUG[doc.toolType] || doc.toolType,
+        title: doc.title,
+        meta: doc.meta,
+        content: doc.content,
+        createdAt: doc.createdAt
+    };
+}
+
+export const listSaved = async (req, res) => {
+    try {
+        const teacherId = req.user._id;
+        const { toolType } = req.query;
+
+        const list = [];
+
+        if (!toolType || toolType === 'lesson_note') {
+            const notes = await LessonNote.find({ teacherId }).sort({ createdAt: -1 }).limit(100).lean();
+            notes.forEach((n) => list.push(toSavedShape(n, 'lesson_note')));
+        }
+        if (!toolType || toolType === 'result_compiler') {
+            const results = await Result.find({ teacherId }).sort({ createdAt: -1 }).limit(100).lean();
+            results.forEach((r) => list.push(toSavedShape(r, 'result_compiler')));
+        }
+        const itemTypes = ['scheme_of_work', 'marking_scheme', 'differentiated', 'comprehension', 'report_comments', 'report_sheet', 'teacher_diary', 'class_register'];
+        if (!toolType || itemTypes.includes(toolType)) {
+            const filter = { teacherId };
+            if (toolType) filter.toolType = toolType;
+            const items = await TeacherSavedItem.find(filter).sort({ createdAt: -1 }).limit(100).lean();
+            items.forEach((i) => list.push(toSavedShape(i)));
+        }
+
+        list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        res.json({ success: true, items: list.slice(0, 100) });
+    } catch (err) {
+        console.error('[listSaved]', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const getSaved = async (req, res) => {
+    try {
+        const teacherId = req.user._id;
+        const { type, id } = req.params;
+
+        if (type === 'lesson_note') {
+            const doc = await LessonNote.findOne({ _id: id, teacherId }).lean();
+            if (!doc) return res.status(404).json({ error: 'Not found' });
+            return res.json({ success: true, item: toSavedShape(doc, 'lesson_note') });
+        }
+        if (type === 'result_compiler') {
+            const doc = await Result.findOne({ _id: id, teacherId }).lean();
+            if (!doc) return res.status(404).json({ error: 'Not found' });
+            return res.json({ success: true, item: toSavedShape(doc, 'result_compiler') });
+        }
+        const doc = await TeacherSavedItem.findOne({ _id: id, teacherId }).lean();
+        if (!doc) return res.status(404).json({ error: 'Not found' });
+        res.json({ success: true, item: toSavedShape(doc) });
+    } catch (err) {
+        console.error('[getSaved]', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const saveItem = async (req, res) => {
+    try {
+        const teacherId = req.user._id;
+        const { toolType, title, meta, content } = req.body;
+        if (!toolType || !title || content === undefined) {
+            return res.status(400).json({ error: 'toolType, title and content required' });
+        }
+        const allowed = ['scheme_of_work', 'marking_scheme', 'differentiated', 'comprehension', 'report_comments', 'report_sheet', 'teacher_diary', 'class_register'];
+        if (!allowed.includes(toolType)) {
+            return res.status(400).json({ error: 'Invalid toolType' });
+        }
+        const doc = await TeacherSavedItem.create({ teacherId, toolType, title, meta: meta || {}, content });
+        res.json({ success: true, id: doc._id, item: toSavedShape(doc) });
+    } catch (err) {
+        console.error('[saveItem]', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const deleteSaved = async (req, res) => {
+    try {
+        const teacherId = req.user._id;
+        const { type, id } = req.params;
+
+        if (type === 'lesson_note') {
+            const r = await LessonNote.findOneAndDelete({ _id: id, teacherId });
+            if (!r) return res.status(404).json({ error: 'Not found' });
+            return res.json({ success: true });
+        }
+        if (type === 'result_compiler') {
+            const r = await Result.findOneAndDelete({ _id: id, teacherId });
+            if (!r) return res.status(404).json({ error: 'Not found' });
+            return res.json({ success: true });
+        }
+        const r = await TeacherSavedItem.findOneAndDelete({ _id: id, teacherId });
+        if (!r) return res.status(404).json({ error: 'Not found' });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[deleteSaved]', err);
         res.status(500).json({ error: err.message });
     }
 };
