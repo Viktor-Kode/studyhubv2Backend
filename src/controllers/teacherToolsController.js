@@ -370,3 +370,60 @@ Return ONLY JSON:
         res.status(500).json({ error: err.message });
     }
 };
+
+// ── 8. TEACHER DIARY (AI fill) ───────────────────────────────────────────
+export const generateDiaryEntries = async (req, res) => {
+    try {
+        const { className, weekNumber, entries } = req.body;
+
+        const prompt = `You are a Nigerian secondary school teacher planning tool.
+Generate a detailed teacher's diary for Week ${weekNumber || '___'} for ${className || 'Class'}.
+
+For each day provided, fill in:
+- subject (keep or suggest one)
+- topic (expand if brief)
+- objectives (2-3 clear behavioural objectives, NERDC style)
+- activities (teacher and student activities)
+- resources (teaching aids needed)
+- remarks (optional note)
+
+Days and subjects provided:
+${(entries || []).map(e => `${e.day}: ${e.subject || 'Not specified'} — Topic: ${e.topic || 'Not specified'}`).join('\n')}
+
+Return ONLY a JSON array of exactly 5 objects with fields: subject, topic, objectives, activities, resources, remarks.
+No explanation, just the JSON array.`;
+
+        const content = await callAI(prompt, 1000);
+        const clean = content.replace(/```json|```/g, '').trim();
+        const parsed = JSON.parse(clean);
+        const entriesList = Array.isArray(parsed) ? parsed : [];
+
+        res.json({ entries: entriesList });
+    } catch (err) {
+        console.error('[Diary]', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ── 9. REPORT CARD COMMENT (single student, for Report Sheet PDF) ──────────
+export const generateReportComment = async (req, res) => {
+    try {
+        const { studentName, scores, average, className } = req.body;
+
+        const prompt = `Write a single encouraging, professional teacher's comment for a Nigerian secondary school student report card.
+
+Student: ${studentName || 'the student'}
+Class: ${className || ''}
+Scores: ${scores || 'N/A'}
+Average: ${average || ''}
+
+The comment should be 2-3 sentences, warm, specific to their performance, and end with encouragement.
+Nigerian school style. No preamble, just the comment.`;
+
+        const comment = await callAI(prompt, 120);
+        res.json({ comment: (comment || '').trim() });
+    } catch (err) {
+        console.error('[ReportComment]', err);
+        res.status(500).json({ error: err.message });
+    }
+};

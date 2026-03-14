@@ -6,10 +6,12 @@ import {
     generateLessonNote,
     compileResults,
     generateReportComments,
+    generateReportComment,
     generateSchemeOfWork,
     generateMarkingScheme,
     generateDifferentiated,
-    generateComprehension
+    generateComprehension,
+    generateDiaryEntries
 } from '../controllers/teacherToolsController.js';
 
 const router = express.Router();
@@ -23,5 +25,7 @@ router.post('/scheme-of-work', checkTeacherUsage('scheme_of_work'), generateSche
 router.post('/marking-scheme', checkTeacherUsage('marking_scheme'), generateMarkingScheme);
 router.post('/differentiated', checkTeacherUsage('differentiated'), generateDifferentiated);
 router.post('/comprehension', checkTeacherUsage('comprehension'), generateComprehension);
+router.post('/diary', checkTeacherUsage('diary'), generateDiaryEntries);
+router.post('/report-comment', checkTeacherUsage('report_comment'), generateReportComment);
 
 export default router;

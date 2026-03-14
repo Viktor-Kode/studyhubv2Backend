@@ -91,8 +91,8 @@ export const TEACHER_PLANS = {
         name: 'Teacher Free',
         usagePerFeature: 3,
         features: ['question_generator', 'lesson_note', 'result_compiler',
-            'report_card', 'scheme_of_work', 'marking_scheme',
-            'differentiated', 'comprehension', 'class_record']
+            'report_card', 'report_comment', 'scheme_of_work', 'marking_scheme',
+            'differentiated', 'comprehension', 'class_record', 'diary']
     },
     weekly: {
         name: 'Teacher Weekly',
