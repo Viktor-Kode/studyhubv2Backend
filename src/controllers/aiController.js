@@ -325,7 +325,12 @@ export const chatWithTutor = async (req, res) => {
   try {
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
     const systemPrompt = `You are an expert AI Study Tutor. Your goal is to help students understand their study materials. 
-    Context: """${context || 'No specific document provided.'}"""`;
+    Context: """${context || 'No specific document provided.'}"""
+
+At the end of every response, append suggested follow-up questions in this exact format on the last line:
+[[Question one?||Question two?||Question three?]]
+These should be natural follow-ups a Nigerian secondary school or university student would ask next.
+Do not number them or add any text before the [[ brackets.`;
 
     const messages = [
       { role: "system", content: systemPrompt },
