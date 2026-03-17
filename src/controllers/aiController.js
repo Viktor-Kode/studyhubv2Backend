@@ -9,6 +9,8 @@ import crypto from 'crypto';
 import { createRequire } from 'module';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { updateStreak } from '../services/streakService.js';
+import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
 
@@ -381,6 +383,100 @@ export const deleteQuestion = async (req, res) => {
     return res.status(200).json({ success: true, message: 'Question deleted' });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const fetchUrlContent = async (req, res) => {
+  const { url } = req.body;
+
+  if (!url || typeof url !== 'string' || !url.startsWith('http')) {
+    return res.status(400).json({
+      error: 'Please provide a valid URL starting with http',
+      success: false,
+    });
+  }
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; StudyHelp/1.0)',
+      },
+      timeout: 10000,
+    });
+
+    if (!response.ok) {
+      return res
+        .status(502)
+        .json({ error: `Could not fetch that URL (status ${response.status})` });
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    const title =
+      $('title').text().trim() ||
+      $('h1').first().text().trim() ||
+      'Untitled Page';
+
+    $('script, style, nav, footer, header, aside, iframe, noscript, .ad, .advertisement, .sidebar').remove();
+
+    const mainSelectors = [
+      'article',
+      'main',
+      '.content',
+      '.post-content',
+      '#content',
+      '.entry-content',
+      '#mw-content-text',
+    ];
+
+    let text = '';
+    for (const sel of mainSelectors) {
+      if ($(sel).length) {
+        text = $(sel).text();
+        break;
+      }
+    }
+
+    if (!text || text.length < 200) {
+      text = $('body').text();
+    }
+
+    text = text
+      .replace(/\s+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    if (text.length > 8000) {
+      text = text.substring(0, 8000) + '... [content truncated]';
+    }
+
+    if (text.length < 100) {
+      return res.status(422).json({
+        error:
+          'Could not extract readable content from that URL. Try copying and pasting the text manually.',
+      });
+    }
+
+    return res.json({
+      text,
+      title,
+      chars: text.length,
+      success: true,
+    });
+  } catch (err) {
+    const message = err && typeof err === 'object' && 'message' in err ? err.message : String(err);
+    console.error('[FetchURL]', message);
+
+    if (message.toLowerCase().includes('timeout')) {
+      return res.status(504).json({
+        error: 'That page took too long to load. Try a different link.',
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to fetch content from that URL.',
+    });
   }
 };
 

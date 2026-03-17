@@ -12,7 +12,8 @@ import {
     deleteQuizSession,
     deleteQuestion,
     chatWithTutor,
-    generateQuestionsFromPDF
+    generateQuestionsFromPDF,
+    fetchUrlContent
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { checkAIUsage } from '../middleware/usageMiddleware.js';
@@ -44,6 +45,9 @@ router.delete('/questions/:id', deleteQuestion);
 
 // Generate questions from PDF (POST)
 router.post('/generate-from-pdf', upload.single('pdf'), checkAIUsage, generateQuestionsFromPDF);
+
+// Fetch and extract content from a URL (POST)
+router.post('/fetch-url', fetchUrlContent);
 
 // Quiz Sessions (History grouped by quiz)
 router.get('/sessions', getQuizSessions);
