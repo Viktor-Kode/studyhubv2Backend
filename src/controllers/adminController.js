@@ -6,6 +6,10 @@ import StudySession from '../models/StudySession.js';
 import FlashcardProgress from '../models/FlashcardProgress.js';
 import Streak from '../models/Streak.js';
 import StudyNote from '../models/StudyNote.js';
+import QuizSession from '../models/QuizSession.js';
+import FlashCardDeck from '../models/FlashCardDeck.js';
+import Class from '../models/Class.js';
+import Reminder from '../models/Reminder.js';
 import { PLANS } from '../config/plans.js';
 
 const userId = (id) => new mongoose.Types.ObjectId(id);
@@ -51,7 +55,11 @@ export const getAdminStats = async (req, res) => {
             dailySignups,
             topSubjects,
             recentUsers,
-            recentTransactions
+            recentTransactions,
+            quizSessionCounts,
+            flashcardDeckCount,
+            classCount,
+            reminderCount
         ] = await Promise.all([
             User.countDocuments(),
             User.countDocuments({ subscriptionStatus: 'active' }),
@@ -98,7 +106,14 @@ export const getAdminStats = async (req, res) => {
             Transaction.find({ status: 'success' })
                 .populate('userId', 'name email')
                 .sort({ createdAt: -1 })
-                .limit(10)
+                .limit(10),
+            Promise.all([
+                QuizSession.countDocuments(),
+                QuizSession.countDocuments({ createdAt: { $gte: today } })
+            ]),
+            FlashCardDeck.countDocuments(),
+            Class.countDocuments(),
+            Reminder.countDocuments()
         ]);
 
         const usersToday = await User.countDocuments({ createdAt: { $gte: today } });
@@ -161,7 +176,21 @@ export const getAdminStats = async (req, res) => {
                 plan: t.plan,
                 createdAt: t.createdAt,
                 userId: t.userId ? { name: t.userId.name, email: t.userId.email } : undefined
-            }))
+            })),
+            extra: {
+                quizzes: {
+                    totalSessions: quizSessionCounts?.[0] || 0,
+                    sessionsToday: quizSessionCounts?.[1] || 0
+                },
+                content: {
+                    totalNotes: noteCount,
+                    flashcardDecks: flashcardDeckCount || 0
+                },
+                classes: {
+                    totalClasses: classCount || 0,
+                    totalReminders: reminderCount || 0
+                }
+            }
         };
 
         console.log('[Admin] Stats built successfully');
