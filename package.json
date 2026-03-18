@@ -37,7 +37,8 @@
     "officeparser": "^6.0.4",
     "openai": "^4.85.4",
     "pdf-parse": "^2.4.5",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "twilio": "^5.12.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

@@ -4,25 +4,28 @@ import {
     createReminder,
     updateReminder,
     deleteReminder,
-    sendWhatsAppNotification
+    sendWhatsAppNotification,
+    sendTwilioTimetableReminder,
 } from '../controllers/reminderController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import User from '../models/User.js';
+import { sendMessage } from '../services/termiiService.js';
 
 const router = express.Router();
 
 router.use(protect);
 
-router.route('/')
+router
+    .route('/')
     .get(getReminders)
     .post(createReminder);
 
-router.route('/:id')
+router
+    .route('/:id')
     .patch(updateReminder)
     .delete(deleteReminder);
 
 router.post('/whatsapp', sendWhatsAppNotification);
-import User from '../models/User.js';
-import { sendMessage } from '../services/termiiService.js';
 
 router.get('/test-whatsapp', async (req, res) => {
     try {
@@ -32,10 +35,17 @@ router.get('/test-whatsapp', async (req, res) => {
         }
 
         const phone = user.phone || user.phoneNumber;
-        const result = await sendMessage(phone, 'StudyHelp test message! Your notifications are working.');
+        const result = await sendMessage(
+            phone,
+            'StudyHelp test message! Your notifications are working.',
+        );
 
         if (result.success) {
-            return res.json({ success: true, sid: result.data?.message_id, method: result.channel || 'whatsapp' });
+            return res.json({
+                success: true,
+                sid: result.data?.message_id,
+                method: result.channel || 'whatsapp',
+            });
         }
         res.json({ success: false, error: result.error });
     } catch (err) {
@@ -43,4 +53,7 @@ router.get('/test-whatsapp', async (req, res) => {
     }
 });
 
+router.post('/twilio-timetable', sendTwilioTimetableReminder);
+
 export default router;
+

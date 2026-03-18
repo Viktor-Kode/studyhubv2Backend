@@ -1,5 +1,6 @@
 import Reminder from '../models/Reminder.js';
 import { sendMessage } from '../services/termiiService.js';
+import { sendTimetableWhatsApp } from '../services/twilioService.js';
 
 export const getReminders = async (req, res) => {
     try {
@@ -55,6 +56,29 @@ export const sendWhatsAppNotification = async (req, res) => {
 
         const result = await sendMessage(phoneNumber, message);
         res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const sendTwilioTimetableReminder = async (req, res) => {
+    try {
+        const { to, dateLabel, timeLabel } = req.body;
+
+        if (!to || !dateLabel || !timeLabel) {
+            return res.status(400).json({
+                success: false,
+                message: 'to, dateLabel and timeLabel are required',
+            });
+        }
+
+        const result = await sendTimetableWhatsApp({ to, dateLabel, timeLabel });
+
+        if (!result.success) {
+            return res.status(500).json({ success: false, message: result.error });
+        }
+
+        res.status(200).json({ success: true, sid: result.sid });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
