@@ -1,6 +1,5 @@
 import Reminder from '../models/Reminder.js';
-import { sendMessage } from '../services/termiiService.js';
-import { sendTimetableWhatsApp } from '../services/twilioService.js';
+import { sendTimetableWhatsApp, sendWhatsAppText } from '../services/twilioService.js';
 
 export const getReminders = async (req, res) => {
     try {
@@ -54,8 +53,13 @@ export const sendWhatsAppNotification = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Phone number and message are required' });
         }
 
-        const result = await sendMessage(phoneNumber, message);
-        res.status(200).json({ success: true, data: result });
+        const result = await sendWhatsAppText({ to: phoneNumber, body: message });
+
+        if (!result.success) {
+            return res.status(500).json({ success: false, message: result.error });
+        }
+
+        res.status(200).json({ success: true, sid: result.sid });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

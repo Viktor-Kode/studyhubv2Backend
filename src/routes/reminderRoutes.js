@@ -9,7 +9,7 @@ import {
 } from '../controllers/reminderController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import User from '../models/User.js';
-import { sendMessage } from '../services/termiiService.js';
+import { sendWhatsAppText } from '../services/twilioService.js';
 
 const router = express.Router();
 
@@ -35,16 +35,16 @@ router.get('/test-whatsapp', async (req, res) => {
         }
 
         const phone = user.phone || user.phoneNumber;
-        const result = await sendMessage(
-            phone,
-            'StudyHelp test message! Your notifications are working.',
-        );
+        const result = await sendWhatsAppText({
+            to: phone,
+            body: 'StudyHelp test message! Your WhatsApp notifications are working via Twilio.',
+        });
 
         if (result.success) {
             return res.json({
                 success: true,
-                sid: result.data?.message_id,
-                method: result.channel || 'whatsapp',
+                sid: result.sid,
+                method: 'whatsapp-twilio',
             });
         }
         res.json({ success: false, error: result.error });

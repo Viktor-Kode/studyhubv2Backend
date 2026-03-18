@@ -30,6 +30,25 @@ export const sendWhatsAppTemplate = async ({ to, contentSid, contentVariables })
   }
 };
 
+export const sendWhatsAppText = async ({ to, body }) => {
+  if (!client) {
+    return { success: false, error: 'Twilio not configured' };
+  }
+
+  try {
+    const message = await client.messages.create({
+      from: whatsappFrom,
+      to,
+      body,
+    });
+
+    return { success: true, sid: message.sid };
+  } catch (err) {
+    console.error('[Twilio] WhatsApp text error:', err?.message || err);
+    return { success: false, error: err?.message || 'Unknown Twilio error' };
+  }
+};
+
 export const sendTimetableWhatsApp = async ({ to, dateLabel, timeLabel }) => {
   const contentSid = process.env.TWILIO_TIMETABLE_CONTENT_SID;
 
