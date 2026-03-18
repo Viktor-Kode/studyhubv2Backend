@@ -60,7 +60,8 @@ const reminderSchema = new mongoose.Schema(
             default: 'none'
         },
         recurringDays: [Number],
-        whatsappNotifiedAt: Date
+        whatsappBeforeNotifiedAt: Date,
+        whatsappAtTimeNotifiedAt: Date
     },
     { timestamps: true }
 );
