@@ -10,6 +10,13 @@ if (!accountSid || !authToken) {
 
 const client = accountSid && authToken ? twilio(accountSid, authToken) : null;
 
+const formatWhatsAppTo = (to) => {
+  if (!to) return to;
+  if (to.startsWith('whatsapp:')) return to;
+  // assume E.164 or local number has been normalized elsewhere
+  return `whatsapp:${to}`;
+};
+
 export const sendWhatsAppTemplate = async ({ to, contentSid, contentVariables }) => {
   if (!client) {
     return { success: false, error: 'Twilio not configured' };
@@ -18,7 +25,7 @@ export const sendWhatsAppTemplate = async ({ to, contentSid, contentVariables })
   try {
     const message = await client.messages.create({
       from: whatsappFrom,
-      to,
+      to: formatWhatsAppTo(to),
       contentSid,
       contentVariables,
     });
@@ -38,7 +45,7 @@ export const sendWhatsAppText = async ({ to, body }) => {
   try {
     const message = await client.messages.create({
       from: whatsappFrom,
-      to,
+      to: formatWhatsAppTo(to),
       body,
     });
 
