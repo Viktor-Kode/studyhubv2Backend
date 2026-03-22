@@ -456,7 +456,7 @@ Requirements:
 - Include a brief explanation
 - Based strictly on the Nigerian ${examLabel} syllabus
 
-Return ONLY a JSON array with no extra text, in this format:
+Return ONLY a valid JSON array with no extra text, markdown fences, or backticks, in this format:
 [
   {
     "question": "question text here",
@@ -467,6 +467,7 @@ Return ONLY a JSON array with no extra text, in this format:
 ]`;
 
     try {
+        console.log('[CBT] generate-topic-questions', { exam: examLabel, subject, topic: String(topic).slice(0, 80), n });
         const selectedModel = MODEL_REGISTRY.find((m) => m.recommended) || MODEL_REGISTRY[0];
 
         const response = await aiClient.chatCompletion({

@@ -32,6 +32,7 @@ router.post('/results', protect, saveCBTResult);
 router.get('/results', protect, getCBTResults);
 router.get('/results/summary', protect, getCBTResultsSummary);
 router.post('/explain', protect, checkAIUsage, explainQuestion);
+// Syllabus “Study by Topic” — full URL: POST /api/cbt/generate-topic-questions (body: exam, subject, topic, count?)
 router.post('/generate-topic-questions', protect, checkAIUsage, generateTopicQuestions);
 
 export default router;
