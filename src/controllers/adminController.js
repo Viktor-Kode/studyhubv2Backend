@@ -10,6 +10,8 @@ import QuizSession from '../models/QuizSession.js';
 import FlashCardDeck from '../models/FlashCardDeck.js';
 import Class from '../models/Class.js';
 import Reminder from '../models/Reminder.js';
+import LibraryMaterial from '../models/LibraryMaterial.js';
+import UserProgress from '../models/UserProgress.js';
 import { PLANS } from '../config/plans.js';
 
 const userId = (id) => new mongoose.Types.ObjectId(id);
@@ -208,6 +210,8 @@ export const getAdminUsers = async (req, res) => {
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
         const search = (req.query.search || '').trim();
         const status = req.query.status || '';
+        const plan = (req.query.plan || '').trim();
+        const sort = (req.query.sort || 'newest').trim();
 
         const conditions = [];
 
@@ -234,19 +238,48 @@ export const getAdminUsers = async (req, res) => {
             conditions.push({ subscriptionStatus: 'expired' });
         }
 
+        if (plan === 'weekly') {
+            conditions.push({ subscriptionPlan: 'weekly', subscriptionStatus: 'active' });
+        } else if (plan === 'monthly') {
+            conditions.push({ subscriptionPlan: 'monthly', subscriptionStatus: 'active' });
+        } else if (plan === 'free') {
+            conditions.push({
+                $or: [
+                    { subscriptionStatus: { $ne: 'active' } },
+                    { subscriptionPlan: null },
+                    { subscriptionStatus: 'free' },
+                    { subscriptionStatus: 'expired' }
+                ]
+            });
+        } else if (plan === 'teacher') {
+            conditions.push({ role: 'teacher' });
+        }
+
         const filter = conditions.length > 0 ? { $and: conditions } : {};
+
+        const sortObj =
+            sort === 'oldest' ? { createdAt: 1 } :
+                sort === 'name' ? { name: 1 } :
+                    { createdAt: -1 };
 
         const [users, total] = await Promise.all([
             User.find(filter)
-                .sort({ createdAt: -1 })
+                .sort(sortObj)
                 .skip((page - 1) * limit)
                 .limit(limit)
-                .select('name email subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit createdAt role phoneNumber')
+                .select(
+                    'name email subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit createdAt role phoneNumber teacherPlan teacherPlanEnd lastSeen banned firebaseUid'
+                )
                 .lean(),
             User.countDocuments(filter)
         ]);
 
-        res.json({ success: true, users, total });
+        res.json({
+            success: true,
+            users,
+            total,
+            pages: Math.ceil(total / limit) || 1
+        });
     } catch (err) {
         console.error('[Admin] getAdminUsers error:', err);
         res.status(500).json({ success: false, error: err.message });
@@ -555,5 +588,326 @@ export const deleteUser = async (req, res) => {
     } catch (err) {
         console.error('[Admin] deleteUser error:', err);
         res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+const csvEscape = (val) => {
+    const s = String(val ?? '');
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+};
+
+// ── Full dashboard stats (admin UI v2) ───────────────────────────────────────
+export const getFullDashboardStats = async (req, res) => {
+    try {
+        const now = new Date();
+        const todayStartD = new Date(now);
+        todayStartD.setHours(0, 0, 0, 0);
+        const weekStartD = new Date(now);
+        weekStartD.setDate(weekStartD.getDate() - 7);
+        weekStartD.setHours(0, 0, 0, 0);
+        const monthStartD = new Date(now.getFullYear(), now.getMonth(), 1);
+        monthStartD.setHours(0, 0, 0, 0);
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const eightyFourDaysAgo = new Date(now);
+        eightyFourDaysAgo.setDate(eightyFourDaysAgo.getDate() - 84);
+
+        const txSuccess = { status: 'success' };
+
+        const [
+            totalUsers,
+            todayUsers,
+            weekUsers,
+            monthUsers,
+            paidUsers,
+            teacherUsers,
+            totalRevenue,
+            weekRevenue,
+            monthRevenue,
+            revenueByPlan,
+            weeklyRevenueAgg,
+            userGrowth,
+            totalCBT,
+            weekCBT,
+            avgAccuracy,
+            totalFiles,
+            totalStorageAgg,
+            failedPayments,
+            aiUsageAgg,
+            libByRole
+        ] = await Promise.all([
+            User.countDocuments(),
+            User.countDocuments({ createdAt: { $gte: todayStartD } }),
+            User.countDocuments({ createdAt: { $gte: weekStartD } }),
+            User.countDocuments({ createdAt: { $gte: monthStartD } }),
+            User.countDocuments({ subscriptionStatus: 'active' }),
+            User.countDocuments({ role: 'teacher' }),
+            Transaction.aggregate([
+                { $match: txSuccess },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]),
+            Transaction.aggregate([
+                { $match: { ...txSuccess, createdAt: { $gte: weekStartD } } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]),
+            Transaction.aggregate([
+                { $match: { ...txSuccess, createdAt: { $gte: monthStartD } } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]),
+            Transaction.aggregate([
+                { $match: txSuccess },
+                { $group: { _id: '$plan', total: { $sum: '$amount' }, count: { $sum: 1 } } }
+            ]),
+            Transaction.aggregate([
+                { $match: { ...txSuccess, createdAt: { $gte: eightyFourDaysAgo } } },
+                {
+                    $group: {
+                        _id: { y: { $isoWeekYear: '$createdAt' }, w: { $isoWeek: '$createdAt' } },
+                        total: { $sum: '$amount' },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { '_id.y': 1, '_id.w': 1 } }
+            ]),
+            User.aggregate([
+                { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+                {
+                    $group: {
+                        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { _id: 1 } }
+            ]),
+            CBTResult.countDocuments(),
+            CBTResult.countDocuments({ createdAt: { $gte: weekStartD } }),
+            CBTResult.aggregate([{ $group: { _id: null, avg: { $avg: '$accuracy' } } }]),
+            LibraryMaterial.countDocuments(),
+            LibraryMaterial.aggregate([{ $group: { _id: null, total: { $sum: '$fileSize' } } }]),
+            Transaction.countDocuments({ status: 'failed' }),
+            User.aggregate([{ $group: { _id: null, total: { $sum: '$aiUsageCount' } } }]),
+            LibraryMaterial.aggregate([
+                {
+                    $lookup: {
+                        from: 'users',
+                        localField: 'userId',
+                        foreignField: '_id',
+                        as: 'u'
+                    }
+                },
+                { $unwind: { path: '$u', preserveNullAndEmptyArrays: true } },
+                {
+                    $group: {
+                        _id: { $ifNull: ['$u.role', 'unknown'] },
+                        bytes: { $sum: '$fileSize' },
+                        files: { $sum: 1 }
+                    }
+                }
+            ])
+        ]);
+
+        const freeUsers = Math.max(0, totalUsers - paidUsers);
+
+        const topStudents = await UserProgress.find()
+            .sort({ xp: -1 })
+            .limit(10)
+            .lean();
+        const progressIds = topStudents.map((s) => s.userId).filter(Boolean);
+        const topStudentUsers = await User.find({ firebaseUid: { $in: progressIds } })
+            .select('firebaseUid name email subscriptionPlan subscriptionStatus role teacherPlan')
+            .lean();
+        const topStudentMap = Object.fromEntries(topStudentUsers.map((u) => [u.firebaseUid, u]));
+        const topStudentsData = topStudents.map((s) => ({
+            ...s,
+            user: topStudentMap[s.userId] || null
+        }));
+
+        const teacherUsageRows = await User.find({ teacherUsage: { $exists: true } })
+            .select('teacherUsage')
+            .lean();
+        const teacherToolTotals = {};
+        for (const row of teacherUsageRows) {
+            if (!row.teacherUsage) continue;
+            for (const [k, v] of Object.entries(row.teacherUsage)) {
+                teacherToolTotals[k] = (teacherToolTotals[k] || 0) + (Number(v) || 0);
+            }
+        }
+
+        const weeklyRevenue = weeklyRevenueAgg.map((r) => ({
+            _id: `W${r._id.w}`,
+            y: r._id.y,
+            w: r._id.w,
+            total: r.total,
+            count: r.count
+        }));
+
+        res.json({
+            users: {
+                total: totalUsers,
+                today: todayUsers,
+                week: weekUsers,
+                month: monthUsers,
+                paid: paidUsers,
+                free: freeUsers,
+                teachers: teacherUsers
+            },
+            revenue: {
+                total: totalRevenue[0]?.total || 0,
+                week: weekRevenue[0]?.total || 0,
+                month: monthRevenue[0]?.total || 0,
+                byPlan: revenueByPlan,
+                weekly: weeklyRevenue
+            },
+            cbt: {
+                total: totalCBT,
+                week: weekCBT,
+                avgScore: Math.round(avgAccuracy[0]?.avg || 0)
+            },
+            library: {
+                files: totalFiles,
+                storage: totalStorageAgg[0]?.total || 0,
+                byRole: libByRole
+            },
+            failedPayments,
+            topStudents: topStudentsData,
+            userGrowth,
+            teacherToolTotals,
+            aiUsageTotal: aiUsageAgg[0]?.total || 0
+        });
+    } catch (err) {
+        console.error('[Admin Stats]', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const getActivityFeed = async (req, res) => {
+    try {
+        const limit = Math.min(50, Math.max(5, parseInt(req.query.limit, 10) || 20));
+        const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+        const pool = 120;
+
+        const [recentUsers, recentPayments] = await Promise.all([
+            User.find()
+                .sort({ createdAt: -1 })
+                .limit(pool)
+                .select('name email subscriptionPlan subscriptionStatus createdAt')
+                .lean(),
+            Transaction.find()
+                .sort({ createdAt: -1 })
+                .limit(pool)
+                .populate('userId', 'name email')
+                .lean()
+        ]);
+
+        const feed = [
+            ...recentUsers.map((u) => ({
+                type: 'signup',
+                time: u.createdAt,
+                message: `${u.name || u.email} signed up`,
+                plan: u.subscriptionPlan,
+                icon: '👤'
+            })),
+            ...recentPayments.map((t) => {
+                const email = t.userId?.email || 'Unknown';
+                const naira = t.amount != null ? Math.round(t.amount / 100).toLocaleString('en-NG') : '0';
+                return {
+                    type: t.status === 'failed' ? 'failed_payment' : 'payment',
+                    time: t.createdAt,
+                    message: `${email} — ₦${naira} (${t.plan})`,
+                    status: t.status,
+                    icon: t.status === 'failed' ? '❌' : '💰'
+                };
+            })
+        ].sort((a, b) => new Date(b.time) - new Date(a.time));
+
+        const slice = feed.slice(offset, offset + limit);
+        res.json({
+            feed: slice,
+            total: feed.length,
+            hasMore: offset + limit < feed.length
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const adminQuickAction = async (req, res) => {
+    try {
+        const { action, userId, data } = req.body;
+
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, error: 'Invalid user id' });
+        }
+
+        if (action === 'ban_user') {
+            await User.findByIdAndUpdate(userId, { banned: true });
+            return res.json({ success: true, message: 'User banned' });
+        }
+        if (action === 'unban_user') {
+            await User.findByIdAndUpdate(userId, { banned: false });
+            return res.json({ success: true, message: 'User unbanned' });
+        }
+        if (action === 'give_free_access') {
+            const days = Math.max(1, parseInt(data?.days, 10) || 7);
+            const planConfig = PLANS.monthly;
+            const start = new Date();
+            const end = new Date(start);
+            end.setDate(end.getDate() + days);
+
+            await User.findByIdAndUpdate(userId, {
+                subscriptionStatus: 'active',
+                subscriptionPlan: 'monthly',
+                subscriptionStart: start,
+                subscriptionEnd: end,
+                aiUsageCount: 0,
+                aiUsageLimit: planConfig.aiLimit,
+                flashcardUsageCount: 0,
+                flashcardUsageLimit: planConfig.flashcardLimit
+            });
+            return res.json({ success: true, message: `Free access given for ${days} days` });
+        }
+        if (action === 'reset_password') {
+            return res.json({
+                success: true,
+                message: 'Send password reset from Firebase console'
+            });
+        }
+
+        res.status(400).json({ success: false, error: 'Unknown action' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+export const exportUsersCSV = async (req, res) => {
+    try {
+        const users = await User.find()
+            .select('name email subscriptionStatus subscriptionPlan createdAt phoneNumber teacherPlan role lastSeen')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        const rows = [
+            ['Name', 'Email', 'Phone', 'Plan', 'Status', 'Teacher Plan', 'Role', 'Joined', 'Last seen'].map(csvEscape).join(','),
+            ...users.map((u) =>
+                [
+                    csvEscape(u.name || ''),
+                    csvEscape(u.email || ''),
+                    csvEscape(u.phoneNumber || ''),
+                    csvEscape(u.subscriptionPlan || 'free'),
+                    csvEscape(u.subscriptionStatus || ''),
+                    csvEscape(u.teacherPlan || 'none'),
+                    csvEscape(u.role || 'student'),
+                    csvEscape(new Date(u.createdAt).toLocaleDateString('en-NG')),
+                    csvEscape(u.lastSeen ? new Date(u.lastSeen).toLocaleDateString('en-NG') : '')
+                ].join(',')
+            )
+        ].join('\n');
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename=studyhelp_users.csv');
+        res.send(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 };

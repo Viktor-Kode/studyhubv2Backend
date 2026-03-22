@@ -13,7 +13,11 @@ import {
     getUserActivity,
     getMetricUsers,
     grantPlan,
-    deleteUser
+    deleteUser,
+    getFullDashboardStats,
+    getActivityFeed,
+    adminQuickAction,
+    exportUsersCSV
 } from '../controllers/adminController.js';
 import {
     sendEmailCampaign,
@@ -59,6 +63,10 @@ router.get('/check-claim/:email', async (req, res) => {
 
 // Dashboard routes — require Firebase auth + admin role
 router.get('/stats', protect, restrictTo('admin'), getAdminStats);
+router.get('/dashboard-stats', protect, restrictTo('admin'), getFullDashboardStats);
+router.get('/activity-feed', protect, restrictTo('admin'), getActivityFeed);
+router.post('/quick-action', protect, restrictTo('admin'), adminQuickAction);
+router.get('/export-csv', protect, restrictTo('admin'), exportUsersCSV);
 router.get('/users', protect, restrictTo('admin'), getAdminUsers);
 router.get('/online-users', protect, restrictTo('admin'), getOnlineUsers);
 router.get('/logins-today', protect, restrictTo('admin'), getTodayLogins);

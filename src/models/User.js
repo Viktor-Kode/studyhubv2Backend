@@ -97,7 +97,9 @@ const userSchema = new mongoose.Schema({
 
     lastSeen: { type: Date, default: null },
 
-    emailUnsubscribed: { type: Boolean, default: false }
+    emailUnsubscribed: { type: Boolean, default: false },
+
+    banned: { type: Boolean, default: false }
 
 }, { timestamps: true });
 
