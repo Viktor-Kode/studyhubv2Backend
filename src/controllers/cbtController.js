@@ -433,3 +433,73 @@ export const explainQuestion = async (req, res) => {
         res.status(500).json({ error: 'Failed to generate explanation', details: error.message });
     }
 };
+
+/**
+ * AI-generated MCQs for a syllabus topic (DeepSeek via aiClient).
+ */
+export const generateTopicQuestions = async (req, res) => {
+    const { exam, subject, topic, count = 5 } = req.body;
+
+    if (!exam || !subject || !topic) {
+        return res.status(400).json({ error: 'exam, subject, and topic are required' });
+    }
+
+    const n = Math.min(20, Math.max(1, parseInt(String(count), 10) || 5));
+    const examLabel = String(exam).toUpperCase();
+
+    const prompt = `Generate ${n} multiple choice questions for Nigerian ${examLabel} exam on the topic "${topic}" in ${subject}.
+
+Requirements:
+- Questions must be exam-standard, similar to real ${examLabel} past questions
+- Each question must have exactly 4 options (A, B, C, D)
+- Include the correct answer as a single letter A, B, C, or D
+- Include a brief explanation
+- Based strictly on the Nigerian ${examLabel} syllabus
+
+Return ONLY a JSON array with no extra text, in this format:
+[
+  {
+    "question": "question text here",
+    "options": { "A": "...", "B": "...", "C": "...", "D": "..." },
+    "answer": "A",
+    "explanation": "brief explanation of why the answer is correct"
+  }
+]`;
+
+    try {
+        const selectedModel = MODEL_REGISTRY.find((m) => m.recommended) || MODEL_REGISTRY[0];
+
+        const response = await aiClient.chatCompletion({
+            model: selectedModel.id,
+            messages: [{ role: 'user', content: prompt }],
+            max_tokens: 4000,
+            temperature: 0.7,
+        });
+
+        const text = response.choices[0].message.content.trim();
+        const clean = text
+            .replace(/```json\s*/gi, '')
+            .replace(/```\s*$/g, '')
+            .trim();
+
+        let questions;
+        try {
+            questions = JSON.parse(clean);
+        } catch {
+            const match = clean.match(/\[[\s\S]*\]/);
+            if (!match) throw new Error('Could not parse JSON array from model output');
+            questions = JSON.parse(match[0]);
+        }
+
+        if (!Array.isArray(questions)) {
+            return res.status(502).json({ error: 'Invalid AI response: expected a JSON array' });
+        }
+
+        await incrementAIUsage(req.user._id);
+
+        return res.status(200).json({ questions });
+    } catch (err) {
+        console.error('[Topic Questions]', err);
+        return res.status(500).json({ error: err.message || 'Failed to generate questions' });
+    }
+};
