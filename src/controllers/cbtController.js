@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { MODEL_REGISTRY } from '../config/aiConfig.js';
 import { updateStreak } from '../services/streakService.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
+import { awardXP } from './progressController.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -297,6 +298,13 @@ export const saveCBTResult = async (req, res) => {
 
         // Increment test usage
         await User.findByIdAndUpdate(studentId, { $inc: { 'plan.testsUsed': 1 } });
+
+        const uidStr = String(studentId);
+        await awardXP(uidStr, 'cbt_complete');
+        const acc = Number(resultData.accuracy);
+        if (!Number.isNaN(acc) && acc >= 80) {
+            await awardXP(uidStr, 'cbt_high_score');
+        }
 
         const streak = await updateStreak(studentId, 'cbt');
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
