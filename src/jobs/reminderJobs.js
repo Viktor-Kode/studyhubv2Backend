@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import Reminder from '../models/Reminder.js';
 import User from '../models/User.js';
 import { sendWhatsAppText } from '../services/twilioService.js';
+import { parseReminderWallClockToUtc } from '../utils/reminderTime.js';
 
 // Run every minute to check due reminders and send WhatsApp messages
 cron.schedule(
@@ -20,16 +21,10 @@ cron.schedule(
 
       for (const reminder of reminders) {
         try {
-          const [year, month, day] = (reminder.date || '').split('-').map(Number);
-          const [hour, minute] = (reminder.time || '').split(':').map(Number);
-
-          if (!year || !month || !day || Number.isNaN(hour) || Number.isNaN(minute)) {
+          const eventTime = parseReminderWallClockToUtc(reminder.date, reminder.time);
+          if (!eventTime) {
             continue;
           }
-
-          const eventTime = new Date();
-          eventTime.setFullYear(year, month - 1, day);
-          eventTime.setHours(hour, minute, 0, 0);
 
           const notifyMinutes = reminder.notifyBefore ?? 15;
           const notifyTime = new Date(eventTime.getTime() - notifyMinutes * 60 * 1000);
