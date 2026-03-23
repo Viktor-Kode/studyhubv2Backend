@@ -306,6 +306,17 @@ export const saveCBTResult = async (req, res) => {
             await awardXP(uidStr, 'cbt_high_score');
         }
 
+        // Community points system:
+        // - pass (>=80%): +10 cbtPoints
+        // - any CBT completion: +5 cbtPoints
+        const cbtCommunityPoints = Number.isNaN(acc) ? 5 : acc >= 80 ? 10 : 5;
+        const user = await User.findById(studentId);
+        if (user) {
+            user.cbtPoints = (user.cbtPoints || 0) + cbtCommunityPoints;
+            user.totalPoints = (user.communityPoints || 0) + user.cbtPoints;
+            await user.save({ validateBeforeSave: false });
+        }
+
         const streak = await updateStreak(studentId, 'cbt');
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
         const lastDate = streak?.lastActivityDate

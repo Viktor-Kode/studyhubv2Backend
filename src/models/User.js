@@ -99,6 +99,12 @@ const userSchema = new mongoose.Schema({
 
     emailUnsubscribed: { type: Boolean, default: false },
 
+    // ─── Community Gamification Points ────────────────────────────────
+    communityPoints: { type: Number, default: 0 },
+    cbtPoints: { type: Number, default: 0 }, // increment when CBT completed
+    totalPoints: { type: Number, default: 0 }, // communityPoints + cbtPoints
+    postsCount: { type: Number, default: 0 },
+
     banned: { type: Boolean, default: false }
 
 }, { timestamps: true });

@@ -30,6 +30,7 @@ import adminPostutmeRoutes from './routes/adminPostutmeRoutes.js';
 import teacherRoutes from './routes/teacherRoutes.js';
 import teacherToolsRoutes from './routes/teacherToolsRoutes.js';
 import progressRoutes from './routes/progressRoutes.js';
+import communityRoutes from './routes/communityRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 import { unsubscribe } from './controllers/emailCampaignController.js';
@@ -148,6 +149,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/teacher-tools', teacherToolsRoutes);
 app.use('/api/progress', progressRoutes);
+app.use('/api/community', communityRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');
