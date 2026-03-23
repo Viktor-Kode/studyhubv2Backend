@@ -12,6 +12,12 @@ import {
   votePoll,
   getLeaderboard,
   uploadCommunityImage,
+  searchUsers,
+  getGroups,
+  createGroup,
+  addGroupMember,
+  getGroupMessages,
+  sendGroupMessage,
 } from '../controllers/communityController.js';
 
 const router = express.Router();
@@ -42,6 +48,14 @@ router.post('/posts/:id/vote', protect, votePoll);
 
 // LEADERBOARD
 router.get('/leaderboard', protect, getLeaderboard);
+
+// GROUPS
+router.get('/users/search', protect, searchUsers);
+router.get('/groups', protect, getGroups);
+router.post('/groups', protect, createGroup);
+router.post('/groups/:id/members', protect, addGroupMember);
+router.get('/groups/:id/messages', protect, getGroupMessages);
+router.post('/groups/:id/messages', protect, sendGroupMessage);
 
 // IMAGE UPLOAD
 router.post('/upload-image', protect, upload.single('image'), uploadCommunityImage);

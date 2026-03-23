@@ -2,6 +2,8 @@ import cloudinary from '../config/cloudinary.js';
 import User from '../models/User.js';
 import CommunityPost from '../models/CommunityPost.js';
 import CommunityComment from '../models/CommunityComment.js';
+import CommunityGroup from '../models/CommunityGroup.js';
+import CommunityGroupMessage from '../models/CommunityGroupMessage.js';
 
 function computeInitials(name) {
   const words = String(name || '')
@@ -474,6 +476,171 @@ export const uploadCommunityImage = async (req, res) => {
     });
 
     res.json({ success: true, imageUrl: result.secure_url });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GROUPS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function canAccessGroup(group, firebaseUid) {
+  return !!group && !!firebaseUid && (group.members || []).includes(firebaseUid);
+}
+
+// GET /api/community/users/search?q=jo
+export const searchUsers = async (req, res) => {
+  try {
+    const currentUid = getFirebaseUid(req.user);
+    const q = String(req.query.q || '').trim();
+    if (!q || q.length < 2) return res.json({ users: [] });
+
+    const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    const rows = await User.find({
+      $or: [{ name: rx }, { email: rx }],
+      firebaseUid: { $ne: currentUid, $exists: true, $ne: null },
+    })
+      .select('name email firebaseUid')
+      .limit(12)
+      .lean();
+
+    const users = rows.map((u) => ({
+      uid: u.firebaseUid,
+      name: u.name || 'Student',
+      email: u.email || '',
+      avatar: computeInitials(u.name || 'Student'),
+    }));
+
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/community/groups
+export const getGroups = async (req, res) => {
+  try {
+    const currentUid = getFirebaseUid(req.user);
+    const groups = await CommunityGroup.find({ members: currentUid })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    res.json({ groups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// POST /api/community/groups
+// body: { name, description?, memberIds?: string[] }
+export const createGroup = async (req, res) => {
+  try {
+    const currentUid = getFirebaseUid(req.user);
+    if (!currentUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { name, description, memberIds } = req.body || {};
+    const trimmedName = String(name || '').trim();
+    if (!trimmedName) return res.status(400).json({ success: false, error: 'name is required' });
+
+    const list = Array.isArray(memberIds) ? memberIds.filter((x) => typeof x === 'string' && x.trim()) : [];
+    const members = Array.from(new Set([currentUid, ...list]));
+
+    const group = await CommunityGroup.create({
+      name: trimmedName,
+      description: String(description || '').trim(),
+      createdBy: currentUid,
+      members,
+    });
+
+    res.status(201).json({ success: true, group });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// POST /api/community/groups/:id/members
+// body: { userId }
+export const addGroupMember = async (req, res) => {
+  try {
+    const currentUid = getFirebaseUid(req.user);
+    const { id } = req.params;
+    const { userId } = req.body || {};
+
+    if (!userId || typeof userId !== 'string') {
+      return res.status(400).json({ success: false, error: 'userId is required' });
+    }
+
+    const group = await CommunityGroup.findById(id);
+    if (!group) return res.status(404).json({ success: false, error: 'Group not found' });
+    if (!canAccessGroup(group, currentUid)) {
+      return res.status(403).json({ success: false, error: 'Not a group member' });
+    }
+
+    if (!(group.members || []).includes(userId)) group.members.push(userId);
+    await group.save();
+
+    res.json({ success: true, group });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// GET /api/community/groups/:id/messages
+export const getGroupMessages = async (req, res) => {
+  try {
+    const currentUid = getFirebaseUid(req.user);
+    const { id } = req.params;
+
+    const group = await CommunityGroup.findById(id);
+    if (!group) return res.status(404).json({ success: false, error: 'Group not found' });
+    if (!canAccessGroup(group, currentUid)) {
+      return res.status(403).json({ success: false, error: 'Not a group member' });
+    }
+
+    const messages = await CommunityGroupMessage.find({ groupId: id })
+      .sort({ createdAt: 1 })
+      .limit(300)
+      .lean();
+
+    res.json({ messages });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// POST /api/community/groups/:id/messages
+// body: { content }
+export const sendGroupMessage = async (req, res) => {
+  try {
+    const currentUid = getFirebaseUid(req.user);
+    const { id } = req.params;
+    const { content } = req.body || {};
+
+    const text = String(content || '').trim();
+    if (!text) return res.status(400).json({ success: false, error: 'content is required' });
+    if (text.length > 1000) return res.status(400).json({ success: false, error: 'content exceeds 1000 characters' });
+
+    const group = await CommunityGroup.findById(id);
+    if (!group) return res.status(404).json({ success: false, error: 'Group not found' });
+    if (!canAccessGroup(group, currentUid)) {
+      return res.status(403).json({ success: false, error: 'Not a group member' });
+    }
+
+    const authorName = req.user?.name || 'Student';
+    const authorAvatar = computeInitials(authorName);
+    const message = await CommunityGroupMessage.create({
+      groupId: id,
+      authorId: currentUid,
+      authorName,
+      authorAvatar,
+      content: text,
+    });
+
+    // simple activity bump
+    await CommunityGroup.findByIdAndUpdate(id, { $set: { updatedAt: new Date() } });
+
+    res.status(201).json({ success: true, message });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
