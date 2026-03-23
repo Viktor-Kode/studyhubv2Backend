@@ -6,6 +6,7 @@ import {
   createPost,
   likePost,
   deletePost,
+  updatePost,
   getComments,
   addComment,
   votePoll,
@@ -30,6 +31,7 @@ router.get('/posts', protect, getPosts);
 router.post('/posts', protect, createPost);
 router.post('/posts/:id/like', protect, likePost);
 router.delete('/posts/:id', protect, deletePost);
+router.patch('/posts/:id', protect, updatePost);
 
 // COMMENTS
 router.get('/posts/:id/comments', protect, getComments);
