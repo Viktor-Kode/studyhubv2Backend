@@ -12,11 +12,12 @@ connectDB().then(() => {
   registerNotificationJobs();
 });
 
-const PORT = getEnv('PORT', 5000);
+const PORT = Number(getEnv('PORT', 5000));
+const HOST = '0.0.0.0';
 
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server started on port ${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🚀 Server started on http://${HOST}:${PORT}`);
 });
 
 // GRACEFUL SHUTDOWN
