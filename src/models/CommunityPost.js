@@ -10,7 +10,7 @@ const CommunityPostSchema = new mongoose.Schema(
     imageUrl: { type: String, default: null }, // optional Cloudinary URL
     subject: { type: String, default: null }, // tag e.g. "Biology"
 
-    type: { type: String, enum: ['post', 'poll'], default: 'post' },
+    type: { type: String, enum: ['post', 'poll', 'question'], default: 'post' },
 
     likes: [{ type: String }], // userIds who liked (firebase UID strings)
     commentsCount: { type: Number, default: 0 },

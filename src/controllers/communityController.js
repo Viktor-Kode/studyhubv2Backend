@@ -107,7 +107,7 @@ export const createPost = async (req, res) => {
     const authorName = req.user.name || 'Student';
     const authorAvatar = computeInitials(authorName);
 
-    const postType = type === 'poll' ? 'poll' : 'post';
+    const postType = type === 'poll' ? 'poll' : type === 'question' ? 'question' : 'post';
 
     const postData = {
       authorId: currentUserFirebaseUid,
@@ -226,85 +226,99 @@ export const deletePost = async (req, res) => {
   }
 };
 
-// PATCH /api/community/posts/:id
-// Allows only the post author to edit post content/subject/image.
-// For poll posts, poll fields are only editable if the poll has zero votes (optional).
+// PATCH / PUT /api/community/posts/:id — owner only.
+// Polls with votes: only content, subject, imageUrl may change (options frozen).
+// Polls with zero votes: may send pollOptions (string[]) and/or legacy poll object.
 export const updatePost = async (req, res) => {
   try {
-    const currentUserFirebaseUid = getFirebaseUid(req.user)
-    const { id } = req.params
+    const currentUserFirebaseUid = getFirebaseUid(req.user);
+    const { id } = req.params;
 
-    const post = await CommunityPost.findById(id)
-    if (!post) return res.status(404).json({ success: false, error: 'Post not found' })
-    if (!currentUserFirebaseUid) return res.status(401).json({ success: false, error: 'Unauthorized' })
+    const post = await CommunityPost.findById(id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post not found' });
+    if (!currentUserFirebaseUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
     if (post.authorId !== currentUserFirebaseUid) {
-      return res.status(403).json({ success: false, error: 'You can only edit your own posts' })
+      return res.status(403).json({ success: false, error: 'You can only edit your own posts' });
     }
 
-    const { content, subject, imageUrl, poll } = req.body || {}
+    const { content, subject, imageUrl, poll, pollOptions } = req.body || {};
+    const options = post.poll?.options || [];
+    const votesTotal = options.reduce((sum, o) => sum + (o?.votes?.length || 0), 0);
+
+    if (votesTotal > 0 && (poll !== undefined || pollOptions !== undefined)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Poll has votes; only text and subject can be updated',
+      });
+    }
 
     if (content !== undefined) {
       if (!content || typeof content !== 'string' || !content.trim()) {
-        return res.status(400).json({ success: false, error: 'content is required' })
+        return res.status(400).json({ success: false, error: 'content is required' });
       }
       if (content.length > 1000) {
-        return res.status(400).json({ success: false, error: 'content exceeds 1000 characters' })
+        return res.status(400).json({ success: false, error: 'content exceeds 1000 characters' });
       }
-      post.content = content.trim()
+      post.content = content.trim();
+      if (post.type === 'poll' && post.poll) {
+        post.poll.question = post.content;
+      }
     }
 
     if (subject !== undefined) {
-      post.subject = subject ? String(subject) : null
+      post.subject = subject ? String(subject) : null;
     }
 
     if (imageUrl !== undefined) {
-      post.imageUrl = imageUrl ? String(imageUrl) : null
+      post.imageUrl = imageUrl ? String(imageUrl) : null;
     }
 
-    if (poll !== undefined) {
-      if (post.type !== 'poll') {
-        return res.status(400).json({ success: false, error: 'This is not a poll post' })
+    if (post.type === 'poll' && pollOptions !== undefined && votesTotal === 0) {
+      const texts = Array.isArray(pollOptions)
+        ? pollOptions.map((t) => String(t || '').trim()).filter(Boolean)
+        : [];
+      if (texts.length < 2) {
+        return res.status(400).json({ success: false, error: 'pollOptions needs at least 2 non-empty strings' });
       }
+      const endsAt = post.poll?.endsAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      post.poll = {
+        question: post.content || post.poll?.question || '',
+        options: texts.slice(0, 4).map((text) => ({ text, votes: [] })),
+        endsAt,
+      };
+    }
 
-      // Only allow editing poll structure when there are no votes yet.
-      const options = post.poll?.options || []
-      const votesTotal = options.reduce((sum, o) => sum + (o?.votes?.length || 0), 0)
-      if (votesTotal > 0) {
-        return res.status(403).json({
-          success: false,
-          error: 'Poll has votes; editing poll question/options is disabled',
-        })
-      }
-
-      const question = poll?.question ? String(poll.question).trim() : ''
-      const endsAt = poll?.endsAt ? new Date(poll.endsAt) : null
-      const rawOptions = Array.isArray(poll?.options) ? poll.options : []
+    if (poll !== undefined && post.type === 'poll' && votesTotal === 0) {
+      const question = poll?.question ? String(poll.question).trim() : '';
+      const endsAt = poll?.endsAt ? new Date(poll.endsAt) : post.poll?.endsAt || null;
+      const rawOptions = Array.isArray(poll?.options) ? poll.options : [];
       const nextOptions = rawOptions
         .map((o) => ({ text: (o?.text || '').toString().trim() }))
         .filter((o) => o.text.length > 0)
-        .slice(0, 4)
+        .slice(0, 4);
 
-      if (!question) return res.status(400).json({ success: false, error: 'poll.question is required' })
-      if (nextOptions.length < 2) return res.status(400).json({ success: false, error: 'poll.options needs at least 2 options' })
+      if (!question) return res.status(400).json({ success: false, error: 'poll.question is required' });
+      if (nextOptions.length < 2) return res.status(400).json({ success: false, error: 'poll.options needs at least 2 options' });
       if (!endsAt || Number.isNaN(endsAt.getTime())) {
-        return res.status(400).json({ success: false, error: 'poll.endsAt is required' })
+        return res.status(400).json({ success: false, error: 'poll.endsAt is required' });
       }
 
+      post.content = question;
       post.poll = {
         question,
         options: nextOptions.map((o) => ({ text: o.text, votes: [] })),
         endsAt,
-      }
+      };
     }
 
-    await post.save()
-      const author = await User.findOne({ firebaseUid: post.authorId }).select('role isVerified').lean()
-      const normalized = normalizePostForClient(post.toObject(), currentUserFirebaseUid, author)
-    res.json({ success: true, post: normalized })
+    await post.save();
+    const author = await User.findOne({ firebaseUid: post.authorId }).select('role isVerified').lean();
+    const normalized = normalizePostForClient(post.toObject(), currentUserFirebaseUid, author);
+    res.json({ success: true, post: normalized });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message });
   }
-}
+};
 
 // GET /api/community/posts/:id/comments
 export const getComments = async (req, res) => {
