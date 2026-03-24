@@ -9,11 +9,13 @@ import {
 
 const router = express.Router();
 
-// Webhook: Paystack calls this directly (raw body is configured at app level)
+// Webhook: Flutterwave calls this directly (raw body is configured at app level)
 router.post('/webhook', handleWebhook);
 
 router.post('/initialize', protect, initializePayment);
-router.post('/verify', protect, verifyPayment);
+// No JWT: users often return from Flutterwave with an expired token; verification is
+// secured by Flutterwave verify(tx_ref + transaction_id) matching our pending row.
+router.post('/verify', verifyPayment);
 router.get('/status', protect, getPaymentStatus);
 
 export default router;
