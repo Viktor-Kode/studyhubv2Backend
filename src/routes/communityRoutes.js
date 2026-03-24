@@ -45,6 +45,20 @@ const upload = multer({
   },
 });
 
+function uploadImageMiddleware(req, res, next) {
+  upload.single('image')(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ success: false, error: 'Image must be 4MB or smaller' });
+        }
+      }
+      return res.status(400).json({ success: false, error: err.message || 'Upload failed' });
+    }
+    next();
+  });
+}
+
 // POSTS
 router.get('/profile', protect, getCommunityProfile);
 router.get('/me', protect, getCommunityMe);
@@ -85,7 +99,7 @@ router.get('/groups/:id/messages', protect, getGroupMessages);
 router.post('/groups/:id/messages', protect, sendGroupMessage);
 
 // IMAGE UPLOAD
-router.post('/upload-image', protect, upload.single('image'), uploadCommunityImage);
+router.post('/upload-image', protect, uploadImageMiddleware, uploadCommunityImage);
 
 export default router;
 
