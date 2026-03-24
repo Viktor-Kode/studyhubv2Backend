@@ -166,7 +166,7 @@ export const getLeaderboard = async (req, res) => {
             .filter(Boolean);
 
         const users = await User.find({ _id: { $in: ids } })
-            .select('name settings')
+            .select('name settings role')
             .lean();
 
         const userMap = {};
@@ -178,6 +178,7 @@ export const getLeaderboard = async (req, res) => {
         for (const p of topProgress) {
             const u = userMap[p.userId];
             if (!u) continue;
+            if (u.role === 'admin') continue;
 
             if (filter === 'exam' && subject) {
                 const ex = userExamLabel(u);

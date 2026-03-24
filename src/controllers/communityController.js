@@ -438,10 +438,14 @@ export const getLeaderboard = async (req, res) => {
       return res.json({ leaderboard: [], myRank: 0, myEntry: null });
     }
 
+    const boardQuery = { role: { $ne: 'admin' } };
+    const isCurrentUserAdmin = myUser.role === 'admin';
     const myTotal = myUser.totalPoints || 0;
-    const myRank = (await User.countDocuments({ totalPoints: { $gt: myTotal } })) + 1;
+    const myRank = isCurrentUserAdmin
+      ? 0
+      : (await User.countDocuments({ ...boardQuery, totalPoints: { $gt: myTotal } })) + 1;
 
-    const topUsers = await User.find()
+    const topUsers = await User.find(boardQuery)
       .sort({ totalPoints: -1 })
       .limit(20)
       .lean();
@@ -459,15 +463,17 @@ export const getLeaderboard = async (req, res) => {
     res.json({
       leaderboard,
       myRank,
-      myEntry: {
-        name: myUser.name || 'Anonymous',
-        avatar: computeInitials(myUser.name || 'Anonymous'),
-        totalPoints: myUser.totalPoints || 0,
-        cbtPoints: myUser.cbtPoints || 0,
-        communityPoints: myUser.communityPoints || 0,
-        postsCount: myUser.postsCount || 0,
-        userId: myUser.firebaseUid,
-      },
+      myEntry: isCurrentUserAdmin
+        ? null
+        : {
+            name: myUser.name || 'Anonymous',
+            avatar: computeInitials(myUser.name || 'Anonymous'),
+            totalPoints: myUser.totalPoints || 0,
+            cbtPoints: myUser.cbtPoints || 0,
+            communityPoints: myUser.communityPoints || 0,
+            postsCount: myUser.postsCount || 0,
+            userId: myUser.firebaseUid,
+          },
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
