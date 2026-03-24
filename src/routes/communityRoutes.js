@@ -22,10 +22,10 @@ import {
 
 const router = express.Router();
 
-// Image upload (Cloudinary): max 5MB
+// Image upload (Cloudinary). Keep ≤4MB so requests proxied via Vercel (≈4.5MB body limit) succeed.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file?.mimetype && file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files are allowed'));
