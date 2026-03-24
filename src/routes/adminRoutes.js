@@ -10,8 +10,10 @@ import {
     getAdminUsers,
     getOnlineUsers,
     getTodayLogins,
+    getDashboardLogins,
     getUserActivity,
     getMetricUsers,
+    setUserVerification,
     grantPlan,
     deleteUser,
     getFullDashboardStats,
@@ -70,8 +72,10 @@ router.get('/export-csv', protect, restrictTo('admin'), exportUsersCSV);
 router.get('/users', protect, restrictTo('admin'), getAdminUsers);
 router.get('/online-users', protect, restrictTo('admin'), getOnlineUsers);
 router.get('/logins-today', protect, restrictTo('admin'), getTodayLogins);
+router.get('/dashboard-logins', protect, restrictTo('admin'), getDashboardLogins);
 router.get('/metric-users', protect, restrictTo('admin'), getMetricUsers);
 router.get('/users/:id/activity', protect, restrictTo('admin'), getUserActivity);
+router.patch('/users/:id/verify', protect, restrictTo('admin'), setUserVerification);
 router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);
 router.delete('/users/:id', protect, restrictTo('admin'), deleteUser);
 router.get('/email-stats', protect, restrictTo('admin'), getEmailAudienceStats);

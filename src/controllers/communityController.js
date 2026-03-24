@@ -28,7 +28,7 @@ async function recalcTotalPoints(user) {
   return user;
 }
 
-function normalizePostForClient(post, currentUserFirebaseUid) {
+function normalizePostForClient(post, currentUserFirebaseUid, authorMeta = null) {
   const likes = post.likes || [];
   const likesCount = likes.length;
   const isLiked = !!currentUserFirebaseUid && likes.includes(currentUserFirebaseUid);
@@ -41,6 +41,8 @@ function normalizePostForClient(post, currentUserFirebaseUid) {
     likesCount,
     commentsCount,
     isLiked,
+    authorRole: authorMeta?.role || null,
+    authorIsVerified: !!authorMeta?.isVerified,
   };
 }
 
@@ -64,7 +66,15 @@ export const getPosts = async (req, res) => {
       .limit(limit)
       .lean();
 
-    const normalized = posts.map((p) => normalizePostForClient(p, currentUserFirebaseUid));
+    const authorIds = Array.from(new Set(posts.map((p) => p.authorId).filter(Boolean)));
+    const authors = await User.find({ firebaseUid: { $in: authorIds } })
+      .select('firebaseUid role isVerified')
+      .lean();
+    const authorMap = new Map(authors.map((a) => [a.firebaseUid, { role: a.role, isVerified: a.isVerified }]));
+
+    const normalized = posts.map((p) =>
+      normalizePostForClient(p, currentUserFirebaseUid, authorMap.get(p.authorId) || null)
+    );
 
     res.json({
       posts: normalized,
@@ -145,7 +155,10 @@ export const createPost = async (req, res) => {
     }
 
     const postObj = post.toObject();
-    const normalized = normalizePostForClient(postObj, currentUserFirebaseUid);
+    const normalized = normalizePostForClient(postObj, currentUserFirebaseUid, {
+      role: req.user?.role || null,
+      isVerified: !!req.user?.isVerified,
+    });
 
     res.status(201).json({ success: true, post: normalized });
   } catch (err) {
@@ -285,7 +298,8 @@ export const updatePost = async (req, res) => {
     }
 
     await post.save()
-    const normalized = normalizePostForClient(post.toObject(), currentUserFirebaseUid)
+      const author = await User.findOne({ firebaseUid: post.authorId }).select('role isVerified').lean()
+      const normalized = normalizePostForClient(post.toObject(), currentUserFirebaseUid, author)
     res.json({ success: true, post: normalized })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })

@@ -104,6 +104,7 @@ const userSchema = new mongoose.Schema({
     cbtPoints: { type: Number, default: 0 }, // increment when CBT completed
     totalPoints: { type: Number, default: 0 }, // communityPoints + cbtPoints
     postsCount: { type: Number, default: 0 },
+    isVerified: { type: Boolean, default: false },
 
     banned: { type: Boolean, default: false }
 

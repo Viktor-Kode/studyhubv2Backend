@@ -268,7 +268,7 @@ export const getAdminUsers = async (req, res) => {
                 .skip((page - 1) * limit)
                 .limit(limit)
                 .select(
-                    'name email subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit createdAt role phoneNumber teacherPlan teacherPlanEnd lastSeen banned firebaseUid'
+                    'name email subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit createdAt role phoneNumber teacherPlan teacherPlanEnd lastSeen banned firebaseUid isVerified'
                 )
                 .lean(),
             User.countDocuments(filter)
@@ -368,6 +368,67 @@ export const getTodayLogins = async (req, res) => {
         });
     } catch (err) {
         console.error('[Admin] getTodayLogins error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+// Paginated logins list based on users seen in dashboard/auth middleware.
+export const getDashboardLogins = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25));
+        const search = String(req.query.search || '').trim();
+
+        const filter = { lastSeen: { $ne: null } };
+        if (search) {
+            filter.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+            ];
+        }
+
+        const [users, total] = await Promise.all([
+            User.find(filter)
+                .select('name email role subscriptionStatus subscriptionPlan lastSeen isVerified')
+                .sort({ lastSeen: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .lean(),
+            User.countDocuments(filter),
+        ]);
+
+        res.json({
+            success: true,
+            users,
+            total,
+            page,
+            pages: Math.max(1, Math.ceil(total / limit)),
+        });
+    } catch (err) {
+        console.error('[Admin] getDashboardLogins error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+export const setUserVerification = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { isVerified } = req.body || {};
+        if (typeof isVerified !== 'boolean') {
+            return res.status(400).json({ success: false, error: 'isVerified must be boolean' });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            id,
+            { $set: { isVerified } },
+            { new: true }
+        ).select('name email role isVerified');
+
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+        res.json({ success: true, user });
+    } catch (err) {
+        console.error('[Admin] setUserVerification error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 };
