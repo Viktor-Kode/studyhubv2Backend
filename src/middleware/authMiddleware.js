@@ -1,5 +1,6 @@
 import { adminAuth } from '../config/firebase-admin.js';
 import User from '../models/User.js';
+import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 
 export const protect = async (req, res, next) => {
     try {
@@ -69,6 +70,9 @@ export const protect = async (req, res, next) => {
             await currentUser.save({ validateBeforeSave: false });
             console.log(`[AUTH] Synced admin claim to MongoDB for ${currentUser.email}`);
         }
+
+        // Downgrade expired "active" subscriptions before any paid feature runs (no cron dependency)
+        currentUser = await expireStaleActiveSubscription(currentUser);
 
         // GRANT ACCESS TO PROTECTED ROUTE
         req.user = currentUser;

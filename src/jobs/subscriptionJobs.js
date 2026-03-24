@@ -17,6 +17,8 @@ cron.schedule('0 0 * * *', async () => {
         console.log(`Found ${expired.length} expired subscriptions`);
 
         for (const user of expired) {
+            const planNameForNotify = user.subscriptionPlan || 'subscription';
+
             await User.findByIdAndUpdate(user._id, {
                 subscriptionStatus: 'expired',
                 subscriptionPlan: null,
@@ -29,10 +31,9 @@ cron.schedule('0 0 * * *', async () => {
 
             console.log(`❌ Expired: ${user.email}`);
 
-            // Notify user via WhatsApp
             if (user.phoneNumber) {
                 await sendPlanExpiryWarning(user.phoneNumber, {
-                    planName: user.subscriptionPlan,
+                    planName: planNameForNotify,
                     daysLeft: 0
                 });
             }

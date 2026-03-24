@@ -1,14 +1,15 @@
 import User from '../models/User.js';
 import AIRequestLog from '../models/AIRequestLog.js';
+import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 
 // Check AI usage — runs before every AI endpoint
 export const checkAIUsage = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id);
-
+        let user = await User.findById(req.user.id);
         if (!user) {
             return res.status(401).json({ error: 'User not found' });
         }
+        user = await expireStaleActiveSubscription(user);
 
         // Check subscription is active
         if (user.subscriptionStatus === 'expired') {
@@ -68,11 +69,12 @@ export const incrementAIUsage = async (userId) => {
 
 // Check flashcard generation usage
 export const checkFlashcardUsage = async (req, res, next) => {
-    const user = await User.findById(req.user.id);
+    let user = await User.findById(req.user.id);
 
     if (!user) {
         return res.status(401).json({ error: 'User not found' });
     }
+    user = await expireStaleActiveSubscription(user);
 
     if (user.flashcardUsageCount >= user.flashcardUsageLimit) {
         return res.status(403).json({

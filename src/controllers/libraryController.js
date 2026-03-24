@@ -1,6 +1,7 @@
 import LibraryMaterial from '../models/LibraryMaterial.js';
 import cloudinary from '../config/cloudinary.js';
 import User from '../models/User.js';
+import { hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
 
 const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
@@ -32,7 +33,7 @@ export const getMaterials = async (req, res) => {
 
     const totalBytes = materials.reduce((sum, m) => sum + (m.fileSize || 0), 0);
     const user = await User.findById(userId);
-    const isPaid = user?.subscriptionStatus === 'active';
+    const isPaid = hasActivePaidStudentPlan(user);
     const limitMB = isPaid ? PAID_LIMIT_MB : FREE_LIMIT_MB;
 
     const folders = [...new Set(materials.map((m) => m.folder))];
@@ -73,7 +74,7 @@ export const uploadMaterial = async (req, res) => {
 
     const userId = req.user._id;
     const user = await User.findById(userId);
-    const isPaid = user?.subscriptionStatus === 'active';
+    const isPaid = hasActivePaidStudentPlan(user);
     const limitBytes = (isPaid ? PAID_LIMIT_MB : FREE_LIMIT_MB) * 1024 * 1024;
 
     const existingMaterials = await LibraryMaterial.find({ userId });

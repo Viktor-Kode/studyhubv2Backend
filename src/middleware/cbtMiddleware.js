@@ -1,17 +1,19 @@
 import User from '../models/User.js';
 import CBTResult from '../models/CBTResult.js';
+import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 
 // CBT access middleware with subscription-aware logic
 export const checkCBTAccess = async (req, res, next) => {
     try {
-        // Always fetch fresh user from DB — never trust cached data
-        const user = await User.findById(req.user.id).select(
+        let user = await User.findById(req.user.id).select(
             'subscriptionStatus subscriptionPlan subscriptionEnd plan'
         );
 
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
+
+        user = await expireStaleActiveSubscription(user);
 
         console.log('🔍 CBT Access Check for', req.user.id, {
             subscriptionStatus: user.subscriptionStatus,

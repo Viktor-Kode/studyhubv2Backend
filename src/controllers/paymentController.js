@@ -1,10 +1,25 @@
 import axios from 'axios';
 import Flutterwave from 'flutterwave-node-v3';
-import crypto from 'crypto';
 import { PLANS } from '../config/plans.js';
 import User from '../models/User.js';
 import Transaction from '../models/Transaction.js';
 import { getEnv } from '../config/env.js';
+import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
+
+/**
+ * Compare Flutterwave "amount" to our plan (NGN).
+ * Some responses use kobo/minor units — normalize when an order of magnitude off.
+ */
+function isChargedAmountAcceptable(chargedRaw, expectedNaira) {
+    let charged = Number(chargedRaw);
+    const expected = Number(expectedNaira);
+    if (!Number.isFinite(charged) || !Number.isFinite(expected)) return false;
+    if (expected > 0 && charged > expected * 50) {
+        charged /= 100;
+    }
+    const slack = 2; // ₦2 max — rounding / fees, not a discount loophole
+    return charged + 1e-6 >= expected - slack;
+}
 
 // Lazy init: only create Flutterwave instance when keys exist (avoids CI crash on load)
 let flw = null;
@@ -111,12 +126,15 @@ export const verifyPayment = async (req, res) => {
             return res.status(400).json({ error: 'Reference is required' });
         }
 
+        if (!transaction_id) {
+            return res.status(400).json({ error: 'transaction_id is required' });
+        }
+
         const transaction = await Transaction.findOne({ reference });
         if (!transaction) {
             return res.status(404).json({ error: 'Transaction not found' });
         }
 
-        // Prevent double processing
         if (transaction.processed) {
             return res.json({
                 success: true,
@@ -129,35 +147,61 @@ export const verifyPayment = async (req, res) => {
             return res.status(503).json({ error: 'Payment service not configured' });
         }
 
-        // Verify with Flutterwave using transaction_id
-        const response = await flw.Transaction.verify({ id: transaction_id });
-
-        if (
-            response.data.status !== 'successful' ||
-            response.data.tx_ref !== reference ||
-            response.data.currency !== 'NGN'
-        ) {
-            await Transaction.findOneAndUpdate({ reference }, { status: 'failed' });
+        const envelope = await flw.Transaction.verify({ id: transaction_id });
+        if (envelope.status !== 'success' || !envelope.data) {
+            await Transaction.findOneAndUpdate({ reference }, { $set: { status: 'failed' } });
             return res.status(400).json({ error: 'Payment verification failed' });
         }
 
-        // Verify amount matches plan (anti-fraud)
+        const data = envelope.data;
+
+        if (
+            data.status !== 'successful' ||
+            String(data.tx_ref || '') !== String(reference) ||
+            data.currency !== 'NGN'
+        ) {
+            await Transaction.findOneAndUpdate({ reference }, { $set: { status: 'failed' } });
+            return res.status(400).json({ error: 'Payment verification failed' });
+        }
+
         const planConfig = PLANS[transaction.plan];
         const expectedAmount = planConfig.amount ?? planConfig.price / 100;
-        if (response.data.amount < expectedAmount) {
-            console.error(`Amount mismatch: expected ${expectedAmount}, got ${response.data.amount}`);
+        const charged = data.amount ?? data.charged_amount ?? data.amount_settled;
+        if (!isChargedAmountAcceptable(charged, expectedAmount)) {
+            console.error(`Amount mismatch: expected ~${expectedAmount}, got ${charged} ref=${reference}`);
             return res.status(400).json({ error: 'Payment amount mismatch' });
         }
 
-        // Activate subscription
-        await activateSubscription(transaction.userId, transaction.plan, reference);
+        const claimed = await Transaction.findOneAndUpdate(
+            { reference, processed: false },
+            { $set: { processed: true, status: 'success', processedAt: new Date() } },
+            { new: true }
+        );
+
+        if (!claimed) {
+            return res.json({
+                success: true,
+                message: 'Already activated',
+                alreadyProcessed: true
+            });
+        }
+
+        try {
+            await applySubscriptionToUser(claimed.userId, claimed.plan);
+        } catch (applyErr) {
+            console.error('❌ applySubscriptionToUser after verify:', applyErr.message);
+            await Transaction.findOneAndUpdate(
+                { reference },
+                { $set: { processed: false, status: 'pending', processedAt: null } }
+            );
+            throw applyErr;
+        }
 
         res.json({
             success: true,
             message: `${planConfig.label} activated successfully!`,
             plan: transaction.plan
         });
-
     } catch (err) {
         console.error('❌ Payment verify error:', err.message);
         res.status(500).json({ error: 'Payment verification failed' });
@@ -190,16 +234,34 @@ export const handleWebhook = async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // Verify amount (anti-fraud)
             const planConfig = PLANS[transaction.plan];
             const expectedAmount = planConfig.amount ?? planConfig.price / 100;
-            if (data.amount < expectedAmount) {
-                console.error(`Webhook amount mismatch: ${reference}`);
+            const charged = data.amount ?? data.charged_amount ?? data.amount_settled;
+            if (!isChargedAmountAcceptable(charged, expectedAmount)) {
+                console.error(`Webhook amount mismatch: ${reference} charged=${charged} expected=${expectedAmount}`);
                 return res.sendStatus(200);
             }
 
-            await activateSubscription(transaction.userId, transaction.plan, reference);
-            console.log(`✅ Webhook activated: ${transaction.plan} for user ${transaction.userId}`);
+            const claimed = await Transaction.findOneAndUpdate(
+                { reference, processed: false },
+                { $set: { processed: true, status: 'success', processedAt: new Date() } },
+                { new: true }
+            );
+
+            if (!claimed) {
+                return res.sendStatus(200);
+            }
+
+            try {
+                await applySubscriptionToUser(claimed.userId, claimed.plan);
+                console.log(`✅ Webhook activated: ${claimed.plan} for user ${claimed.userId}`);
+            } catch (e) {
+                console.error('❌ Webhook activation failed:', e.message);
+                await Transaction.findOneAndUpdate(
+                    { reference },
+                    { $set: { processed: false, status: 'pending', processedAt: null } }
+                );
+            }
         }
 
         res.sendStatus(200);
@@ -211,8 +273,10 @@ export const handleWebhook = async (req, res) => {
 
 // GET /api/payment/status
 export const getPaymentStatus = async (req, res) => {
-    const user = await User.findById(req.user.id)
+    let user = await User.findById(req.user.id)
         .select('subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit flashcardUsageCount flashcardUsageLimit');
+
+    user = await expireStaleActiveSubscription(user);
 
     const daysLeft = user.subscriptionEnd
         ? Math.max(0, Math.ceil(
@@ -235,78 +299,45 @@ export const getPaymentStatus = async (req, res) => {
     });
 };
 
-// ─── Shared Activation Function ───────────────────────────────
-const activateSubscription = async (userId, plan, reference) => {
-    try {
-        console.log(`🔄 Activating subscription: plan=${plan} userId=${userId}`);
+// ─── Apply plan to user (transaction row already claimed) ───────────────────
+const applySubscriptionToUser = async (userId, plan) => {
+    const planConfig = PLANS[plan];
+    if (!planConfig) throw new Error(`Unknown plan: ${plan}`);
 
-        const planConfig = PLANS[plan];
-        if (!planConfig) throw new Error(`Unknown plan: ${plan}`);
+    const now = new Date();
+    const user = await User.findById(userId);
+    if (!user) throw new Error(`User not found: ${userId}`);
 
-        const now = new Date();
-        const user = await User.findById(userId);
-
-        if (!user) throw new Error(`User not found: ${userId}`);
-
-        console.log('📋 User before activation:', {
-            status: user.subscriptionStatus,
-            plan: user.subscriptionPlan,
-            end: user.subscriptionEnd
+    if (plan === 'addon') {
+        await User.findByIdAndUpdate(userId, {
+            $inc: { aiUsageLimit: planConfig.aiLimit }
         });
-
-        if (plan === 'addon') {
-            // Add-on: only add AI credits, no time extension
-            await User.findByIdAndUpdate(userId, {
-                $inc: { aiUsageLimit: planConfig.aiLimit }
-            });
-            console.log(`[Activation] ✅ Add-on: +${planConfig.aiLimit} AI credits for user ${userId}`);
-        } else {
-            // Weekly/Monthly: activate or stack time
-            const isAlreadyActive =
-                user.subscriptionStatus === 'active' &&
-                user.subscriptionEnd &&
-                new Date(user.subscriptionEnd) > now;
-
-            const startFrom = isAlreadyActive ? new Date(user.subscriptionEnd) : now;
-            const newEnd = new Date(startFrom);
-            newEnd.setDate(newEnd.getDate() + planConfig.durationDays);
-
-            console.log(`[Activation] Plan: ${plan}, duration: ${planConfig.durationDays}d`);
-            console.log(`[Activation] Start: ${startFrom.toISOString()}, End: ${newEnd.toISOString()}`);
-
-            await User.findByIdAndUpdate(userId, {
-                $set: {
-                    subscriptionStatus: 'active',
-                    subscriptionPlan: plan,
-                    subscriptionStart: isAlreadyActive ? user.subscriptionStart : now,
-                    subscriptionEnd: newEnd,
-                    aiUsageCount: 0,
-                    aiUsageLimit: planConfig.aiLimit,
-                    flashcardUsageCount: 0,
-                    flashcardUsageLimit: planConfig.flashcardLimit
-                }
-            });
-            console.log(`[Activation] ✅ ${plan} activated until ${newEnd.toISOString()}`);
-        }
-
-        const updated = await User.findById(userId);
-
-        console.log('✅ User after activation:', {
-            status: updated.subscriptionStatus,
-            plan: updated.subscriptionPlan,
-            end: updated.subscriptionEnd,
-            aiLimit: updated.aiUsageLimit
-        });
-
-        await Transaction.findOneAndUpdate(
-            { reference },
-            { $set: { status: 'success', processed: true, processedAt: new Date() } }
-        );
-
-        console.log(`✅ Transaction marked processed: ${reference}`);
-        return updated;
-    } catch (err) {
-        console.error('❌ activateSubscription error:', err.message);
-        throw err;
+        console.log(`[Activation] ✅ Add-on: +${planConfig.aiLimit} AI credits for user ${userId}`);
+        return User.findById(userId);
     }
+
+    const isAlreadyActive =
+        user.subscriptionStatus === 'active' &&
+        user.subscriptionEnd &&
+        new Date(user.subscriptionEnd) > now;
+
+    const startFrom = isAlreadyActive ? new Date(user.subscriptionEnd) : now;
+    const newEnd = new Date(startFrom);
+    newEnd.setDate(newEnd.getDate() + planConfig.durationDays);
+
+    await User.findByIdAndUpdate(userId, {
+        $set: {
+            subscriptionStatus: 'active',
+            subscriptionPlan: plan,
+            subscriptionStart: isAlreadyActive ? user.subscriptionStart : now,
+            subscriptionEnd: newEnd,
+            aiUsageCount: 0,
+            aiUsageLimit: planConfig.aiLimit,
+            flashcardUsageCount: 0,
+            flashcardUsageLimit: planConfig.flashcardLimit
+        }
+    });
+
+    console.log(`[Activation] ✅ ${plan} until ${newEnd.toISOString()} user=${userId}`);
+    return User.findById(userId);
 };

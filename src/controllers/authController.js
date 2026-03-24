@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import sendEmail from '../utils/email.js';
 import crypto from 'crypto';
 import { getEnv } from '../config/env.js';
+import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 
 /**
  * Signs a JWT token
@@ -90,7 +91,7 @@ export const login = async (req, res, next) => {
  */
 export const getMe = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id || req.user._id).select(
+        let user = await User.findById(req.user.id || req.user._id).select(
             'name email role phoneNumber ' +
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
@@ -100,6 +101,8 @@ export const getMe = async (req, res, next) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
+
+        user = await expireStaleActiveSubscription(user);
 
         const daysLeft = user.subscriptionEnd
             ? Math.max(0, Math.ceil(
