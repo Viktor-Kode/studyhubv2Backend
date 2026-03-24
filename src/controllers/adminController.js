@@ -928,6 +928,32 @@ export const adminQuickAction = async (req, res) => {
             });
             return res.json({ success: true, message: `Free access given for ${days} days` });
         }
+        if (action === 'revoke_gifted_access') {
+            const freeConfig = PLANS.free;
+            const updated = await User.findByIdAndUpdate(
+                userId,
+                {
+                    $set: {
+                        subscriptionStatus: 'free',
+                        subscriptionPlan: null,
+                        subscriptionStart: null,
+                        subscriptionEnd: null,
+                        aiUsageCount: 0,
+                        aiUsageLimit: freeConfig.aiLimit,
+                        flashcardUsageCount: 0,
+                        flashcardUsageLimit: freeConfig.flashcardLimit
+                    }
+                },
+                { new: true }
+            );
+            if (!updated) {
+                return res.status(404).json({ success: false, error: 'User not found' });
+            }
+            return res.json({
+                success: true,
+                message: 'Student plan access removed; user is on the free tier'
+            });
+        }
         if (action === 'reset_password') {
             return res.json({
                 success: true,
