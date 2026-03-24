@@ -3,6 +3,9 @@ import multer from 'multer';
 import { protect } from '../middleware/authMiddleware.js';
 import {
   getPosts,
+  getCommunityProfile,
+  getLikedPosts,
+  getBookmarkedPosts,
   createPost,
   likePost,
   deletePost,
@@ -10,6 +13,16 @@ import {
   getComments,
   addComment,
   votePoll,
+  markBestAnswer,
+  toggleBookmark,
+  reportPost,
+  pinPost,
+  getTrending,
+  getCommunityMe,
+  getCommunityStats,
+  getNotifications,
+  markNotificationRead,
+  communitySearch,
   getLeaderboard,
   uploadCommunityImage,
   searchUsers,
@@ -33,9 +46,22 @@ const upload = multer({
 });
 
 // POSTS
+router.get('/profile', protect, getCommunityProfile);
+router.get('/me', protect, getCommunityMe);
+router.get('/stats', protect, getCommunityStats);
+router.get('/trending', protect, getTrending);
+router.get('/search', protect, communitySearch);
+router.get('/notifications', protect, getNotifications);
+router.put('/notifications/:id/read', protect, markNotificationRead);
+router.get('/liked-posts', protect, getLikedPosts);
+router.get('/bookmarks', protect, getBookmarkedPosts);
 router.get('/posts', protect, getPosts);
 router.post('/posts', protect, createPost);
 router.post('/posts/:id/like', protect, likePost);
+router.post('/posts/:id/bookmark', protect, toggleBookmark);
+router.post('/posts/:id/best-answer', protect, markBestAnswer);
+router.post('/posts/:id/report', protect, reportPost);
+router.post('/posts/:id/pin', protect, pinPost);
 router.delete('/posts/:id', protect, deletePost);
 router.patch('/posts/:id', protect, updatePost);
 router.put('/posts/:id', protect, updatePost);

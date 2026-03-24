@@ -9,6 +9,7 @@ const CommunityCommentSchema = new mongoose.Schema(
     authorAvatar: { type: String, default: null }, // initials fallback
 
     content: { type: String, required: true, maxlength: 500 },
+    mentionedFirebaseUids: [{ type: String }],
     likes: [{ type: String }], // reserved for future comment likes
 
     createdAt: { type: Date, default: Date.now },

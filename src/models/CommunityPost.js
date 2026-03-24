@@ -9,11 +9,15 @@ const CommunityPostSchema = new mongoose.Schema(
     content: { type: String, required: true, maxlength: 1000 },
     imageUrl: { type: String, default: null }, // optional Cloudinary URL
     subject: { type: String, default: null }, // tag e.g. "Biology"
+    tags: [{ type: String }], // hashtags without #
 
     type: { type: String, enum: ['post', 'poll', 'question'], default: 'post' },
 
     likes: [{ type: String }], // userIds who liked (firebase UID strings)
     commentsCount: { type: Number, default: 0 },
+    views: { type: Number, default: 0 },
+    isPinned: { type: Boolean, default: false },
+    bestAnswerCommentId: { type: mongoose.Schema.Types.ObjectId, ref: 'CommunityComment', default: null },
 
     poll: {
       question: { type: String, default: null },
@@ -38,6 +42,10 @@ const CommunityPostSchema = new mongoose.Schema(
 
 CommunityPostSchema.index({ createdAt: -1 });
 CommunityPostSchema.index({ subject: 1, createdAt: -1 });
+CommunityPostSchema.index({ authorId: 1, createdAt: -1 });
+CommunityPostSchema.index({ likes: 1, createdAt: -1 });
+CommunityPostSchema.index({ isPinned: -1, createdAt: -1 });
+CommunityPostSchema.index({ tags: 1 });
 
 export default mongoose.models.CommunityPost ||
   mongoose.model('CommunityPost', CommunityPostSchema);

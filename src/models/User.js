@@ -106,6 +106,10 @@ const userSchema = new mongoose.Schema({
     postsCount: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
 
+    communityBookmarks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'CommunityPost' }],
+    communityBadges: [{ type: String }], // e.g. first_post, streak_30
+    bestAnswersCount: { type: Number, default: 0 },
+
     banned: { type: Boolean, default: false }
 
 }, { timestamps: true });
