@@ -122,6 +122,7 @@ export const getAdminStats = async (req, res) => {
         const usersThisWeek = await User.countDocuments({ createdAt: { $gte: weekAgo } });
         const usersThisMonth = await User.countDocuments({ createdAt: { $gte: monthAgo } });
 
+        const dailyCount = planCounts.find(p => p._id === 'daily')?.count || 0;
         const weeklyCount = planCounts.find(p => p._id === 'weekly')?.count || 0;
         const monthlyCount = planCounts.find(p => p._id === 'monthly')?.count || 0;
         console.log('[Admin] userCounts:', userCounts, 'cbt:', cbtStats, 'revenue:', revenueData);
@@ -138,6 +139,7 @@ export const getAdminStats = async (req, res) => {
                 thisWeek: usersThisWeek,
                 thisMonth: usersThisMonth,
                 activeSubscriptions: activeSubs,
+                dailyPlans: dailyCount,
                 weeklyPlans: weeklyCount,
                 monthlyPlans: monthlyCount,
                 conversionRate: conversionRate + '%'
@@ -238,7 +240,9 @@ export const getAdminUsers = async (req, res) => {
             conditions.push({ subscriptionStatus: 'expired' });
         }
 
-        if (plan === 'weekly') {
+        if (plan === 'daily') {
+            conditions.push({ subscriptionPlan: 'daily', subscriptionStatus: 'active' });
+        } else if (plan === 'weekly') {
             conditions.push({ subscriptionPlan: 'weekly', subscriptionStatus: 'active' });
         } else if (plan === 'monthly') {
             conditions.push({ subscriptionPlan: 'monthly', subscriptionStatus: 'active' });
@@ -286,13 +290,16 @@ export const getAdminUsers = async (req, res) => {
     }
 };
 
+const ADMIN_GRANT_PLANS = ['daily', 'weekly', 'monthly'];
+
 export const grantPlan = async (req, res) => {
     try {
         const { id } = req.params;
         const { plan, days } = req.body;
 
-        const planConfig = PLANS[plan] || PLANS.monthly;
-        const durationDays = Math.max(1, parseInt(days) || planConfig.durationDays || 30);
+        const planKey = ADMIN_GRANT_PLANS.includes(plan) ? plan : 'monthly';
+        const planConfig = PLANS[planKey];
+        const durationDays = Math.max(1, parseInt(days, 10) || planConfig.durationDays || 30);
 
         const now = new Date();
         const end = new Date(now);
@@ -303,7 +310,7 @@ export const grantPlan = async (req, res) => {
             {
                 $set: {
                     subscriptionStatus: 'active',
-                    subscriptionPlan: plan,
+                    subscriptionPlan: planKey,
                     subscriptionStart: now,
                     subscriptionEnd: end,
                     aiUsageCount: 0,
@@ -321,7 +328,7 @@ export const grantPlan = async (req, res) => {
 
         res.json({
             success: true,
-            message: `Granted ${plan} plan for ${durationDays} days`,
+            message: `Granted ${planKey} plan for ${durationDays} days`,
             user: {
                 email: updated.email,
                 subscriptionPlan: updated.subscriptionPlan,
@@ -910,15 +917,17 @@ export const adminQuickAction = async (req, res) => {
             return res.json({ success: true, message: 'User unbanned' });
         }
         if (action === 'give_free_access') {
-            const days = Math.max(1, parseInt(data?.days, 10) || 7);
-            const planConfig = PLANS.monthly;
+            const planKey = ADMIN_GRANT_PLANS.includes(data?.plan) ? data.plan : 'monthly';
+            const planConfig = PLANS[planKey];
+            const defaultDays = planConfig?.durationDays || 30;
+            const days = Math.max(1, parseInt(data?.days, 10) || defaultDays);
             const start = new Date();
             const end = new Date(start);
             end.setDate(end.getDate() + days);
 
             await User.findByIdAndUpdate(userId, {
                 subscriptionStatus: 'active',
-                subscriptionPlan: 'monthly',
+                subscriptionPlan: planKey,
                 subscriptionStart: start,
                 subscriptionEnd: end,
                 aiUsageCount: 0,
@@ -926,7 +935,10 @@ export const adminQuickAction = async (req, res) => {
                 flashcardUsageCount: 0,
                 flashcardUsageLimit: planConfig.flashcardLimit
             });
-            return res.json({ success: true, message: `Free access given for ${days} days` });
+            return res.json({
+                success: true,
+                message: `Free ${planKey} access given for ${days} day${days === 1 ? '' : 's'}`
+            });
         }
         if (action === 'revoke_gifted_access') {
             const freeConfig = PLANS.free;

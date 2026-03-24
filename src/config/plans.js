@@ -24,6 +24,24 @@ export const PLANS = {
             'Streak tracking'
         ]
     },
+    daily: {
+        name: 'Daily',
+        aiLimit: 80,
+        flashcardLimit: 40,
+        durationDays: 1,
+        price: 0,
+        amount: 0,
+        label: '1-day pass',
+        features: [
+            '80 AI-generated questions (same cap as weekly for the window)',
+            'Unlimited CBT tests',
+            '40 flashcard reviews',
+            'All exam types (JAMB, WAEC, Post-UTME)',
+            'Full analytics & progress tracking',
+            'AI explanations for answers'
+        ],
+        notIncluded: []
+    },
     weekly: {
         name: 'Weekly',
         aiLimit: 80,

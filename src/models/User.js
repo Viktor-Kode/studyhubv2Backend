@@ -65,7 +65,7 @@ const userSchema = new mongoose.Schema({
     },
     subscriptionPlan: {
         type: String,
-        enum: ['weekly', 'monthly'],
+        enum: ['daily', 'weekly', 'monthly'],
         default: null
     },
     subscriptionStart: { type: Date, default: null },
