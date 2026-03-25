@@ -178,6 +178,67 @@ export const getPosts = async (req, res) => {
   }
 };
 
+// GET /api/community/updates?since=ISO_TIMESTAMP&latestPostId=xxx
+// Smart polling:
+// - newPosts: full normalized posts created after `since`
+// - updatedPosts: lightweight updates (id + likes + commentsCount) for posts updated after `since`,
+//   excluding new posts.
+export const getCommunityUpdates = async (req, res) => {
+  try {
+    const { since } = req.query;
+
+    let sinceDate = since ? new Date(String(since)) : new Date(Date.now() - 30000);
+    if (Number.isNaN(sinceDate.getTime())) sinceDate = new Date(Date.now() - 30000);
+
+    const currentUserFirebaseUid = getFirebaseUid(req.user);
+    if (!currentUserFirebaseUid) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const bookmarkSet = await bookmarkSetForUser(req.user._id);
+
+    // New posts since last check
+    const newPostsRaw = await CommunityPost.find({
+      createdAt: { $gt: sinceDate },
+    })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    const newAuthorIds = Array.from(new Set((newPostsRaw || []).map((p) => p.authorId).filter(Boolean)));
+    const newAuthors = await User.find({ firebaseUid: { $in: newAuthorIds } })
+      .select('firebaseUid role isVerified')
+      .lean();
+    const newAuthorMap = new Map((newAuthors || []).map((u) => [u.firebaseUid, { role: u.role, isVerified: u.isVerified }]));
+
+    const newPosts = (newPostsRaw || []).map((p) =>
+      normalizePostForClient(p, currentUserFirebaseUid, newAuthorMap.get(p.authorId) || null, bookmarkSet),
+    );
+
+    // Updated (liked/commented/etc.) posts since last check, excluding ones created after `sinceDate`
+    const updatedPostsRaw = await CommunityPost.find({
+      updatedAt: { $gt: sinceDate },
+      createdAt: { $lte: sinceDate },
+    })
+      .select('_id likes commentsCount')
+      .lean();
+
+    const updatedPosts = (updatedPostsRaw || []).map((p) => ({
+      _id: String(p._id),
+      likes: p.likes || [],
+      commentsCount: p.commentsCount || 0,
+    }));
+
+    res.json({
+      newPosts,
+      updatedPosts,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) });
+  }
+};
+
 // GET /api/community/profile?userId=firebaseUid (optional; default = current user)
 export const getCommunityProfile = async (req, res) => {
   try {
@@ -648,7 +709,9 @@ export const addComment = async (req, res) => {
       mentionedFirebaseUids,
     });
 
-    await CommunityPost.findByIdAndUpdate(post._id, { $inc: { commentsCount: 1 } });
+    // Use document + save() so Mongoose bumps updatedAt via timestamps.
+    post.commentsCount = (post.commentsCount || 0) + 1;
+    await post.save();
 
     // Points: comment on a post => +3 community points
     const commenter = await User.findById(req.user._id);

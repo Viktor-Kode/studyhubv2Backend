@@ -3,6 +3,7 @@ import multer from 'multer';
 import { protect } from '../middleware/authMiddleware.js';
 import {
   getPosts,
+  getCommunityUpdates,
   getCommunityProfile,
   getLikedPosts,
   getBookmarkedPosts,
@@ -73,6 +74,7 @@ router.put('/notifications/:id/read', protect, markNotificationRead);
 router.get('/liked-posts', protect, getLikedPosts);
 router.get('/bookmarks', protect, getBookmarkedPosts);
 router.get('/posts', protect, getPosts);
+router.get('/updates', protect, getCommunityUpdates);
 router.post('/posts', protect, createPost);
 router.post('/posts/:id/like', protect, likePost);
 router.post('/posts/:id/bookmark', protect, toggleBookmark);
