@@ -4,6 +4,9 @@ const CommunityCommentSchema = new mongoose.Schema(
   {
     postId: { type: mongoose.Schema.Types.ObjectId, ref: 'CommunityPost', required: true },
 
+    // Null means a top-level comment. Otherwise, it is a reply to another comment.
+    parentId: { type: mongoose.Schema.Types.ObjectId, ref: 'CommunityComment', default: null },
+
     authorId: { type: String, required: true }, // firebase UID
     authorName: { type: String, required: true },
     authorAvatar: { type: String, default: null }, // initials fallback
@@ -19,7 +22,7 @@ const CommunityCommentSchema = new mongoose.Schema(
   }
 );
 
-CommunityCommentSchema.index({ postId: 1, createdAt: 1 });
+CommunityCommentSchema.index({ postId: 1, parentId: 1, createdAt: 1 });
 
 export default mongoose.models.CommunityComment ||
   mongoose.model('CommunityComment', CommunityCommentSchema);

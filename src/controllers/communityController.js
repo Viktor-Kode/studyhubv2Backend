@@ -545,22 +545,72 @@ export const updatePost = async (req, res) => {
 export const getComments = async (req, res) => {
   try {
     const { id } = req.params;
-    const comments = await CommunityComment.find({ postId: id })
+    const currentUserFirebaseUid = getFirebaseUid(req.user);
+
+    const parentIdRaw = req.query.parentId;
+    const parentId =
+      parentIdRaw === undefined || parentIdRaw === null || parentIdRaw === '' || String(parentIdRaw) === 'null'
+        ? null
+        : String(parentIdRaw);
+
+    const comments = await CommunityComment.find({
+      postId: id,
+      ...(parentId === null ? { parentId: null } : { parentId }),
+    })
       .sort({ createdAt: 1 })
       .lean();
 
-    res.json({ comments });
+    const authorIds = Array.from(new Set(comments.map((c) => c.authorId).filter(Boolean)));
+    const users = await User.find({ firebaseUid: { $in: authorIds } })
+      .select('firebaseUid totalPoints')
+      .lean();
+    const authorMap = new Map((users || []).map((u) => [u.firebaseUid, u]));
+
+    const normalized = comments.map((c) => {
+      const likes = c.likes || [];
+      const likesCount = likes.length;
+      const isLiked = !!currentUserFirebaseUid && likes.includes(currentUserFirebaseUid);
+      const authorUser = authorMap.get(c.authorId);
+      return {
+        _id: String(c._id),
+        postId: String(c.postId),
+        parentId: c.parentId ? String(c.parentId) : null,
+        authorId: c.authorId,
+        authorName: c.authorName,
+        authorAvatar: c.authorAvatar || null,
+        authorRank: rankTierFromPoints(authorUser?.totalPoints || 0),
+        content: c.content,
+        createdAt: c.createdAt,
+        likesCount,
+        isLiked,
+      };
+    });
+
+    res.json({ comments: normalized });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 };
 
+function assertOwner(firebaseUid, comment) {
+  return firebaseUid && comment?.authorId && String(comment.authorId) === String(firebaseUid);
+}
+
+function assertCommentBelongsToPost(comment, postId) {
+  return !!comment && String(comment.postId) === String(postId);
+}
+
+function getCommentMentionUidsFromContent(content) {
+  return resolveMentionNamesInComment(content.trim());
+}
+
 // POST /api/community/posts/:id/comments
+// body: { content: string, parentId?: string|null }
 export const addComment = async (req, res) => {
   try {
     const currentUserFirebaseUid = getFirebaseUid(req.user);
     const { id } = req.params;
-    const { content } = req.body || {};
+    const { content, parentId } = req.body || {};
 
     if (!content || typeof content !== 'string' || !content.trim()) {
       return res.status(400).json({ success: false, error: 'content is required' });
@@ -576,10 +626,20 @@ export const addComment = async (req, res) => {
     const authorName = req.user.name || 'Student';
     const authorAvatar = computeInitials(authorName);
 
-    const mentionedFirebaseUids = await resolveMentionNamesInComment(content.trim());
+    const mentionedFirebaseUids = await getCommentMentionUidsFromContent(content.trim());
+
+    let parentComment = null;
+    const parentIdStr = parentId === undefined || parentId === null || parentId === '' ? null : String(parentId);
+    if (parentIdStr) {
+      parentComment = await CommunityComment.findOne({ _id: parentIdStr, postId: post._id }).lean();
+      if (!parentComment) {
+        return res.status(404).json({ success: false, error: 'Parent comment not found' });
+      }
+    }
 
     const comment = await CommunityComment.create({
       postId: post._id,
+      parentId: parentComment ? parentComment._id : null,
       authorId: currentUserFirebaseUid,
       authorName,
       authorAvatar,
@@ -619,7 +679,170 @@ export const addComment = async (req, res) => {
       });
     }
 
-    res.status(201).json({ success: true, comment });
+    const authorUser = await User.findOne({ firebaseUid: currentUserFirebaseUid }).select('totalPoints').lean();
+    res.status(201).json({
+      success: true,
+      comment: {
+        _id: String(comment._id),
+        postId: String(comment.postId),
+        parentId: comment.parentId ? String(comment.parentId) : null,
+        authorId: comment.authorId,
+        authorName: comment.authorName,
+        authorAvatar: comment.authorAvatar || null,
+        authorRank: rankTierFromPoints(authorUser?.totalPoints || 0),
+        content: comment.content,
+        createdAt: comment.createdAt,
+        likesCount: 0,
+        isLiked: false,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// POST /api/community/posts/:id/comments/:commentId/like
+export const toggleCommentLike = async (req, res) => {
+  try {
+    const currentUserFirebaseUid = getFirebaseUid(req.user);
+    if (!currentUserFirebaseUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { id } = req.params;
+    const { commentId } = req.params;
+
+    const comment = await CommunityComment.findById(commentId);
+    if (!comment || String(comment.postId) !== String(id)) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+
+    const likes = comment.likes || [];
+    const alreadyLiked = likes.includes(currentUserFirebaseUid);
+    const pointsDelta = alreadyLiked ? -2 : 2;
+
+    comment.likes = alreadyLiked ? likes.filter((uid) => uid !== currentUserFirebaseUid) : [...likes, currentUserFirebaseUid];
+    await comment.save();
+
+    // Points: comment like goes to the comment author.
+    const authorUser = await User.findOne({ firebaseUid: comment.authorId });
+    if (authorUser) {
+      authorUser.communityPoints = (authorUser.communityPoints || 0) + pointsDelta;
+      await recalcTotalPoints(authorUser);
+    }
+
+    if (!alreadyLiked && comment.authorId !== currentUserFirebaseUid) {
+      await createCommunityNotification({
+        recipientFirebaseUid: comment.authorId,
+        type: 'comment_like',
+        actorFirebaseUid: currentUserFirebaseUid,
+        actorName: req.user.name || 'Someone',
+        postId: comment.postId,
+        commentId: comment._id,
+      });
+    }
+
+    res.json({ liked: !alreadyLiked, likesCount: comment.likes.length });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// PUT /api/community/posts/:id/comments/:commentId
+export const updateComment = async (req, res) => {
+  try {
+    const currentUserFirebaseUid = getFirebaseUid(req.user);
+    if (!currentUserFirebaseUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { id } = req.params;
+    const { commentId } = req.params;
+    const { content } = req.body || {};
+
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ success: false, error: 'content is required' });
+    }
+    if (content.length > 500) {
+      return res.status(400).json({ success: false, error: 'content exceeds 500 characters' });
+    }
+
+    const comment = await CommunityComment.findById(commentId);
+    if (!comment || !assertCommentBelongsToPost(comment, id)) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+
+    if (!assertOwner(currentUserFirebaseUid, comment)) {
+      return res.status(403).json({ success: false, error: 'You can only edit your own comments' });
+    }
+
+    comment.content = content.trim();
+    comment.mentionedFirebaseUids = await getCommentMentionUidsFromContent(comment.content);
+    await comment.save();
+
+    const authorUser = await User.findOne({ firebaseUid: comment.authorId }).select('totalPoints').lean();
+    const likes = comment.likes || [];
+    const currentUserLikes = !!currentUserFirebaseUid && likes.includes(currentUserFirebaseUid);
+
+    res.json({
+      success: true,
+      comment: {
+        _id: String(comment._id),
+        postId: String(comment.postId),
+        parentId: comment.parentId ? String(comment.parentId) : null,
+        authorId: comment.authorId,
+        authorName: comment.authorName,
+        authorAvatar: comment.authorAvatar || null,
+        authorRank: rankTierFromPoints(authorUser?.totalPoints || 0),
+        content: comment.content,
+        createdAt: comment.createdAt,
+        likesCount: likes.length,
+        isLiked: currentUserLikes,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// DELETE /api/community/posts/:id/comments/:commentId
+export const deleteComment = async (req, res) => {
+  try {
+    const currentUserFirebaseUid = getFirebaseUid(req.user);
+    if (!currentUserFirebaseUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { id } = req.params;
+    const { commentId } = req.params;
+
+    const post = await CommunityPost.findById(id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post not found' });
+
+    const root = await CommunityComment.findById(commentId);
+    if (!root || !assertCommentBelongsToPost(root, id)) {
+      return res.status(404).json({ success: false, error: 'Comment not found' });
+    }
+
+    if (!assertOwner(currentUserFirebaseUid, root)) {
+      return res.status(403).json({ success: false, error: 'You can only delete your own comments' });
+    }
+
+    // Collect root + all descendants.
+    const idsToDelete = [];
+    const queue = [root._id];
+    while (queue.length > 0) {
+      const curId = queue.shift();
+      idsToDelete.push(curId);
+      const children = await CommunityComment.find({ postId: post._id, parentId: curId }).select('_id').lean();
+      for (const child of children || []) queue.push(child._id);
+    }
+
+    await CommunityComment.deleteMany({ _id: { $in: idsToDelete } });
+
+    // Keep post.commentsCount roughly in sync (includes replies as well).
+    const nextCount = Math.max(0, (post.commentsCount || 0) - idsToDelete.length);
+    post.commentsCount = nextCount;
+    if (post.bestAnswerCommentId && idsToDelete.some((x) => String(x) === String(post.bestAnswerCommentId))) {
+      post.bestAnswerCommentId = null;
+    }
+    await post.save();
+
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

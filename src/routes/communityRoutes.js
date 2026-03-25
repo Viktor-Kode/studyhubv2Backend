@@ -12,6 +12,9 @@ import {
   updatePost,
   getComments,
   addComment,
+  toggleCommentLike,
+  updateComment,
+  deleteComment,
   votePoll,
   markBestAnswer,
   toggleBookmark,
@@ -83,6 +86,11 @@ router.put('/posts/:id', protect, updatePost);
 // COMMENTS
 router.get('/posts/:id/comments', protect, getComments);
 router.post('/posts/:id/comments', protect, addComment);
+
+// Comment interactions (replies, likes, edit, delete)
+router.post('/posts/:id/comments/:commentId/like', protect, toggleCommentLike);
+router.put('/posts/:id/comments/:commentId', protect, updateComment);
+router.delete('/posts/:id/comments/:commentId', protect, deleteComment);
 
 // POLLS
 router.post('/posts/:id/vote', protect, votePoll);
