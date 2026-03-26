@@ -1366,6 +1366,23 @@ export const markNotificationRead = async (req, res) => {
   }
 };
 
+// PUT /api/community/notifications/read-all
+export const markAllNotificationsRead = async (req, res) => {
+  try {
+    const currentUserFirebaseUid = getFirebaseUid(req.user);
+    if (!currentUserFirebaseUid) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const result = await CommunityNotification.updateMany(
+      { recipientFirebaseUid: currentUserFirebaseUid, read: false },
+      { $set: { read: true } },
+    );
+
+    res.json({ success: true, modifiedCount: result.modifiedCount ?? 0 });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 // GET /api/community/search — alias for posts with q (and optional filters)
 export const communitySearch = async (req, res) => {
   req.query.sort = req.query.sort || 'feed';

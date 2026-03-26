@@ -26,6 +26,7 @@ import {
   getCommunityStats,
   getNotifications,
   markNotificationRead,
+  markAllNotificationsRead,
   communitySearch,
   getLeaderboard,
   uploadCommunityImage,
@@ -70,6 +71,7 @@ router.get('/stats', protect, getCommunityStats);
 router.get('/trending', protect, getTrending);
 router.get('/search', protect, communitySearch);
 router.get('/notifications', protect, getNotifications);
+router.put('/notifications/read-all', protect, markAllNotificationsRead);
 router.put('/notifications/:id/read', protect, markNotificationRead);
 router.get('/liked-posts', protect, getLikedPosts);
 router.get('/bookmarks', protect, getBookmarkedPosts);
