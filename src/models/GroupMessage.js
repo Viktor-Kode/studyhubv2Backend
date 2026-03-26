@@ -6,7 +6,8 @@ const GroupMessageSchema = new mongoose.Schema(
     authorId: { type: String, required: true },
     authorName: { type: String, required: true },
     authorAvatar: { type: String },
-    content: { type: String, required: true, maxlength: 1000 },
+    // User chat capped in controller; AI replies need a higher limit (DeepSeek max_tokens, markdown, etc.)
+    content: { type: String, required: true, maxlength: 12000 },
     type: { type: String, enum: ['text', 'system', 'ai'], default: 'text' },
     reactions: [
       {

@@ -426,11 +426,17 @@ export const askGroupAI = async (req, res) => {
       return res.status(502).json({ error: data?.error?.message || 'AI did not return an answer' });
     }
 
+    const MAX_AI_CHARS = 12000;
+    const aiContent =
+      answer.length > MAX_AI_CHARS
+        ? `${answer.slice(0, MAX_AI_CHARS - 30)}\n\n…(truncated)`
+        : answer;
+
     const aiMessage = await GroupMessage.create({
       groupId: id,
       authorId: 'ai',
       authorName: 'StudyHelp AI',
-      content: answer,
+      content: aiContent,
       type: 'ai',
     });
 
