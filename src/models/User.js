@@ -57,6 +57,11 @@ const userSchema = new mongoose.Schema({
         default: {}
     },
 
+    preferences: {
+        hideTourButton: { type: Boolean, default: false },
+        hideChatbot: { type: Boolean, default: false },
+    },
+
     // ─── Subscription & Usage (New System) ───────────────────────────────
     subscriptionStatus: {
         type: String,

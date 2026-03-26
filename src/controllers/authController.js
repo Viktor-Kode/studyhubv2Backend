@@ -92,7 +92,7 @@ export const login = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
     try {
         let user = await User.findById(req.user.id || req.user._id).select(
-            'name email role phoneNumber ' +
+            'name email role phoneNumber preferences ' +
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
             'flashcardUsageCount flashcardUsageLimit'
@@ -110,11 +110,13 @@ export const getMe = async (req, res, next) => {
             ))
             : 0;
 
+        const uo = user.toObject();
         res.status(200).json({
             status: 'success',
             data: {
                 user: {
-                    ...user.toObject(),
+                    ...uo,
+                    preferences: uo.preferences || { hideTourButton: false, hideChatbot: false },
                     daysLeft,
                     isActive: user.subscriptionStatus === 'active' && daysLeft > 0
                 }
@@ -273,6 +275,49 @@ export const updateMe = async (req, res, next) => {
             data: {
                 user: updatedUser
             }
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Update help widget visibility preferences (tour button, help chatbot).
+ * PATCH /api/users/preferences  body: { hideTourButton?: boolean, hideChatbot?: boolean }
+ */
+export const updateUserPreferences = async (req, res, next) => {
+    try {
+        const { hideTourButton, hideChatbot } = req.body || {};
+        const $set = {};
+
+        if (typeof hideTourButton === 'boolean') {
+            $set['preferences.hideTourButton'] = hideTourButton;
+        }
+        if (typeof hideChatbot === 'boolean') {
+            $set['preferences.hideChatbot'] = hideChatbot;
+        }
+
+        if (Object.keys($set).length === 0) {
+            return res.status(400).json({
+                status: 'fail',
+                message: 'Provide hideTourButton and/or hideChatbot as booleans',
+            });
+        }
+
+        const updatedUser = await User.findByIdAndUpdate(
+            req.user._id,
+            { $set },
+            { new: true, runValidators: true },
+        ).select('preferences');
+
+        res.status(200).json({
+            status: 'success',
+            data: {
+                preferences: updatedUser?.preferences || {
+                    hideTourButton: false,
+                    hideChatbot: false,
+                },
+            },
         });
     } catch (err) {
         next(err);
