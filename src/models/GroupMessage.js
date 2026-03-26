@@ -20,11 +20,16 @@ const GroupMessageSchema = new mongoose.Schema(
       authorName: String,
       preview: String,
     },
+    editedAt: { type: Date },
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    seenBy: [{ type: String }],
   },
   { timestamps: true },
 );
 
 GroupMessageSchema.index({ groupId: 1, createdAt: -1 });
+GroupMessageSchema.index({ groupId: 1, updatedAt: -1 });
 
 const GroupMessage = mongoose.model('GroupMessage', GroupMessageSchema);
 export default GroupMessage;

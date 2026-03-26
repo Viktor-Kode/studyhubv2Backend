@@ -321,6 +321,7 @@ export const toggleMessageReaction = async (req, res) => {
 
     const msg = await GroupMessage.findOne({ _id: messageId, groupId: id });
     if (!msg) return res.status(404).json({ error: 'Message not found' });
+    if (msg.isDeleted) return res.status(400).json({ error: 'Cannot react to a deleted message' });
 
     const reactions = msg.reactions || [];
     const idx = reactions.findIndex((r) => r.emoji === emoji);
@@ -448,6 +449,116 @@ export const askGroupAI = async (req, res) => {
     await StudyGroup.findOneAndUpdate({ _id: id, 'members.userId': userId }, { $inc: { 'members.$.points': 5 } });
 
     res.json({ message: aiMessage });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const EDIT_WINDOW_MS = 5 * 60 * 1000;
+
+export const editMessage = async (req, res) => {
+  const { id, messageId } = req.params;
+  const userId = getFirebaseUid(req.user);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const text = String(req.body.content || '').trim();
+  if (!text) return res.status(400).json({ error: 'Message is required' });
+  if (text.length > 1000) return res.status(400).json({ error: 'Message too long' });
+
+  try {
+    const group = await StudyGroup.findById(id);
+    if (!group || !group.members.some((m) => m.userId === userId)) {
+      return res.status(403).json({ error: 'Not a member of this group' });
+    }
+
+    const msg = await GroupMessage.findOne({ _id: messageId, groupId: id });
+    if (!msg) return res.status(404).json({ error: 'Message not found' });
+    if (msg.authorId !== userId) return res.status(403).json({ error: 'You can only edit your own messages' });
+    if (msg.type !== 'text') return res.status(400).json({ error: 'This message cannot be edited' });
+    if (msg.isDeleted) return res.status(400).json({ error: 'Message was deleted' });
+    if (msg.editedAt) return res.status(400).json({ error: 'This message was already edited' });
+
+    const age = Date.now() - new Date(msg.createdAt).getTime();
+    if (age > EDIT_WINDOW_MS) {
+      return res.status(403).json({ error: 'Edit window expired (5 minutes)' });
+    }
+
+    msg.content = text;
+    msg.editedAt = new Date();
+    await msg.save();
+    res.json(msg);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const deleteMessage = async (req, res) => {
+  const { id, messageId } = req.params;
+  const userId = getFirebaseUid(req.user);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const group = await StudyGroup.findById(id);
+    if (!group || !group.members.some((m) => m.userId === userId)) {
+      return res.status(403).json({ error: 'Not a member of this group' });
+    }
+
+    const msg = await GroupMessage.findOne({ _id: messageId, groupId: id });
+    if (!msg) return res.status(404).json({ error: 'Message not found' });
+    if (msg.authorId !== userId) return res.status(403).json({ error: 'You can only delete your own messages' });
+    if (msg.type !== 'text') return res.status(400).json({ error: 'This message cannot be deleted' });
+    if (msg.isDeleted) return res.status(400).json({ error: 'Message already deleted' });
+
+    msg.isDeleted = true;
+    msg.deletedAt = new Date();
+    msg.content = ' ';
+    msg.reactions = [];
+    await msg.save();
+    res.json(msg);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const markMessagesRead = async (req, res) => {
+  const { id } = req.params;
+  const { lastReadAt } = req.body || {};
+  const userId = getFirebaseUid(req.user);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const cutoff = new Date(lastReadAt);
+  if (!lastReadAt || Number.isNaN(cutoff.getTime())) {
+    return res.status(400).json({ error: 'lastReadAt must be a valid ISO date string' });
+  }
+
+  try {
+    const group = await StudyGroup.findById(id);
+    if (!group || !group.members.some((m) => m.userId === userId)) {
+      return res.status(403).json({ error: 'Not a member of this group' });
+    }
+
+    const lr = group.lastRead || [];
+    const idx = lr.findIndex((r) => r.userId === userId);
+    if (idx >= 0) {
+      if (new Date(lr[idx].lastReadAt) < cutoff) lr[idx].lastReadAt = cutoff;
+    } else {
+      lr.push({ userId, lastReadAt: cutoff });
+    }
+    group.lastRead = lr;
+    await group.save();
+
+    await GroupMessage.updateMany(
+      {
+        groupId: id,
+        createdAt: { $lte: cutoff },
+        authorId: { $ne: userId },
+        isDeleted: { $ne: true },
+        type: { $in: ['text', 'ai'] },
+      },
+      { $addToSet: { seenBy: userId } },
+    );
+
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

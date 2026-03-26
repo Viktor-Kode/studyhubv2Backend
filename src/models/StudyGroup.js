@@ -24,6 +24,15 @@ const StudyGroupSchema = new mongoose.Schema(
     messagesCount: { type: Number, default: 0 },
     lastActivity: { type: Date, default: Date.now },
     isPinned: { type: Boolean, default: false },
+    lastRead: {
+      type: [
+        {
+          userId: { type: String },
+          lastReadAt: { type: Date },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true },
 );

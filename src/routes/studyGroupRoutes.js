@@ -11,6 +11,9 @@ import {
   toggleMessageReaction,
   getGroupUpdates,
   askGroupAI,
+  editMessage,
+  deleteMessage,
+  markMessagesRead,
 } from '../controllers/studyGroupController.js';
 
 const router = express.Router();
@@ -22,6 +25,9 @@ router.post('/:id/leave', protect, leaveGroup);
 router.get('/:id/messages', protect, getMessages);
 router.post('/:id/messages', protect, sendMessage);
 router.patch('/:id/messages/:messageId/reactions', protect, toggleMessageReaction);
+router.put('/:id/messages/:messageId', protect, editMessage);
+router.delete('/:id/messages/:messageId', protect, deleteMessage);
+router.post('/:id/mark-read', protect, markMessagesRead);
 router.get('/:id/updates', protect, getGroupUpdates);
 router.post('/:id/ask-ai', protect, askGroupAI);
 router.get('/:id', protect, getStudyGroup);
