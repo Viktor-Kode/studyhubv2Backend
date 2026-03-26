@@ -32,6 +32,7 @@ import teacherToolsRoutes from './routes/teacherToolsRoutes.js';
 import progressRoutes from './routes/progressRoutes.js';
 import communityRoutes from './routes/communityRoutes.js';
 import groupsRoutes from './routes/groupsRoutes.js';
+import studyGroupRoutes from './routes/studyGroupRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 import { unsubscribe } from './controllers/emailCampaignController.js';
@@ -152,6 +153,8 @@ app.use('/api/teacher-tools', teacherToolsRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/groups', groupsRoutes);
+// Study groups (community tab) — separate from legacy /api/groups collaboration feature
+app.use('/api/study-groups', studyGroupRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');

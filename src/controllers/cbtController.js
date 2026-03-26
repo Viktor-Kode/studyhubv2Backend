@@ -317,6 +317,12 @@ export const saveCBTResult = async (req, res) => {
             await user.save({ validateBeforeSave: false });
         }
 
+        const { studyGroupId } = req.body || {};
+        if (studyGroupId && req.user?.firebaseUid) {
+          const { awardStudyGroupCbtCompletion } = await import('../services/studyGroupCbtBonus.js');
+          await awardStudyGroupCbtCompletion(req.user.firebaseUid, studyGroupId);
+        }
+
         const streak = await updateStreak(studentId, 'cbt');
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
         const lastDate = streak?.lastActivityDate
