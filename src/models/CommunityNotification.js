@@ -5,7 +5,7 @@ const CommunityNotificationSchema = new mongoose.Schema(
     recipientFirebaseUid: { type: String, required: true, index: true },
     type: {
       type: String,
-      enum: ['like', 'comment', 'bestAnswer', 'mention', 'badge', 'rankUp', 'poll'],
+      enum: ['like', 'comment', 'comment_like', 'bestAnswer', 'mention', 'badge', 'rankUp', 'poll'],
       required: true,
     },
     actorFirebaseUid: { type: String, default: null },
