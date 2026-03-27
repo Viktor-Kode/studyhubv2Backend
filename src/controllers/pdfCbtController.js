@@ -1,4 +1,4 @@
-import pdfParse from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 import fetch from 'node-fetch';
 
 const cleanPdfText = (text) => {
@@ -30,7 +30,13 @@ export const extractQuestionsFromPDF = async (req, res) => {
       return res.status(400).json({ error: 'No PDF uploaded' });
     }
 
-    const pdfData = await pdfParse(req.file.buffer);
+    const parser = new PDFParse({ data: req.file.buffer });
+    let pdfData;
+    try {
+      pdfData = await parser.getText();
+    } finally {
+      await parser.destroy();
+    }
     const rawText = pdfData?.text || '';
 
     if (!rawText || rawText.trim().length < 50) {
