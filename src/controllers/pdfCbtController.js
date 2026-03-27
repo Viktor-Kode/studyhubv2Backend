@@ -1,6 +1,29 @@
 import pdfParse from 'pdf-parse';
 import fetch from 'node-fetch';
 
+const cleanPdfText = (text) => {
+  return text
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/page \d+ of \d+/gi, '')
+    .replace(/^\s*\d+\s*$/gm, '')
+    .replace(/copyright.{0,80}/gi, '')
+    .replace(/all rights reserved.{0,50}/gi, '')
+    .trim();
+};
+
+const smartExtract = (text, maxChars = 6000) => {
+  if (text.length <= maxChars) return text;
+  const third = Math.floor(maxChars / 3);
+  const start = text.slice(0, third);
+  const mid = text.slice(
+    Math.floor(text.length / 2) - Math.floor(third / 2),
+    Math.floor(text.length / 2) + Math.floor(third / 2)
+  );
+  const end = text.slice(text.length - third);
+  return `${start}\n...\n${mid}\n...\n${end}`;
+};
+
 export const extractQuestionsFromPDF = async (req, res) => {
   try {
     if (!req.file) {
@@ -16,7 +39,8 @@ export const extractQuestionsFromPDF = async (req, res) => {
       });
     }
 
-    const truncated = rawText.slice(0, 12000);
+    const cleaned = cleanPdfText(rawText);
+    const truncated = smartExtract(cleaned, 6000);
 
     const prompt = `You are an exam question extractor. The text below is from a past question PDF that contains questions AND their answers mixed together.
 
@@ -30,7 +54,7 @@ Rules:
 - Only include questions that have clear multiple choice options (A, B, C, D)
 - If a question has an answer key or "Answer: X" nearby, capture that as the correct answer
 - If no answer is found, make your best judgment based on the options
-- Extract maximum 40 questions
+- Extract maximum 20 questions — prioritise the clearest, most complete ones
 - Keep questions exactly as written — do not rephrase
 - Do not include essay or theory questions
 
@@ -64,7 +88,7 @@ ${truncated}`;
       body: JSON.stringify({
         model: 'deepseek-chat',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 4000,
+        max_tokens: 2000,
         temperature: 0.1,
       }),
     });
@@ -88,7 +112,7 @@ ${truncated}`;
 
     const questions = parsed.questions
       .filter((q) => q?.question && q?.options?.A && q?.options?.B && q?.options?.C && q?.options?.D)
-      .slice(0, 40)
+      .slice(0, 20)
       .map((q) => {
         const answer = String(q.answer || 'A').trim().toUpperCase();
         const safeAnswer = ['A', 'B', 'C', 'D'].includes(answer) ? answer : 'A';
