@@ -2,7 +2,7 @@ import LibraryMaterial from '../models/LibraryMaterial.js';
 import cloudinary from '../config/cloudinary.js';
 import User from '../models/User.js';
 import { hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
-import pdfParse from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 import LibraryDocument from '../models/LibraryDocument.js';
 import ReadingProgress from '../models/ReadingProgress.js';
 
@@ -246,8 +246,17 @@ const getPdfPagesFromUrl = async (fileUrl) => {
     const response = await fetch(fileUrl);
     if (!response.ok) return 0;
     const buffer = Buffer.from(await response.arrayBuffer());
-    const parsed = await pdfParse(buffer);
-    return parsed.numpages || 0;
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const info = await parser.getInfo();
+      if (typeof info?.total === 'number') {
+        return info.total;
+      }
+      const text = await parser.getText();
+      return text?.numpages || 0;
+    } finally {
+      await parser.destroy();
+    }
   } catch (error) {
     console.error('[Library] Failed to parse PDF pages:', error.message);
     return 0;
