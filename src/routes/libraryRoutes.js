@@ -10,6 +10,13 @@ import {
   deleteMaterial,
   saveProgress,
   manageFolder,
+  listDocuments,
+  createDocument,
+  getDocumentById,
+  deleteDocument,
+  getProgress,
+  upsertProgress,
+  getRecentDocuments,
 } from '../controllers/libraryController.js';
 
 const router = express.Router();
@@ -100,6 +107,15 @@ router.get('/proxy-pdf/:id', async (req, res) => {
 });
 
 // Library CRUD routes
+router.get('/documents', listDocuments);
+router.post('/documents', pdfUpload.single('file'), createDocument);
+router.get('/documents/:id', getDocumentById);
+router.delete('/documents/:id', deleteDocument);
+router.get('/progress/:documentId', getProgress);
+router.post('/progress', upsertProgress);
+router.get('/recent', getRecentDocuments);
+
+// Legacy endpoints kept for compatibility
 router.get('/', getMaterials);
 router.post('/upload', pdfUpload.single('pdf'), uploadMaterial);
 router.put('/folder', manageFolder);

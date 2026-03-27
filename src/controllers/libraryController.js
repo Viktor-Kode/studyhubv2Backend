@@ -2,6 +2,9 @@ import LibraryMaterial from '../models/LibraryMaterial.js';
 import cloudinary from '../config/cloudinary.js';
 import User from '../models/User.js';
 import { hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
+import pdfParse from 'pdf-parse';
+import LibraryDocument from '../models/LibraryDocument.js';
+import ReadingProgress from '../models/ReadingProgress.js';
 
 const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
@@ -230,6 +233,242 @@ export const manageFolder = async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+const clampPercentage = (value) => {
+  const numeric = Number(value) || 0;
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+};
+
+const getPdfPagesFromUrl = async (fileUrl) => {
+  try {
+    const response = await fetch(fileUrl);
+    if (!response.ok) return 0;
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const parsed = await pdfParse(buffer);
+    return parsed.numpages || 0;
+  } catch (error) {
+    console.error('[Library] Failed to parse PDF pages:', error.message);
+    return 0;
+  }
+};
+
+// GET /api/library/documents
+export const listDocuments = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+
+    const [documents, progressRows] = await Promise.all([
+      LibraryDocument.find({ userId }).sort({ updatedAt: -1 }).lean(),
+      ReadingProgress.find({ userId }).sort({ lastReadAt: -1 }).lean(),
+    ]);
+
+    const progressMap = new Map(
+      progressRows.map((progress) => [String(progress.documentId), progress])
+    );
+
+    const items = documents.map((document) => {
+      const progress = progressMap.get(String(document._id));
+      return {
+        ...document,
+        progress: progress
+          ? {
+              currentPage: progress.currentPage,
+              percentage: progress.percentage,
+              lastReadAt: progress.lastReadAt,
+            }
+          : {
+              currentPage: 1,
+              percentage: 0,
+              lastReadAt: null,
+            },
+      };
+    });
+
+    items.sort((a, b) => {
+      const aTime = a.progress.lastReadAt
+        ? new Date(a.progress.lastReadAt).getTime()
+        : new Date(a.updatedAt).getTime();
+      const bTime = b.progress.lastReadAt
+        ? new Date(b.progress.lastReadAt).getTime()
+        : new Date(b.updatedAt).getTime();
+      return bTime - aTime;
+    });
+
+    res.json({ success: true, documents: items });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// POST /api/library/documents
+export const createDocument = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+
+    const userId = String(req.user._id);
+    const { title, subject, coverColor } = req.body;
+    const fileUrl = req.file.path.endsWith('.pdf') ? req.file.path : `${req.file.path}.pdf`;
+    const pages = await getPdfPagesFromUrl(fileUrl);
+
+    const document = await LibraryDocument.create({
+      userId,
+      title: title || req.file.originalname.replace(/\.pdf$/i, ''),
+      subject: subject || '',
+      fileUrl,
+      fileSize: req.file.size,
+      fileType: req.file.mimetype || 'application/pdf',
+      coverColor: coverColor || '#5B4CF5',
+      pages,
+      publicId: req.file.filename,
+    });
+
+    res.status(201).json({ success: true, document });
+  } catch (error) {
+    console.error('[Library] Document upload error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// GET /api/library/documents/:id
+export const getDocumentById = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const document = await LibraryDocument.findOne({ _id: req.params.id, userId }).lean();
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    const progress = await ReadingProgress.findOne({
+      userId,
+      documentId: document._id,
+    }).lean();
+
+    res.json({
+      success: true,
+      document: {
+        ...document,
+        progress: progress
+          ? {
+              currentPage: progress.currentPage,
+              percentage: progress.percentage,
+              lastReadAt: progress.lastReadAt,
+            }
+          : { currentPage: 1, percentage: 0, lastReadAt: null },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// DELETE /api/library/documents/:id
+export const deleteDocument = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const document = await LibraryDocument.findOne({ _id: req.params.id, userId });
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    if (document.publicId) {
+      await cloudinary.uploader.destroy(document.publicId, { resource_type: 'raw' });
+    }
+
+    await Promise.all([
+      LibraryDocument.findByIdAndDelete(document._id),
+      ReadingProgress.deleteMany({ userId, documentId: document._id }),
+    ]);
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// GET /api/library/progress/:documentId
+export const getProgress = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const progress = await ReadingProgress.findOne({
+      userId,
+      documentId: req.params.documentId,
+    }).lean();
+
+    res.json({
+      success: true,
+      progress: progress
+        ? {
+            currentPage: progress.currentPage,
+            percentage: progress.percentage,
+            lastReadAt: progress.lastReadAt,
+          }
+        : {
+            currentPage: 1,
+            percentage: 0,
+            lastReadAt: null,
+          },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// POST /api/library/progress
+export const upsertProgress = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const { documentId, currentPage, percentage } = req.body;
+
+    if (!documentId) {
+      return res.status(400).json({ success: false, error: 'documentId is required' });
+    }
+
+    const progress = await ReadingProgress.findOneAndUpdate(
+      { userId, documentId },
+      {
+        $set: {
+          currentPage: Math.max(1, Number(currentPage) || 1),
+          percentage: clampPercentage(percentage),
+          lastReadAt: new Date(),
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.json({ success: true, progress });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// GET /api/library/recent
+export const getRecentDocuments = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const recent = await ReadingProgress.find({ userId })
+      .sort({ lastReadAt: -1 })
+      .limit(10)
+      .populate('documentId')
+      .lean();
+
+    const documents = recent
+      .filter((entry) => entry.documentId)
+      .map((entry) => ({
+        ...entry.documentId,
+        progress: {
+          currentPage: entry.currentPage,
+          percentage: entry.percentage,
+          lastReadAt: entry.lastReadAt,
+        },
+      }));
+
+    res.json({ success: true, documents });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
