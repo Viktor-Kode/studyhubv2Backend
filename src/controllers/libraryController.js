@@ -454,6 +454,112 @@ export const upsertProgress = async (req, res) => {
   }
 };
 
+/**
+ * Stream PDF for LibraryDocument or legacy LibraryMaterial (same Cloudinary fetch logic as route).
+ */
+export const proxyLibraryPdf = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const userIdStr = String(req.user._id);
+
+    let fileUrl;
+    let publicId;
+
+    const doc = await LibraryDocument.findOne({ _id: id, userId: userIdStr }).lean();
+    if (doc) {
+      fileUrl = doc.fileUrl;
+      publicId = doc.publicId;
+    } else {
+      const legacy = await LibraryMaterial.findOne({
+        _id: id,
+        userId: req.user._id,
+      }).lean();
+      if (legacy) {
+        fileUrl = legacy.fileUrl;
+        publicId = legacy.publicId;
+      }
+    }
+
+    if (!fileUrl) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    let response = await fetch(fileUrl);
+
+    if (!response.ok && fileUrl.includes('/raw/upload/')) {
+      const altUrl = fileUrl.replace('/raw/upload/', '/image/upload/');
+      response = await fetch(altUrl);
+    }
+
+    if (!response.ok && fileUrl.includes('/image/upload/')) {
+      const altUrl = fileUrl.replace('/image/upload/', '/raw/upload/');
+      response = await fetch(altUrl);
+    }
+
+    if (!response.ok && publicId) {
+      try {
+        const signedUrl = cloudinary.url(publicId, {
+          resource_type: 'raw',
+          secure: true,
+          sign_url: true,
+        });
+        response = await fetch(signedUrl);
+      } catch (signErr) {
+        console.error('[PDF Proxy] Signed URL failed:', signErr.message);
+      }
+    }
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return res.status(404).json({
+          error: 'PDF file not found on Cloudinary (404)',
+        });
+      }
+      return res.status(502).json({
+        error: `Cloudinary returned ${response.status}`,
+      });
+    }
+
+    const buffer = await response.arrayBuffer();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('[PDF Proxy] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PUT /api/library/documents/:id
+export const updateDocument = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const { title, subject, coverColor } = req.body;
+    const updates = { updatedAt: new Date() };
+
+    if (title !== undefined && String(title).trim()) updates.title = String(title).trim();
+    if (subject !== undefined) updates.subject = String(subject).trim();
+    if (coverColor !== undefined && String(coverColor).trim()) {
+      updates.coverColor = String(coverColor).trim();
+    }
+
+    const document = await LibraryDocument.findOneAndUpdate(
+      { _id: req.params.id, userId },
+      { $set: updates },
+      { new: true }
+    );
+
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    res.json({ success: true, document });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 // GET /api/library/recent
 export const getRecentDocuments = async (req, res) => {
   try {
