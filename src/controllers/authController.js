@@ -92,10 +92,11 @@ export const login = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
     try {
         let user = await User.findById(req.user.id || req.user._id).select(
-            'name email role phoneNumber preferences ' +
+            'name email role phoneNumber preferences firebaseUid ' +
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
-            'flashcardUsageCount flashcardUsageLimit'
+            'flashcardUsageCount flashcardUsageLimit ' +
+            'notificationsEnabled'
         );
 
         if (!user) {
@@ -116,6 +117,7 @@ export const getMe = async (req, res, next) => {
             data: {
                 user: {
                     ...uo,
+                    uid: uo.firebaseUid || null,
                     preferences: uo.preferences || { hideTourButton: false, hideChatbot: false },
                     daysLeft,
                     isActive: user.subscriptionStatus === 'active' && daysLeft > 0

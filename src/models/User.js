@@ -115,7 +115,11 @@ const userSchema = new mongoose.Schema({
     communityBadges: [{ type: String }], // e.g. first_post, streak_30
     bestAnswersCount: { type: Number, default: 0 },
 
-    banned: { type: Boolean, default: false }
+    banned: { type: Boolean, default: false },
+
+    fcmToken: { type: String, default: null },
+    notificationsEnabled: { type: Boolean, default: false },
+    following: [{ type: String }],
 
 }, { timestamps: true });
 

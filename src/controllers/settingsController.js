@@ -2,7 +2,7 @@ import User from '../models/User.js';
 
 export const getSettings = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).select('settings name email schoolName phone');
+        const user = await User.findById(req.user._id).select('settings name email schoolName phone notificationsEnabled');
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }

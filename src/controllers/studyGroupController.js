@@ -3,6 +3,7 @@ import StudyGroup from '../models/StudyGroup.js';
 import GroupMessage from '../models/GroupMessage.js';
 import User from '../models/User.js';
 import { hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
+import { sendNotification } from '../services/notificationService.js';
 
 const genJoinCode = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ', 6);
 
@@ -150,6 +151,18 @@ export const joinGroup = async (req, res) => {
       content: `${user.name} joined the group`,
       type: 'system',
     });
+
+    if (group.creatorId && group.creatorId !== userId) {
+      void sendNotification({
+        userId: group.creatorId,
+        type: 'group_join',
+        title: `${user.name} joined your group`,
+        body: group.name,
+        icon: '👥',
+        link: '/community',
+        data: { groupId: String(group._id) },
+      });
+    }
 
     res.json(group);
   } catch (err) {

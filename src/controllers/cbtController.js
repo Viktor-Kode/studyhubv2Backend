@@ -8,6 +8,7 @@ import aiClient from '../utils/aiClient.js';
 import crypto from 'crypto';
 import { MODEL_REGISTRY } from '../config/aiConfig.js';
 import { updateStreak } from '../services/streakService.js';
+import { sendNotification } from '../services/notificationService.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
 
@@ -328,6 +329,22 @@ export const saveCBTResult = async (req, res) => {
         const lastDate = streak?.lastActivityDate
             ? new Date(streak.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
             : null;
+
+        const total = Number(newResult.totalQuestions) || 0;
+        const correct = Number(newResult.correctAnswers) || 0;
+        const pct = Number(newResult.accuracy);
+        const subject = String(newResult.subject || 'CBT');
+        if (req.user?.firebaseUid) {
+          void sendNotification({
+            userId: req.user.firebaseUid,
+            type: 'cbt_result',
+            title: `CBT Result: ${correct}/${total} (${Number.isFinite(pct) ? `${pct}%` : '—'})`,
+            body: `You scored ${Number.isFinite(pct) ? `${pct}%` : 'your result'} in ${subject}. ${Number.isFinite(pct) && pct >= 50 ? 'Great job! 🎉' : 'Keep practicing! 💪'}`,
+            icon: '📝',
+            link: '/dashboard/cbt',
+            data: { subject },
+          });
+        }
 
         res.status(201).json({
             status: 'success',

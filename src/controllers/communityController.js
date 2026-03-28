@@ -16,6 +16,7 @@ import {
   checkPopularPostBadge,
   resolveMentionNamesInComment,
 } from '../services/communityEngagementService.js';
+import { sendNotification } from '../services/notificationService.js';
 
 function computeInitials(name) {
   const words = String(name || '')
@@ -469,6 +470,16 @@ export const likePost = async (req, res) => {
         actorName: req.user.name || 'Someone',
         postId: post._id,
       });
+      const preview = String(post.content || '').slice(0, 60);
+      void sendNotification({
+        userId: post.authorId,
+        type: 'post_like',
+        title: `${req.user.name || 'Someone'} liked your post`,
+        body: preview + (preview.length >= 60 ? '…' : ''),
+        icon: '❤️',
+        link: '/community',
+        data: { postId: String(post._id) },
+      });
     }
 
     res.json({
@@ -728,6 +739,16 @@ export const addComment = async (req, res) => {
         actorName: authorName,
         postId: post._id,
         commentId: comment._id,
+      });
+      const cprev = String(content || '').trim().slice(0, 60);
+      void sendNotification({
+        userId: post.authorId,
+        type: 'post_comment',
+        title: `${authorName} commented on your post`,
+        body: cprev + (cprev.length >= 60 ? '…' : ''),
+        icon: '💬',
+        link: '/community',
+        data: { postId: String(post._id) },
       });
     }
     for (const uid of mentionedFirebaseUids) {

@@ -2,6 +2,7 @@ import axios from 'axios';
 import Flutterwave from 'flutterwave-node-v3';
 import { PLANS } from '../config/plans.js';
 import User from '../models/User.js';
+import { sendNotification } from '../services/notificationService.js';
 import Transaction from '../models/Transaction.js';
 import { getEnv } from '../config/env.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
@@ -339,5 +340,21 @@ const applySubscriptionToUser = async (userId, plan) => {
     });
 
     console.log(`[Activation] ✅ ${plan} until ${newEnd.toISOString()} user=${userId}`);
-    return User.findById(userId);
+
+    const updated = await User.findById(userId);
+    const planLabel = planConfig?.label || plan;
+    const expiryStr = newEnd.toLocaleDateString('en-NG');
+    if (updated?.firebaseUid) {
+        void sendNotification({
+            userId: updated.firebaseUid,
+            type: 'payment_confirmed',
+            title: 'Payment Confirmed! 🎉',
+            body: `Your ${planLabel} plan is now active.`,
+            icon: '✅',
+            link: '/dashboard/student',
+            data: { plan: planLabel, expiryDate: expiryStr },
+        });
+    }
+
+    return updated;
 };

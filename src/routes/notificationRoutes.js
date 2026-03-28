@@ -2,12 +2,25 @@ import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
 import User from '../models/User.js';
 import { sendMessage, checkBalance } from '../services/termiiService.js';
+import {
+  getNotifications,
+  markAllRead,
+  markOneRead,
+  registerToken,
+  disableNotifications,
+} from '../controllers/notificationController.js';
 
 const router = express.Router();
 
 router.use(protect);
 
-// GET /api/notifications/test
+router.get('/', getNotifications);
+router.post('/mark-read', markAllRead);
+router.post('/mark-read/:id', markOneRead);
+router.post('/register-token', registerToken);
+router.post('/disable', disableNotifications);
+
+// GET /api/notifications/test — SMS test (Termii)
 router.get('/test', async (req, res) => {
   try {
     const user = await User.findById(req.user.id || req.user._id);

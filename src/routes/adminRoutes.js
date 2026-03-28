@@ -25,6 +25,7 @@ import {
     sendEmailCampaign,
     getEmailAudienceStats
 } from '../controllers/emailCampaignController.js';
+import { adminNotifyAll } from '../controllers/notificationController.js';
 
 const router = express.Router();
 
@@ -80,6 +81,7 @@ router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);
 router.delete('/users/:id', protect, restrictTo('admin'), deleteUser);
 router.get('/email-stats', protect, restrictTo('admin'), getEmailAudienceStats);
 router.post('/email-campaign', protect, restrictTo('admin'), sendEmailCampaign);
+router.post('/notify-all', protect, restrictTo('admin'), adminNotifyAll);
 
 // POST /api/admin/fix-subscription
 router.post('/fix-subscription', async (req, res) => {
