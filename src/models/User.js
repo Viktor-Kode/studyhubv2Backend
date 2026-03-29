@@ -44,6 +44,8 @@ const userSchema = new mongoose.Schema({
     },
 
     schoolName: String,
+    /** e.g. SS2, JSS 3, 100 Level — free text */
+    classLevel: String,
 
     // Phone fields (keep legacy `phone` for backward compatibility)
     phone: String,

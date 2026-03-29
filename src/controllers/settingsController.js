@@ -2,7 +2,7 @@ import User from '../models/User.js';
 
 export const getSettings = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).select('settings name email schoolName phone notificationsEnabled');
+        const user = await User.findById(req.user._id).select('settings name email schoolName classLevel phone notificationsEnabled');
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
@@ -34,6 +34,9 @@ export const updateSettings = async (req, res) => {
             if (profile.schoolName !== undefined && profile.schoolName !== null) {
                 updateData.schoolName = String(profile.schoolName).trim() || null;
             }
+            if (profile.classLevel !== undefined && profile.classLevel !== null) {
+                updateData.classLevel = String(profile.classLevel).trim() || null;
+            }
             if (profile.phone !== undefined) updateData.phone = profile.phone ? String(profile.phone).trim() : null;
         }
 
@@ -53,7 +56,7 @@ export const updateSettings = async (req, res) => {
             req.user._id,
             updateData,
             { new: true, runValidators: true }
-        ).select('settings name email schoolName phone');
+        ).select('settings name email schoolName classLevel phone');
 
         res.status(200).json({ success: true, user });
     } catch (error) {
