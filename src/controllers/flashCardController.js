@@ -7,7 +7,6 @@ import { getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import mongoose from 'mongoose';
 import { incrementFlashcardUsage } from '../middleware/usageMiddleware.js';
 import { updateStreak } from '../services/streakService.js';
-import { markUserProgress } from '../utils/markUserProgress.js';
 
 // Create a new flashcard
 export const createFlashCard = async (req, res) => {
@@ -40,8 +39,6 @@ export const createFlashCard = async (req, res) => {
         });
 
         await flashCard.save();
-
-        await markUserProgress(userId, 'flashcard');
 
         // Update deck card count if deck is specified and valid
         if (deckId && mongoose.Types.ObjectId.isValid(deckId)) {
@@ -580,10 +577,6 @@ export const generateAIFlashCards = async (req, res) => {
         // Count this as one flashcard generation usage
         await incrementFlashcardUsage(userId);
 
-        if (savedCards.length > 0) {
-            await markUserProgress(userId, 'flashcard');
-        }
-
         res.status(201).json({ success: true, count: savedCards.length, flashCards: savedCards });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -637,10 +630,6 @@ export const importFlashCards = async (req, res) => {
 
         if (deckId) {
             await FlashCardDeck.findOneAndUpdate({ _id: deckId, userId }, { $inc: { cardCount: savedCards.length } });
-        }
-
-        if (savedCards.length > 0) {
-            await markUserProgress(userId, 'flashcard');
         }
 
         res.status(201).json({ success: true, count: savedCards.length });

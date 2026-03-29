@@ -44,10 +44,6 @@ const userSchema = new mongoose.Schema({
     },
 
     schoolName: String,
-    /** e.g. SS2, JSS 3, 100 Level — free text */
-    classLevel: String,
-    /** Optional: degree / program at university, e.g. Computer Science */
-    courseOfStudy: String,
 
     // Phone fields (keep legacy `phone` for backward compatibility)
     phone: String,
@@ -124,28 +120,6 @@ const userSchema = new mongoose.Schema({
     fcmToken: { type: String, default: null },
     notificationsEnabled: { type: Boolean, default: false },
     following: [{ type: String }],
-
-    onboarding: {
-        completed: { type: Boolean, default: false },
-        studentType: {
-            type: String,
-            enum: ['secondary', 'university', 'jamb', 'remedial'],
-            default: 'secondary',
-        },
-        examType: { type: String, default: '' },
-        subjects: [{ type: String }],
-        goal: { type: String, default: '' },
-        studyHoursPerDay: { type: String, default: '' },
-        completedAt: { type: Date, default: null },
-    },
-
-    progress: {
-        hasCompletedCBT: { type: Boolean, default: false },
-        hasUsedAITutor: { type: Boolean, default: false },
-        hasUploadedLibrary: { type: Boolean, default: false },
-        hasJoinedCommunity: { type: Boolean, default: false },
-        hasCreatedFlashcard: { type: Boolean, default: false },
-    },
 
 }, { timestamps: true });
 

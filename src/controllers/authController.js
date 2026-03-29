@@ -5,66 +5,6 @@ import crypto from 'crypto';
 import { getEnv } from '../config/env.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 
-const ONBOARDING_STUDENT_TYPES = new Set(['secondary', 'university', 'jamb', 'remedial']);
-
-function normalizeStudentType(raw) {
-    if (raw && ONBOARDING_STUDENT_TYPES.has(raw)) return raw;
-    return 'secondary';
-}
-
-function normalizeOnboardingAndProgress(userDoc) {
-    const role = userDoc.role;
-    const ob = userDoc.onboarding;
-    const hasExplicitOnboarding =
-        ob != null &&
-        typeof ob === 'object' &&
-        Object.prototype.hasOwnProperty.call(ob, 'completed');
-
-    let onboarding;
-    if (role !== 'student') {
-        onboarding = {
-            completed: true,
-            studentType: normalizeStudentType(ob?.studentType),
-            examType: ob?.examType || '',
-            subjects: Array.isArray(ob?.subjects) ? ob.subjects : [],
-            goal: ob?.goal || '',
-            studyHoursPerDay: ob?.studyHoursPerDay || '',
-            completedAt: ob?.completedAt || null,
-        };
-    } else if (hasExplicitOnboarding) {
-        onboarding = {
-            completed: !!ob.completed,
-            studentType: normalizeStudentType(ob.studentType),
-            examType: ob.examType || '',
-            subjects: Array.isArray(ob.subjects) ? ob.subjects : [],
-            goal: ob.goal || '',
-            studyHoursPerDay: ob.studyHoursPerDay || '',
-            completedAt: ob.completedAt || null,
-        };
-    } else {
-        onboarding = {
-            completed: true,
-            studentType: 'secondary',
-            examType: '',
-            subjects: [],
-            goal: '',
-            studyHoursPerDay: '',
-            completedAt: null,
-        };
-    }
-
-    const p = userDoc.progress;
-    const progress = {
-        hasCompletedCBT: !!p?.hasCompletedCBT,
-        hasUsedAITutor: !!p?.hasUsedAITutor,
-        hasUploadedLibrary: !!p?.hasUploadedLibrary,
-        hasJoinedCommunity: !!p?.hasJoinedCommunity,
-        hasCreatedFlashcard: !!p?.hasCreatedFlashcard,
-    };
-
-    return { onboarding, progress };
-}
-
 /**
  * Signs a JWT token
  */
@@ -152,11 +92,11 @@ export const login = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
     try {
         let user = await User.findById(req.user.id || req.user._id).select(
-            'name email role phoneNumber schoolName classLevel courseOfStudy preferences firebaseUid ' +
+            'name email role phoneNumber schoolName preferences firebaseUid ' +
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
             'flashcardUsageCount flashcardUsageLimit ' +
-            'notificationsEnabled onboarding progress'
+            'notificationsEnabled'
         );
 
         if (!user) {
@@ -172,7 +112,6 @@ export const getMe = async (req, res, next) => {
             : 0;
 
         const uo = user.toObject();
-        const { onboarding, progress } = normalizeOnboardingAndProgress(user);
         res.status(200).json({
             status: 'success',
             data: {
@@ -180,8 +119,6 @@ export const getMe = async (req, res, next) => {
                     ...uo,
                     uid: uo.firebaseUid || null,
                     preferences: uo.preferences || { hideTourButton: true, hideChatbot: true },
-                    onboarding,
-                    progress,
                     daysLeft,
                     isActive: user.subscriptionStatus === 'active' && daysLeft > 0
                 }
@@ -350,70 +287,6 @@ export const updateMe = async (req, res, next) => {
  * Update help widget visibility preferences (tour button, help chatbot).
  * PATCH /api/users/preferences  body: { hideTourButton?: boolean, hideChatbot?: boolean }
  */
-/**
- * POST /api/users/onboarding  — student setup wizard (Mongo)
- */
-export const saveOnboarding = async (req, res, next) => {
-    try {
-        if (req.user.role !== 'student') {
-            return res.status(403).json({ status: 'fail', message: 'Only students use this onboarding flow.' });
-        }
-
-        const { examType, subjects, goal, studyHoursPerDay, studentType: bodyStudentType } = req.body || {};
-        const studentType = normalizeStudentType(
-            typeof bodyStudentType === 'string' ? bodyStudentType : undefined,
-        );
-        const subjectsArr = Array.isArray(subjects)
-            ? subjects.filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim())
-            : [];
-
-        await User.findByIdAndUpdate(req.user._id, {
-            $set: {
-                'onboarding.completed': true,
-                'onboarding.studentType': studentType,
-                'onboarding.examType': typeof examType === 'string' ? examType : '',
-                'onboarding.subjects': subjectsArr,
-                'onboarding.goal': typeof goal === 'string' ? goal : '',
-                'onboarding.studyHoursPerDay': typeof studyHoursPerDay === 'string' ? studyHoursPerDay : '',
-                'onboarding.completedAt': new Date(),
-            },
-        });
-
-        res.status(200).json({ success: true, status: 'success' });
-    } catch (err) {
-        next(err);
-    }
-};
-
-const PROGRESS_ACTION_MAP = {
-    cbt: 'progress.hasCompletedCBT',
-    ai_tutor: 'progress.hasUsedAITutor',
-    library: 'progress.hasUploadedLibrary',
-    community: 'progress.hasJoinedCommunity',
-    flashcard: 'progress.hasCreatedFlashcard',
-};
-
-/**
- * POST /api/users/progress/:action
- */
-export const markOnboardingProgress = async (req, res, next) => {
-    try {
-        if (req.user.role !== 'student') {
-            return res.status(403).json({ status: 'fail', message: 'Invalid for this role.' });
-        }
-
-        const field = PROGRESS_ACTION_MAP[req.params.action];
-        if (!field) {
-            return res.status(400).json({ error: 'Invalid action' });
-        }
-
-        await User.findByIdAndUpdate(req.user._id, { $set: { [field]: true } });
-        res.status(200).json({ success: true });
-    } catch (err) {
-        next(err);
-    }
-};
-
 export const updateUserPreferences = async (req, res, next) => {
     try {
         const { hideTourButton, hideChatbot } = req.body || {};

@@ -17,7 +17,6 @@ import {
   resolveMentionNamesInComment,
 } from '../services/communityEngagementService.js';
 import { sendNotification } from '../services/notificationService.js';
-import { markUserProgress } from '../utils/markUserProgress.js';
 
 function computeInitials(name) {
   const words = String(name || '')
@@ -416,8 +415,6 @@ export const createPost = async (req, res) => {
       await checkFirstPostBadge(user);
       await checkStreak30Badge(user._id);
     }
-
-    await markUserProgress(req.user._id, 'community');
 
     const bookmarkSet = await bookmarkSetForUser(req.user._id);
     const postObj = post.toObject();

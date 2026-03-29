@@ -5,7 +5,6 @@ import { hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
 import { PDFParse } from 'pdf-parse';
 import LibraryDocument from '../models/LibraryDocument.js';
 import ReadingProgress from '../models/ReadingProgress.js';
-import { markUserProgress } from '../utils/markUserProgress.js';
 
 const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
@@ -114,8 +113,6 @@ export const uploadMaterial = async (req, res) => {
       publicId: req.file.filename,
       fileSize: req.file.size,
     });
-
-    await markUserProgress(userId, 'library');
 
     res.json({ success: true, material });
   } catch (err) {

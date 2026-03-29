@@ -8,7 +8,6 @@ import { AI_PROVIDERS, getModelById, MODEL_REGISTRY } from '../config/aiConfig.j
 import crypto from 'crypto';
 import { createRequire } from 'module';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
-import { markUserProgress } from '../utils/markUserProgress.js';
 import { updateStreak } from '../services/streakService.js';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
@@ -350,7 +349,6 @@ Do not number them or add any text before the [[ brackets.`;
     const reply = response.choices[0].message.content;
 
     await incrementAIUsage(req.user._id);
-    await markUserProgress(req.user._id, 'ai_tutor');
     const streak = await updateStreak(req.user._id, 'question_generator');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
     const lastDate = streak?.lastActivityDate
