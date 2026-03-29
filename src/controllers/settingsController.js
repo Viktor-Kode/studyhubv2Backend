@@ -31,8 +31,10 @@ export const updateSettings = async (req, res) => {
         if (settings) updateData.settings = settings;
         if (profile) {
             if (profile.name) updateData.name = profile.name;
-            if (profile.schoolName) updateData.schoolName = profile.schoolName;
-            if (profile.phone) updateData.phone = profile.phone;
+            if (profile.schoolName !== undefined && profile.schoolName !== null) {
+                updateData.schoolName = String(profile.schoolName).trim() || null;
+            }
+            if (profile.phone !== undefined) updateData.phone = profile.phone ? String(profile.phone).trim() : null;
         }
 
         if (profile && (profile.examTarget != null || profile.subjects != null || profile.targetYear != null || profile.avatar != null)) {

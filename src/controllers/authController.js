@@ -92,7 +92,7 @@ export const login = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
     try {
         let user = await User.findById(req.user.id || req.user._id).select(
-            'name email role phoneNumber preferences firebaseUid ' +
+            'name email role phoneNumber schoolName preferences firebaseUid ' +
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
             'flashcardUsageCount flashcardUsageLimit ' +
@@ -118,7 +118,7 @@ export const getMe = async (req, res, next) => {
                 user: {
                     ...uo,
                     uid: uo.firebaseUid || null,
-                    preferences: uo.preferences || { hideTourButton: false, hideChatbot: false },
+                    preferences: uo.preferences || { hideTourButton: true, hideChatbot: true },
                     daysLeft,
                     isActive: user.subscriptionStatus === 'active' && daysLeft > 0
                 }
@@ -316,8 +316,8 @@ export const updateUserPreferences = async (req, res, next) => {
             status: 'success',
             data: {
                 preferences: updatedUser?.preferences || {
-                    hideTourButton: false,
-                    hideChatbot: false,
+                    hideTourButton: true,
+                    hideChatbot: true,
                 },
             },
         });
