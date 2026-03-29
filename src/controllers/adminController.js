@@ -24,6 +24,14 @@ const todayStart = () => {
     return d;
 };
 
+/** Local-midnight start of yesterday (same TZ as todayStart). */
+const yesterdayStart = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - 1);
+    return d;
+};
+
 const weekStart = () => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -382,23 +390,52 @@ export const getTodayLogins = async (req, res) => {
 };
 
 // Paginated logins list based on users seen in dashboard/auth middleware.
+// Query: period = all | today | yesterday | last7 | last30 (filters lastSeen window).
 export const getDashboardLogins = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1);
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 25));
         const search = String(req.query.search || '').trim();
+        const rawPeriod = String(req.query.period || 'all').toLowerCase();
+        const period = ['all', 'today', 'yesterday', 'last7', 'last30'].includes(rawPeriod) ? rawPeriod : 'all';
 
-        const filter = { lastSeen: { $ne: null } };
-        if (search) {
-            filter.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
-            ];
+        let lastSeenCond;
+        switch (period) {
+            case 'today':
+                lastSeenCond = { $gte: todayStart() };
+                break;
+            case 'yesterday':
+                lastSeenCond = { $gte: yesterdayStart(), $lt: todayStart() };
+                break;
+            case 'last7':
+                lastSeenCond = { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) };
+                break;
+            case 'last30':
+                lastSeenCond = { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) };
+                break;
+            case 'all':
+            default:
+                lastSeenCond = { $ne: null };
+                break;
         }
+
+        const filter = search
+            ? {
+                $and: [
+                    { lastSeen: lastSeenCond },
+                    {
+                        $or: [
+                            { name: { $regex: search, $options: 'i' } },
+                            { email: { $regex: search, $options: 'i' } },
+                        ],
+                    },
+                ],
+            }
+            : { lastSeen: lastSeenCond };
 
         const [users, total] = await Promise.all([
             User.find(filter)
-                .select('name email role subscriptionStatus subscriptionPlan lastSeen isVerified')
+                .select('name email role subscriptionStatus subscriptionPlan lastSeen isVerified avatar')
                 .sort({ lastSeen: -1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
@@ -412,6 +449,7 @@ export const getDashboardLogins = async (req, res) => {
             total,
             page,
             pages: Math.max(1, Math.ceil(total / limit)),
+            period,
         });
     } catch (err) {
         console.error('[Admin] getDashboardLogins error:', err);
