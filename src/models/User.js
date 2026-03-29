@@ -127,6 +127,11 @@ const userSchema = new mongoose.Schema({
 
     onboarding: {
         completed: { type: Boolean, default: false },
+        studentType: {
+            type: String,
+            enum: ['secondary', 'university', 'jamb', 'remedial'],
+            default: 'secondary',
+        },
         examType: { type: String, default: '' },
         subjects: [{ type: String }],
         goal: { type: String, default: '' },

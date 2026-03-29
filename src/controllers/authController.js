@@ -5,6 +5,13 @@ import crypto from 'crypto';
 import { getEnv } from '../config/env.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 
+const ONBOARDING_STUDENT_TYPES = new Set(['secondary', 'university', 'jamb', 'remedial']);
+
+function normalizeStudentType(raw) {
+    if (raw && ONBOARDING_STUDENT_TYPES.has(raw)) return raw;
+    return 'secondary';
+}
+
 function normalizeOnboardingAndProgress(userDoc) {
     const role = userDoc.role;
     const ob = userDoc.onboarding;
@@ -17,6 +24,7 @@ function normalizeOnboardingAndProgress(userDoc) {
     if (role !== 'student') {
         onboarding = {
             completed: true,
+            studentType: normalizeStudentType(ob?.studentType),
             examType: ob?.examType || '',
             subjects: Array.isArray(ob?.subjects) ? ob.subjects : [],
             goal: ob?.goal || '',
@@ -26,6 +34,7 @@ function normalizeOnboardingAndProgress(userDoc) {
     } else if (hasExplicitOnboarding) {
         onboarding = {
             completed: !!ob.completed,
+            studentType: normalizeStudentType(ob.studentType),
             examType: ob.examType || '',
             subjects: Array.isArray(ob.subjects) ? ob.subjects : [],
             goal: ob.goal || '',
@@ -35,6 +44,7 @@ function normalizeOnboardingAndProgress(userDoc) {
     } else {
         onboarding = {
             completed: true,
+            studentType: 'secondary',
             examType: '',
             subjects: [],
             goal: '',
@@ -349,7 +359,10 @@ export const saveOnboarding = async (req, res, next) => {
             return res.status(403).json({ status: 'fail', message: 'Only students use this onboarding flow.' });
         }
 
-        const { examType, subjects, goal, studyHoursPerDay } = req.body || {};
+        const { examType, subjects, goal, studyHoursPerDay, studentType: bodyStudentType } = req.body || {};
+        const studentType = normalizeStudentType(
+            typeof bodyStudentType === 'string' ? bodyStudentType : undefined,
+        );
         const subjectsArr = Array.isArray(subjects)
             ? subjects.filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim())
             : [];
@@ -357,6 +370,7 @@ export const saveOnboarding = async (req, res, next) => {
         await User.findByIdAndUpdate(req.user._id, {
             $set: {
                 'onboarding.completed': true,
+                'onboarding.studentType': studentType,
                 'onboarding.examType': typeof examType === 'string' ? examType : '',
                 'onboarding.subjects': subjectsArr,
                 'onboarding.goal': typeof goal === 'string' ? goal : '',
