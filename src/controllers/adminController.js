@@ -12,6 +12,8 @@ import Class from '../models/Class.js';
 import Reminder from '../models/Reminder.js';
 import LibraryMaterial from '../models/LibraryMaterial.js';
 import UserProgress from '../models/UserProgress.js';
+import UserDailyActivity from '../models/UserDailyActivity.js';
+import ChatHistory from '../models/ChatHistory.js';
 import { PLANS } from '../config/plans.js';
 
 const userId = (id) => new mongoose.Types.ObjectId(id);
@@ -514,6 +516,283 @@ export const getUserActivity = async (req, res) => {
         });
     } catch (err) {
         console.error('[Admin] getUserActivity error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+/** UTC day bounds for YYYY-MM-DD */
+const utcDayBounds = (dayKey) => {
+    const start = new Date(`${dayKey}T00:00:00.000Z`);
+    const end = new Date(`${dayKey}T23:59:59.999Z`);
+    return { start, end };
+};
+
+export const getUserActivityDays = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const limit = Math.min(365, Math.max(1, parseInt(req.query.limit, 10) || 120));
+
+        const exists = await User.findById(id).select('_id').lean();
+        if (!exists) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const rows = await UserDailyActivity.find({ userId: userId(id) })
+            .sort({ dayKey: -1 })
+            .limit(limit)
+            .select('dayKey firstAt lastAt')
+            .lean();
+
+        res.json({
+            success: true,
+            days: rows.map((r) => ({
+                dayKey: r.dayKey,
+                firstAt: r.firstAt,
+                lastAt: r.lastAt
+            }))
+        });
+    } catch (err) {
+        console.error('[Admin] getUserActivityDays error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+/**
+ * Per-day merged timeline: session pings (from auth middleware) plus product events
+ * (CBT, study, quizzes, payments, notes, flashcards, reminders, library, AI chats).
+ */
+export const getUserActivityDay = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const raw = String(req.query.date || '').trim().slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid date. Use date=YYYY-MM-DD (UTC calendar day).'
+            });
+        }
+
+        const { start, end } = utcDayBounds(raw);
+        const uid = userId(id);
+
+        const user = await User.findById(id).select('name email').lean();
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const [
+            dailyPing,
+            cbt,
+            studySessions,
+            quizSessions,
+            transactions,
+            notes,
+            flashRows,
+            reminders,
+            chats,
+            libraryDocs
+        ] = await Promise.all([
+            UserDailyActivity.findOne({ userId: uid, dayKey: raw }).lean(),
+            CBTResult.find({ studentId: uid, takenAt: { $gte: start, $lte: end } })
+                .sort({ takenAt: 1 })
+                .lean(),
+            StudySession.find({ userId: uid, startTime: { $gte: start, $lte: end } })
+                .sort({ startTime: 1 })
+                .lean(),
+            QuizSession.find({ userId: uid, createdAt: { $gte: start, $lte: end } })
+                .sort({ createdAt: 1 })
+                .lean(),
+            Transaction.find({ userId: uid, createdAt: { $gte: start, $lte: end } })
+                .sort({ createdAt: 1 })
+                .lean(),
+            StudyNote.find({ userId: uid, createdAt: { $gte: start, $lte: end } })
+                .sort({ createdAt: 1 })
+                .select('title subject createdAt')
+                .lean(),
+            FlashcardProgress.find({
+                studentId: uid,
+                $or: [
+                    { updatedAt: { $gte: start, $lte: end } },
+                    { lastReviewed: { $gte: start, $lte: end } }
+                ]
+            })
+                .sort({ updatedAt: 1 })
+                .limit(400)
+                .lean(),
+            Reminder.find({ userId: uid, createdAt: { $gte: start, $lte: end } })
+                .sort({ createdAt: 1 })
+                .lean(),
+            ChatHistory.find({ userId: uid, updatedAt: { $gte: start, $lte: end } })
+                .sort({ updatedAt: 1 })
+                .select('title subject updatedAt')
+                .lean(),
+            LibraryMaterial.find({
+                userId: uid,
+                $or: [
+                    { createdAt: { $gte: start, $lte: end } },
+                    { updatedAt: { $gte: start, $lte: end } }
+                ]
+            })
+                .sort({ updatedAt: 1 })
+                .limit(200)
+                .lean()
+        ]);
+
+        const timeline = [];
+
+        if (dailyPing) {
+            timeline.push({
+                at: dailyPing.firstAt,
+                kind: 'app_session',
+                label: 'First authenticated activity (session start)',
+                detail: { lastAt: dailyPing.lastAt }
+            });
+            if (
+                dailyPing.lastAt &&
+                dailyPing.firstAt &&
+                new Date(dailyPing.lastAt).getTime() - new Date(dailyPing.firstAt).getTime() > 60 * 1000
+            ) {
+                timeline.push({
+                    at: dailyPing.lastAt,
+                    kind: 'app_session',
+                    label: 'Last authenticated activity',
+                    detail: {}
+                });
+            }
+        }
+
+        cbt.forEach((r) => {
+            timeline.push({
+                at: r.takenAt,
+                kind: 'cbt',
+                label: `CBT · ${r.subject || 'Practice'} (${r.examType || '—'})`,
+                detail: {
+                    accuracy: r.accuracy,
+                    questions: r.totalQuestions,
+                    id: r._id
+                }
+            });
+        });
+
+        studySessions.forEach((s) => {
+            timeline.push({
+                at: s.startTime || s.createdAt,
+                kind: 'study',
+                label: `${s.type === 'break' ? 'Break' : 'Study'} · ${s.title || 'Session'}`,
+                detail: { minutes: s.duration, id: s._id }
+            });
+        });
+
+        quizSessions.forEach((q) => {
+            timeline.push({
+                at: q.createdAt,
+                kind: 'quiz',
+                label: `Quiz · ${q.title || 'Session'} (${q.questionCount ?? 0} Q)`,
+                detail: { questionType: q.questionType, id: q._id }
+            });
+        });
+
+        transactions.forEach((t) => {
+            timeline.push({
+                at: t.createdAt,
+                kind: 'payment',
+                label: `Payment · ${t.plan || 'plan'} (${t.status || '—'})`,
+                detail: {
+                    amount: t.amount,
+                    reference: t.reference,
+                    id: t._id
+                }
+            });
+        });
+
+        notes.forEach((n) => {
+            timeline.push({
+                at: n.createdAt,
+                kind: 'note',
+                label: `Note · ${n.title || 'Untitled'}${n.subject ? ` (${n.subject})` : ''}`,
+                detail: { id: n._id }
+            });
+        });
+
+        flashRows.forEach((f) => {
+            const at = f.lastReviewed && new Date(f.lastReviewed) >= start && new Date(f.lastReviewed) <= end
+                ? f.lastReviewed
+                : f.updatedAt;
+            timeline.push({
+                at,
+                kind: 'flashcard',
+                label: `Flashcard review · ${f.topic || f.subject || 'card'}`,
+                detail: { status: f.status, reviewCount: f.reviewCount, id: f._id }
+            });
+        });
+
+        reminders.forEach((r) => {
+            timeline.push({
+                at: r.createdAt,
+                kind: 'reminder',
+                label: `Reminder created · ${r.title}`,
+                detail: { type: r.type, id: r._id }
+            });
+        });
+
+        chats.forEach((c) => {
+            timeline.push({
+                at: c.updatedAt,
+                kind: 'ai_chat',
+                label: `AI chat · ${c.title || 'Chat'}${c.subject ? ` · ${c.subject}` : ''}`,
+                detail: { id: c._id }
+            });
+        });
+
+        libraryDocs.forEach((l) => {
+            if (l.createdAt >= start && l.createdAt <= end) {
+                timeline.push({
+                    at: l.createdAt,
+                    kind: 'library',
+                    label: `Library added · ${l.title}`,
+                    detail: { id: l._id }
+                });
+            }
+            if (
+                l.updatedAt &&
+                l.updatedAt > l.createdAt &&
+                l.updatedAt >= start &&
+                l.updatedAt <= end
+            ) {
+                timeline.push({
+                    at: l.updatedAt,
+                    kind: 'library',
+                    label: `Library activity · ${l.title}`,
+                    detail: { id: l._id, readProgress: l.readProgress }
+                });
+            }
+        });
+
+        timeline.sort((a, b) => new Date(a.at) - new Date(b.at));
+
+        res.json({
+            success: true,
+            user,
+            date: raw,
+            dayBoundaryUtc: true,
+            dailySession: dailyPing
+                ? { firstAt: dailyPing.firstAt, lastAt: dailyPing.lastAt, dayKey: dailyPing.dayKey }
+                : null,
+            timeline,
+            counts: {
+                cbt: cbt.length,
+                studySessions: studySessions.length,
+                quizzes: quizSessions.length,
+                payments: transactions.length,
+                notes: notes.length,
+                flashcards: flashRows.length,
+                reminders: reminders.length,
+                aiChats: chats.length,
+                library: libraryDocs.length
+            }
+        });
+    } catch (err) {
+        console.error('[Admin] getUserActivityDay error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 };

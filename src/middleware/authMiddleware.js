@@ -1,6 +1,9 @@
 import { adminAuth } from '../config/firebase-admin.js';
 import User from '../models/User.js';
+import UserDailyActivity from '../models/UserDailyActivity.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
+
+const utcDayKey = (d = new Date()) => d.toISOString().slice(0, 10);
 
 export const protect = async (req, res, next) => {
     try {
@@ -77,8 +80,19 @@ export const protect = async (req, res, next) => {
         // GRANT ACCESS TO PROTECTED ROUTE
         req.user = currentUser;
 
+        const now = new Date();
         // Update lastSeen silently (fire-and-forget)
-        User.findByIdAndUpdate(currentUser._id, { $set: { lastSeen: new Date() } }).catch(() => {});
+        User.findByIdAndUpdate(currentUser._id, { $set: { lastSeen: now } }).catch(() => {});
+
+        const dk = utcDayKey(now);
+        UserDailyActivity.findOneAndUpdate(
+            { userId: currentUser._id, dayKey: dk },
+            {
+                $set: { lastAt: now },
+                $setOnInsert: { firstAt: now, userId: currentUser._id, dayKey: dk }
+            },
+            { upsert: true }
+        ).catch(() => {});
 
         next();
     } catch (err) {

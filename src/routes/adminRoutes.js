@@ -12,6 +12,8 @@ import {
     getTodayLogins,
     getDashboardLogins,
     getUserActivity,
+    getUserActivityDay,
+    getUserActivityDays,
     getMetricUsers,
     setUserVerification,
     grantPlan,
@@ -75,6 +77,8 @@ router.get('/online-users', protect, restrictTo('admin'), getOnlineUsers);
 router.get('/logins-today', protect, restrictTo('admin'), getTodayLogins);
 router.get('/dashboard-logins', protect, restrictTo('admin'), getDashboardLogins);
 router.get('/metric-users', protect, restrictTo('admin'), getMetricUsers);
+router.get('/users/:id/activity-days', protect, restrictTo('admin'), getUserActivityDays);
+router.get('/users/:id/activity/day', protect, restrictTo('admin'), getUserActivityDay);
 router.get('/users/:id/activity', protect, restrictTo('admin'), getUserActivity);
 router.patch('/users/:id/verify', protect, restrictTo('admin'), setUserVerification);
 router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);
