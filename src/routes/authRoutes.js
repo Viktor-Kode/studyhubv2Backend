@@ -8,6 +8,8 @@ import {
     updatePassword,
     updateMe,
     updateUserPreferences,
+    saveOnboarding,
+    markOnboardingProgress,
 } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -21,6 +23,8 @@ router.post('/reset-password/:token', resetPassword);
 
 // Protected routes
 router.get('/me', protect, getMe);
+router.post('/onboarding', protect, saveOnboarding);
+router.post('/progress/:action', protect, markOnboardingProgress);
 router.patch('/preferences', protect, updateUserPreferences);
 router.patch('/update-me', protect, updateMe);
 router.post('/update-password', protect, updatePassword);

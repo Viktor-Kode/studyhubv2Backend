@@ -11,6 +11,7 @@ import { updateStreak } from '../services/streakService.js';
 import { sendNotification } from '../services/notificationService.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
+import { markUserProgress } from '../utils/markUserProgress.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -296,6 +297,8 @@ export const saveCBTResult = async (req, res) => {
 
         const newResult = new CBTResult(resultData);
         await newResult.save();
+
+        await markUserProgress(studentId, 'cbt');
 
         // Increment test usage
         await User.findByIdAndUpdate(studentId, { $inc: { 'plan.testsUsed': 1 } });

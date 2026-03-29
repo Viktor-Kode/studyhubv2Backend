@@ -58,7 +58,8 @@ export const protect = async (req, res, next) => {
                     firebaseUid: decodedToken.uid,
                     email: decodedToken.email?.toLowerCase(),
                     name: decodedToken.name || decodedToken.email?.split('@')[0] || 'User',
-                    role: 'student' // Default role for auto-created users
+                    role: 'student', // Default role for auto-created users
+                    onboarding: { completed: false },
                 });
                 console.log(`[AUTH] Auto-created MongoDB user for UID: ${decodedToken.uid}`);
             } catch (createErr) {

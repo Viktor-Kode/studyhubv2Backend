@@ -125,6 +125,23 @@ const userSchema = new mongoose.Schema({
     notificationsEnabled: { type: Boolean, default: false },
     following: [{ type: String }],
 
+    onboarding: {
+        completed: { type: Boolean, default: false },
+        examType: { type: String, default: '' },
+        subjects: [{ type: String }],
+        goal: { type: String, default: '' },
+        studyHoursPerDay: { type: String, default: '' },
+        completedAt: { type: Date, default: null },
+    },
+
+    progress: {
+        hasCompletedCBT: { type: Boolean, default: false },
+        hasUsedAITutor: { type: Boolean, default: false },
+        hasUploadedLibrary: { type: Boolean, default: false },
+        hasJoinedCommunity: { type: Boolean, default: false },
+        hasCreatedFlashcard: { type: Boolean, default: false },
+    },
+
 }, { timestamps: true });
 
 // Hash password before saving
