@@ -2,7 +2,7 @@ import User from '../models/User.js';
 
 export const getSettings = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).select('settings name email schoolName classLevel phone notificationsEnabled');
+        const user = await User.findById(req.user._id).select('settings name email schoolName classLevel courseOfStudy phone notificationsEnabled');
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
@@ -56,7 +56,7 @@ export const updateSettings = async (req, res) => {
             req.user._id,
             updateData,
             { new: true, runValidators: true }
-        ).select('settings name email schoolName classLevel phone');
+        ).select('settings name email schoolName classLevel courseOfStudy phone');
 
         res.status(200).json({ success: true, user });
     } catch (error) {
