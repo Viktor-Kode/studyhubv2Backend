@@ -5,6 +5,7 @@ import FlashcardProgress from '../models/FlashcardProgress.js';
 import Streak from '../models/Streak.js';
 import Goal from '../models/Goal.js';
 import FlashCard from '../models/FlashCard.js';
+import UserActivity from '../models/UserActivity.js';
 
 export const getDashboardSummary = async (req, res) => {
     try {
@@ -22,6 +23,7 @@ export const getDashboardSummary = async (req, res) => {
             recentSessions,
             recentCbtResults,
             recentFlashcards,
+            activityLogs,
             goals,
             totalFlashCount
         ] = await Promise.all([
@@ -113,6 +115,10 @@ export const getDashboardSummary = async (req, res) => {
                 .sort({ createdAt: -1 })
                 .limit(5)
                 .select('category createdAt'),
+            UserActivity.find({ userId: new mongoose.Types.ObjectId(studentId) })
+                .sort({ createdAt: -1 })
+                .limit(10)
+                .select('type title subtitle color createdAt'),
 
             // Active Goals
             Goal.find({ studentId, status: 'active' })
@@ -158,7 +164,7 @@ export const getDashboardSummary = async (req, res) => {
         const currentStreak = streakData?.currentStreak || 0;
         const studiedToday = lastDate === todayStr;
 
-        const activityFeed = [
+        const derivedActivityFeed = [
             ...recentSessions.map((s) => ({
                 id: `study-${s._id}`,
                 type: 'study_session',
@@ -187,6 +193,17 @@ export const getDashboardSummary = async (req, res) => {
             .filter((item) => item.date)
             .sort((a, b) => new Date(b.date) - new Date(a.date))
             .slice(0, 10);
+
+        const activityFeed = (activityLogs || []).length > 0
+            ? activityLogs.map((item) => ({
+                id: `act-${item._id}`,
+                type: item.type || 'activity',
+                title: item.title || 'Activity',
+                subtitle: item.subtitle || 'Recent action',
+                date: item.createdAt,
+                color: item.color || 'blue'
+            }))
+            : derivedActivityFeed;
 
         const subjectPerformance = (cbtBySubject || [])
             .filter((s) => s.subject)

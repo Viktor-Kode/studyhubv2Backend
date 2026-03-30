@@ -11,6 +11,7 @@ import { updateStreak } from '../services/streakService.js';
 import { sendNotification } from '../services/notificationService.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
+import { logUserActivity } from '../services/activityService.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -296,6 +297,18 @@ export const saveCBTResult = async (req, res) => {
 
         const newResult = new CBTResult(resultData);
         await newResult.save();
+        await logUserActivity({
+            userId: studentId,
+            type: 'cbt_result',
+            title: `${newResult.subject || 'CBT'} practice completed`,
+            subtitle: `${newResult.accuracy ?? 0}% score in ${newResult.examType || 'CBT'} (${newResult.totalQuestions || 0} questions)`,
+            color: 'emerald',
+            metadata: {
+                resultId: String(newResult._id),
+                subject: newResult.subject || null,
+                examType: newResult.examType || null
+            }
+        });
 
         // Increment test usage
         await User.findByIdAndUpdate(studentId, { $inc: { 'plan.testsUsed': 1 } });

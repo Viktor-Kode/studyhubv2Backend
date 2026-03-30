@@ -7,6 +7,7 @@ import { getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import mongoose from 'mongoose';
 import { incrementFlashcardUsage } from '../middleware/usageMiddleware.js';
 import { updateStreak } from '../services/streakService.js';
+import { logUserActivity } from '../services/activityService.js';
 
 // Create a new flashcard
 export const createFlashCard = async (req, res) => {
@@ -39,6 +40,17 @@ export const createFlashCard = async (req, res) => {
         });
 
         await flashCard.save();
+        await logUserActivity({
+            userId,
+            type: 'flashcard_created',
+            title: 'New flashcard added',
+            subtitle: `${flashCard.category || 'General'} category`,
+            color: 'purple',
+            metadata: {
+                flashcardId: String(flashCard._id),
+                category: flashCard.category || null
+            }
+        });
 
         // Update deck card count if deck is specified and valid
         if (deckId && mongoose.Types.ObjectId.isValid(deckId)) {
