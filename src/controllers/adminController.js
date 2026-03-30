@@ -355,9 +355,10 @@ export const getOnlineUsers = async (req, res) => {
     try {
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
         const onlineUsers = await User.find({
-            lastSeen: { $gte: fiveMinutesAgo }
+            lastSeen: { $gte: fiveMinutesAgo },
+            role: { $ne: 'admin' }
         })
-            .select('name email subscriptionStatus subscriptionPlan lastSeen avatar')
+            .select('name email subscriptionStatus subscriptionPlan lastSeen avatar role')
             .sort({ lastSeen: -1 })
             .lean();
         res.json({ success: true, users: onlineUsers, count: onlineUsers.length });
