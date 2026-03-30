@@ -17,6 +17,7 @@ import {
   upsertProgress,
   getRecentDocuments,
   proxyLibraryPdf,
+  proxyLibraryFile,
 } from '../controllers/libraryController.js';
 
 const router = express.Router();
@@ -25,6 +26,7 @@ router.use(protect);
 
 // Proxy PDF (LibraryDocument or legacy LibraryMaterial)
 router.get('/proxy-pdf/:id', proxyLibraryPdf);
+router.get('/proxy-file/:id', proxyLibraryFile);
 
 // Library CRUD routes
 router.get('/documents', listDocuments);

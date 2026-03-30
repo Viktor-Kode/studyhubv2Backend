@@ -8,6 +8,7 @@ const LibraryDocumentSchema = new mongoose.Schema(
     fileUrl: { type: String, required: true },
     fileSize: { type: Number, default: 0 },
     fileType: { type: String, default: 'application/pdf' },
+    originalName: { type: String, default: '' },
     coverColor: { type: String, default: '#5B4CF5' },
     pages: { type: Number, default: 0 },
     publicId: { type: String, required: true },

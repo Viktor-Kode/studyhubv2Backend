@@ -8,6 +8,7 @@ import ReadingProgress from '../models/ReadingProgress.js';
 
 const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
+const FREE_DOCUMENT_LIMIT = 2;
 
 // GET /api/library
 export const getMaterials = async (req, res) => {
@@ -320,12 +321,29 @@ export const createDocument = async (req, res) => {
 
     const userId = String(req.user._id);
     const { title, subject, coverColor } = req.body;
-    const fileUrl = req.file.path.endsWith('.pdf') ? req.file.path : `${req.file.path}.pdf`;
-    const pages = await getPdfPagesFromUrl(fileUrl);
+    const user = await User.findById(userId).lean();
+    const isPaid = hasActivePaidStudentPlan(user);
+
+    if (!isPaid) {
+      const currentCount = await LibraryDocument.countDocuments({ userId });
+      if (currentCount >= FREE_DOCUMENT_LIMIT) {
+        return res.status(403).json({
+          success: false,
+          error: `Free users can only keep ${FREE_DOCUMENT_LIMIT} documents. Upgrade to store more.`,
+          showUpgrade: true,
+          code: 'library_limit',
+        });
+      }
+    }
+
+    const fileUrl = req.file.path;
+    const isPdf = (req.file.mimetype || '').toLowerCase() === 'application/pdf';
+    const pages = isPdf ? await getPdfPagesFromUrl(fileUrl) : 0;
+    const originalName = req.file.originalname || '';
 
     const document = await LibraryDocument.create({
       userId,
-      title: title || req.file.originalname.replace(/\.pdf$/i, ''),
+      title: title || originalName.replace(/\.[^/.]+$/i, ''),
       subject: subject || '',
       fileUrl,
       fileSize: req.file.size,
@@ -333,6 +351,7 @@ export const createDocument = async (req, res) => {
       coverColor: coverColor || '#5B4CF5',
       pages,
       publicId: req.file.filename,
+      originalName,
     });
 
     res.status(201).json({ success: true, document });
@@ -527,6 +546,77 @@ export const proxyLibraryPdf = async (req, res) => {
     res.send(Buffer.from(buffer));
   } catch (err) {
     console.error('[PDF Proxy] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Stream any library file for LibraryDocument or legacy LibraryMaterial.
+ */
+export const proxyLibraryFile = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const userIdStr = String(req.user._id);
+
+    let fileUrl;
+    let publicId;
+
+    const doc = await LibraryDocument.findOne({ _id: id, userId: userIdStr }).lean();
+    if (doc) {
+      fileUrl = doc.fileUrl;
+      publicId = doc.publicId;
+    } else {
+      const legacy = await LibraryMaterial.findOne({
+        _id: id,
+        userId: req.user._id,
+      }).lean();
+      if (legacy) {
+        fileUrl = legacy.fileUrl;
+        publicId = legacy.publicId;
+      }
+    }
+
+    if (!fileUrl) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    let response = await fetch(fileUrl);
+
+    if (!response.ok && fileUrl.includes('/raw/upload/')) {
+      const altUrl = fileUrl.replace('/raw/upload/', '/image/upload/');
+      response = await fetch(altUrl);
+    }
+
+    if (!response.ok && fileUrl.includes('/image/upload/')) {
+      const altUrl = fileUrl.replace('/image/upload/', '/raw/upload/');
+      response = await fetch(altUrl);
+    }
+
+    if (!response.ok && publicId) {
+      try {
+        const signedUrl = cloudinary.url(publicId, {
+          resource_type: 'raw',
+          secure: true,
+          sign_url: true,
+        });
+        response = await fetch(signedUrl);
+      } catch (signErr) {
+        console.error('[File Proxy] Signed URL failed:', signErr.message);
+      }
+    }
+
+    if (!response.ok) {
+      return res.status(502).json({ error: `Cloudinary returned ${response.status}` });
+    }
+
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error('[File Proxy] ERROR:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
