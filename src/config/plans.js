@@ -87,6 +87,30 @@ export const PLANS = {
         ],
         notIncluded: []
     },
+    yearly: {
+        name: 'Yearly',
+        aiLimit: 4000,
+        flashcardLimit: 2000,
+        durationDays: 365,
+        price: 1799000, // kobo — ₦17,990
+        amount: 17990, // naira
+        label: '₦17,990 / year',
+        badge: 'Best Savings',
+        savings: 'Save 35% vs monthly',
+        features: [
+            '4,000 AI-generated questions',
+            'Unlimited CBT tests',
+            '2,000 flashcard reviews',
+            'All exam types (JAMB, WAEC, Post-UTME)',
+            'Smart study timer',
+            'Full analytics & progress tracking',
+            'Notes & highlights',
+            'Streak tracking',
+            'AI explanations for answers',
+            'Priority support'
+        ],
+        notIncluded: []
+    },
     addon: {
         name: 'AI Add-on',
         aiLimit: 100,

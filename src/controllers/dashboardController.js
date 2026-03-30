@@ -16,9 +16,12 @@ export const getDashboardSummary = async (req, res) => {
         const [
             studyStats,
             cbtStats,
+            cbtBySubject,
             flashStatsData,
             streakData,
             recentSessions,
+            recentCbtResults,
+            recentFlashcards,
             goals,
             totalFlashCount
         ] = await Promise.all([
@@ -59,6 +62,19 @@ export const getDashboardSummary = async (req, res) => {
                 }
             ]),
 
+            // CBT by subject for strengths/weaknesses
+            CBTResult.aggregate([
+                { $match: { studentId: new mongoose.Types.ObjectId(studentId) } },
+                {
+                    $group: {
+                        _id: '$subject',
+                        attempts: { $sum: 1 },
+                        avgAccuracy: { $avg: '$accuracy' }
+                    }
+                },
+                { $project: { _id: 0, subject: '$_id', attempts: 1, avgAccuracy: { $round: ['$avgAccuracy', 0] } } }
+            ]),
+
             // Advanced Flashcard Stats
             FlashcardProgress.aggregate([
                 { $match: { studentId: new mongoose.Types.ObjectId(studentId) } },
@@ -85,6 +101,18 @@ export const getDashboardSummary = async (req, res) => {
                 .sort({ startTime: -1 })
                 .limit(5)
                 .select('title duration startTime'),
+
+            // Recent CBT Results
+            CBTResult.find({ studentId: new mongoose.Types.ObjectId(studentId) })
+                .sort({ takenAt: -1, createdAt: -1 })
+                .limit(5)
+                .select('subject examType accuracy totalQuestions takenAt createdAt'),
+
+            // Recently created flashcards
+            FlashCard.find({ userId: new mongoose.Types.ObjectId(studentId) })
+                .sort({ createdAt: -1 })
+                .limit(5)
+                .select('category createdAt'),
 
             // Active Goals
             Goal.find({ studentId, status: 'active' })
@@ -130,6 +158,44 @@ export const getDashboardSummary = async (req, res) => {
         const currentStreak = streakData?.currentStreak || 0;
         const studiedToday = lastDate === todayStr;
 
+        const activityFeed = [
+            ...recentSessions.map((s) => ({
+                id: `study-${s._id}`,
+                type: 'study_session',
+                title: s.title || 'Study Session',
+                subtitle: s.duration ? `${Math.round(s.duration)} minutes completed` : 'Session completed',
+                date: s.startTime,
+                color: 'blue'
+            })),
+            ...recentCbtResults.map((r) => ({
+                id: `cbt-${r._id}`,
+                type: 'cbt_result',
+                title: `${r.subject || 'CBT'} practice completed`,
+                subtitle: `${r.accuracy ?? 0}% score in ${r.examType || 'CBT'} (${r.totalQuestions || 0} questions)`,
+                date: r.takenAt || r.createdAt,
+                color: 'emerald'
+            })),
+            ...recentFlashcards.map((f) => ({
+                id: `flash-${f._id}`,
+                type: 'flashcard_created',
+                title: 'New flashcard added',
+                subtitle: `${f.category || 'General'} category`,
+                date: f.createdAt,
+                color: 'purple'
+            }))
+        ]
+            .filter((item) => item.date)
+            .sort((a, b) => new Date(b.date) - new Date(a.date))
+            .slice(0, 10);
+
+        const subjectPerformance = (cbtBySubject || [])
+            .filter((s) => s.subject)
+            .sort((a, b) => b.avgAccuracy - a.avgAccuracy);
+        const strengths = subjectPerformance.slice(0, 3);
+        const weaknesses = [...subjectPerformance]
+            .sort((a, b) => a.avgAccuracy - b.avgAccuracy)
+            .slice(0, 3);
+
         res.json({
             success: true,
             data: {
@@ -151,7 +217,11 @@ export const getDashboardSummary = async (req, res) => {
                         : '0%',
                     totalCorrect: cbt.totalCorrect,
                     totalQuestions: cbt.totalQuestions,
-                    bestSubject: topSubject
+                    bestSubject: topSubject,
+                    strengthsWeaknesses: {
+                        strengths,
+                        weaknesses
+                    }
                 },
                 flashcards: {
                     totalCards: totalFlashCount || 0,
@@ -168,7 +238,8 @@ export const getDashboardSummary = async (req, res) => {
                     lastStudied: streakData?.lastActivityDate || streakData?.lastStudiedDate || null,
                     studiedToday
                 },
-                goals
+                goals,
+                recentActivity: activityFeed
             }
         });
     } catch (error) {
