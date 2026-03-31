@@ -92,6 +92,18 @@ export const awardXP = async (userId, action, metadata = {}) => {
             progress.highScoreCBTCount = (progress.highScoreCBTCount || 0) + 1;
         }
 
+        if (action === 'library_upvote') {
+            const today = now.toISOString().split('T')[0];
+            if (progress.lastLibraryUpvoteDay === today) return null;
+            progress.lastLibraryUpvoteDay = today;
+        }
+
+        if (action === 'pomodoro_streak_daily') {
+            const today = now.toISOString().split('T')[0];
+            if (progress.lastPomodoroDailyBonusDay === today) return null;
+            progress.lastPomodoroDailyBonusDay = today;
+        }
+
         progress.xp += xpToAdd;
         progress.weeklyXP += xpToAdd;
 

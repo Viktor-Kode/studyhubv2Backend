@@ -27,6 +27,10 @@ import {
     sendEmailCampaign,
     getEmailAudienceStats
 } from '../controllers/emailCampaignController.js';
+import {
+    adminListPendingSharedLibrary,
+    adminSetSharedLibraryStatus,
+} from '../controllers/sharedLibraryController.js';
 import { adminNotifyAll } from '../controllers/notificationController.js';
 
 const router = express.Router();
@@ -86,6 +90,8 @@ router.delete('/users/:id', protect, restrictTo('admin'), deleteUser);
 router.get('/email-stats', protect, restrictTo('admin'), getEmailAudienceStats);
 router.post('/email-campaign', protect, restrictTo('admin'), sendEmailCampaign);
 router.post('/notify-all', protect, restrictTo('admin'), adminNotifyAll);
+router.get('/shared-library/pending', protect, restrictTo('admin'), adminListPendingSharedLibrary);
+router.patch('/shared-library/:id', protect, restrictTo('admin'), adminSetSharedLibraryStatus);
 
 // POST /api/admin/fix-subscription
 router.post('/fix-subscription', async (req, res) => {

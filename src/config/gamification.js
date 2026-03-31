@@ -5,6 +5,13 @@ export const XP_REWARDS = {
     syllabus_topic: 20,
     cbt_high_score: 30,
     streak_7_days: 100,
+    create_note: 10,
+    share_note: 5,
+    library_approved: 15,
+    library_upvote: 5,
+    group_cbt_top3: 20,
+    pomodoro_complete: 5,
+    pomodoro_streak_daily: 20,
 };
 
 export const LEVELS = [
