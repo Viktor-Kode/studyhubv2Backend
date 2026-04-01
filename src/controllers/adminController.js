@@ -1173,7 +1173,7 @@ export const getActivityFeed = async (req, res) => {
         const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
         const pool = 120;
 
-        const [recentUsers, recentPayments] = await Promise.all([
+        const [recentUsers, recentPayments, recentCbtResults] = await Promise.all([
             User.find()
                 .sort({ createdAt: -1 })
                 .limit(pool)
@@ -1183,6 +1183,11 @@ export const getActivityFeed = async (req, res) => {
                 .sort({ createdAt: -1 })
                 .limit(pool)
                 .populate('userId', 'name email')
+                .lean(),
+            CBTResult.find()
+                .sort({ takenAt: -1, createdAt: -1 })
+                .limit(pool)
+                .populate('studentId', 'name email')
                 .lean()
         ]);
 
@@ -1203,6 +1208,18 @@ export const getActivityFeed = async (req, res) => {
                     message: `${email} — ₦${naira} (${t.plan})`,
                     status: t.status,
                     icon: t.status === 'failed' ? '❌' : '💰'
+                };
+            }),
+            ...recentCbtResults.map((r) => {
+                const email = r.studentId?.email || r.studentId?.name || 'Unknown user';
+                const total = Number(r.totalQuestions) || 0;
+                const accuracy = Number.isFinite(Number(r.accuracy)) ? `${Math.round(Number(r.accuracy))}%` : '—';
+                return {
+                    type: 'cbt',
+                    time: r.takenAt || r.createdAt,
+                    message: `${email} — ${r.subject || 'CBT'} (${r.examType || 'CBT'}) · ${accuracy} · ${total}Q`,
+                    status: 'completed',
+                    icon: '📝'
                 };
             })
         ].sort((a, b) => new Date(b.time) - new Date(a.time));
