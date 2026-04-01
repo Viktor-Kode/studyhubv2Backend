@@ -12,7 +12,7 @@ const cleanPdfText = (text) => {
     .trim();
 };
 
-const smartExtract = (text, maxChars = 6000) => {
+const smartExtract = (text, maxChars = 14000) => {
   if (text.length <= maxChars) return text;
   const third = Math.floor(maxChars / 3);
   const start = text.slice(0, third);
@@ -46,23 +46,23 @@ export const extractQuestionsFromPDF = async (req, res) => {
     }
 
     const cleaned = cleanPdfText(rawText);
-    const truncated = smartExtract(cleaned, 6000);
+    const truncated = smartExtract(cleaned, 14000);
 
     const prompt = `You are an exam question extractor. The text below is from a past question PDF that contains questions AND their answers mixed together.
 
 Your job:
-1. Extract ONLY the questions (multiple choice questions with options A, B, C, D)
-2. Identify the correct answer for each question
-3. Strip the answer explanations completely
+1. Extract ALL valid questions (both objective and theory/essay/short-answer)
+2. Identify the best answer for each question from nearby answer keys or marking guides
+3. Strip long answer explanations, keeping only concise final answers
 4. Return them in structured JSON
 
 Rules:
-- Only include questions that have clear multiple choice options (A, B, C, D)
-- If a question has an answer key or "Answer: X" nearby, capture that as the correct answer
-- If no answer is found, make your best judgment based on the options
-- Extract maximum 20 questions — prioritise the clearest, most complete ones
+- Include objective questions when options A, B, C, D are available
+- Include theory/essay/short-answer questions even if options are not available
+- If a question has an answer key or "Answer: X" nearby, capture that answer
+- If no answer is found, provide the most likely concise answer
+- Extract as many complete questions as possible (target up to 60)
 - Keep questions exactly as written — do not rephrase
-- Do not include essay or theory questions
 
 Return ONLY this JSON format with no extra text:
 {
@@ -70,14 +70,15 @@ Return ONLY this JSON format with no extra text:
   "totalFound": number,
   "questions": [
     {
+      "type": "objective or theory",
       "question": "Question text here?",
       "options": {
         "A": "Option A text",
         "B": "Option B text",
         "C": "Option C text",
         "D": "Option D text"
-      },
-      "answer": "A"
+      } OR null,
+      "answer": "For objective: A/B/C/D. For theory: concise model answer text"
     }
   ]
 }
@@ -94,7 +95,7 @@ ${truncated}`;
       body: JSON.stringify({
         model: 'deepseek-chat',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 2000,
+        max_tokens: 3500,
         temperature: 0.1,
       }),
     });
@@ -111,26 +112,33 @@ ${truncated}`;
 
     if (!parsed?.questions || parsed.questions.length === 0) {
       return res.status(400).json({
-        error:
-          'No multiple choice questions found in this PDF. Make sure the PDF contains questions with A, B, C, D options.',
+        error: 'No valid questions found in this PDF. Make sure the PDF text is readable.',
       });
     }
 
     const questions = parsed.questions
-      .filter((q) => q?.question && q?.options?.A && q?.options?.B && q?.options?.C && q?.options?.D)
-      .slice(0, 20)
+      .filter((q) => q?.question)
+      .slice(0, 60)
       .map((q) => {
-        const answer = String(q.answer || 'A').trim().toUpperCase();
-        const safeAnswer = ['A', 'B', 'C', 'D'].includes(answer) ? answer : 'A';
+        const hasObjectiveOptions = q?.options?.A && q?.options?.B && q?.options?.C && q?.options?.D;
+        const answerText = String(q.answer || '').trim();
+        const normalizedObjectiveAnswer = answerText.toUpperCase();
+        const safeObjectiveAnswer = ['A', 'B', 'C', 'D'].includes(normalizedObjectiveAnswer)
+          ? normalizedObjectiveAnswer
+          : 'A';
+        const isObjective = String(q.type || '').toLowerCase() === 'objective' || hasObjectiveOptions;
         return {
+          type: isObjective ? 'objective' : 'theory',
           question: String(q.question).trim(),
-          options: {
-            A: String(q.options.A || '').trim(),
-            B: String(q.options.B || '').trim(),
-            C: String(q.options.C || '').trim(),
-            D: String(q.options.D || '').trim(),
-          },
-          answer: safeAnswer,
+          options: isObjective
+            ? {
+                A: String(q.options?.A || '').trim(),
+                B: String(q.options?.B || '').trim(),
+                C: String(q.options?.C || '').trim(),
+                D: String(q.options?.D || '').trim(),
+              }
+            : null,
+          answer: isObjective ? safeObjectiveAnswer : answerText || 'No model answer provided.',
         };
       });
 
