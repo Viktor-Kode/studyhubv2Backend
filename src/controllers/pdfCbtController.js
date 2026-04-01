@@ -50,6 +50,72 @@ const parseAiJson = (content) => {
   }
 };
 
+const normalizeLine = (line) => String(line || '').replace(/\s+/g, ' ').trim();
+
+const extractQuestionsHeuristically = (text, requestedCount = 60) => {
+  const lines = String(text || '')
+    .split('\n')
+    .map((line) => normalizeLine(line))
+    .filter(Boolean);
+
+  const questions = [];
+  let i = 0;
+
+  while (i < lines.length && questions.length < requestedCount) {
+    const line = lines[i];
+    const qMatch = line.match(/^(\d+[\).\s-]+|Q(?:uestion)?\s*\d+[:.)\s-]+)(.+)$/i);
+
+    if (!qMatch) {
+      i += 1;
+      continue;
+    }
+
+    let questionText = qMatch[2]?.trim() || '';
+    const optionBag = { A: '', B: '', C: '', D: '' };
+    const optionRegex = /^([A-D])[\).:\-\s]+(.+)$/i;
+    let j = i + 1;
+    let optionHits = 0;
+
+    while (j < lines.length) {
+      const nextLine = lines[j];
+      if (/^(\d+[\).\s-]+|Q(?:uestion)?\s*\d+[:.)\s-]+)/i.test(nextLine)) break;
+
+      const opt = nextLine.match(optionRegex);
+      if (opt) {
+        const key = opt[1].toUpperCase();
+        optionBag[key] = opt[2].trim();
+        optionHits += 1;
+      } else if (optionHits === 0 && !/^ans(wer)?[:\s-]/i.test(nextLine)) {
+        questionText = `${questionText} ${nextLine}`.trim();
+      }
+
+      j += 1;
+    }
+
+    if (questionText) {
+      if (optionHits >= 3 && optionBag.A && optionBag.B) {
+        questions.push({
+          type: 'objective',
+          question: questionText,
+          options: optionBag,
+          answer: 'A',
+        });
+      } else {
+        questions.push({
+          type: 'theory',
+          question: questionText,
+          options: null,
+          answer: 'No model answer provided.',
+        });
+      }
+    }
+
+    i = j;
+  }
+
+  return questions.slice(0, requestedCount);
+};
+
 const requestJsonRepair = async (rawContent) => {
   const repairPrompt = `Convert the following content into valid JSON only.
 Rules:
@@ -175,13 +241,8 @@ ${truncated}`;
       parsed = parseAiJson(repairedContent);
     }
 
-    if (!parsed?.questions || parsed.questions.length === 0) {
-      return res.status(400).json({
-        error: 'No valid questions found in this PDF. Make sure the PDF text is readable.',
-      });
-    }
-
-    const questions = parsed.questions
+    const aiQuestions = Array.isArray(parsed?.questions) ? parsed.questions : [];
+    let questions = aiQuestions
       .filter((q) => q?.question)
       .slice(0, requestedCount)
       .map((q) => {
@@ -206,6 +267,16 @@ ${truncated}`;
           answer: isObjective ? safeObjectiveAnswer : answerText || 'No model answer provided.',
         };
       });
+
+    if (!questions.length) {
+      questions = extractQuestionsHeuristically(cleaned, requestedCount);
+    }
+
+    if (!questions.length) {
+      return res.status(400).json({
+        error: 'No valid questions found in this PDF. Try a clearer or text-based PDF.',
+      });
+    }
 
     res.json({
       subject: parsed.subject || 'General',
