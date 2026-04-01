@@ -38,6 +38,9 @@ import communityRoutes from './routes/communityRoutes.js';
 import groupsRoutes from './routes/groupsRoutes.js';
 import studyGroupRoutes from './routes/studyGroupRoutes.js';
 import pdfCbtRoutes from './routes/pdfCbtRoutes.js';
+import SharedNote from './models/SharedNote.js';
+import SharedLibraryItem from './models/SharedLibraryItem.js';
+import Group from './models/Group.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 import { unsubscribe } from './controllers/emailCampaignController.js';
@@ -50,6 +53,21 @@ app.set('trust proxy', 1);
 
 // Middlewares
 app.use(helmet());
+
+// URL normalization and protocol enforcement for canonical URLs.
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && req.get('x-forwarded-proto') === 'http') {
+    return res.redirect(301, `https://${req.get('host')}${req.originalUrl}`);
+  }
+
+  if (req.path.length > 1 && req.path.endsWith('/')) {
+    const normalized = req.path.replace(/\/+$/, '');
+    const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+    return res.redirect(301, `${normalized}${query}`);
+  }
+
+  return next();
+});
 
 // GLOBAL RATE LIMITER
 const limiter = rateLimit({
@@ -110,6 +128,74 @@ app.get('/api/health', (req, res) => {
 
   const isAllOk = Object.values(healthStatus.services).every(v => v === 'connected' || v === 'configured');
   res.status(isAllOk ? 200 : 207).json(healthStatus);
+});
+
+app.get('/robots.txt', (req, res) => {
+  const siteUrl = getEnv('SITE_URL', 'https://studyhub.com');
+  res.type('text/plain');
+  res.send(
+    `User-agent: *
+Allow: /
+Disallow: /dashboard/
+Disallow: /api/
+Sitemap: ${siteUrl}/sitemap.xml
+`
+  );
+});
+
+app.get('/sitemap.xml', async (req, res) => {
+  const siteUrl = getEnv('SITE_URL', 'https://studyhub.com').replace(/\/+$/, '');
+  const now = new Date().toISOString();
+
+  const staticRoutes = [
+    { loc: '/', changefreq: 'daily', priority: '1.0', lastmod: now },
+  ];
+
+  const [notes, libraryItems, publicGroups] = await Promise.all([
+    SharedNote.find({ isPublic: true }).select('_id updatedAt').lean(),
+    SharedLibraryItem.find({ moderationStatus: 'approved' }).select('_id updatedAt').lean(),
+    Group.find({ isPrivate: false }).select('_id updatedAt').lean(),
+  ]);
+
+  const dynamicRoutes = [
+    ...notes.map((note) => ({
+      loc: `/notes/${note._id}`,
+      changefreq: 'weekly',
+      priority: '0.7',
+      lastmod: note.updatedAt ? new Date(note.updatedAt).toISOString() : now,
+    })),
+    ...libraryItems.map((item) => ({
+      loc: `/library/${item._id}`,
+      changefreq: 'weekly',
+      priority: '0.6',
+      lastmod: item.updatedAt ? new Date(item.updatedAt).toISOString() : now,
+    })),
+    ...publicGroups.map((group) => ({
+      loc: `/groups/${group._id}`,
+      changefreq: 'weekly',
+      priority: '0.6',
+      lastmod: group.updatedAt ? new Date(group.updatedAt).toISOString() : now,
+    })),
+  ];
+
+  const allRoutes = [...staticRoutes, ...dynamicRoutes];
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${allRoutes
+  .map(
+    (url) => `  <url>
+    <loc>${siteUrl}${url.loc}</loc>
+    <lastmod>${url.lastmod}</lastmod>
+    <changefreq>${url.changefreq}</changefreq>
+    <priority>${url.priority}</priority>
+  </url>`
+  )
+  .join('\n')}
+</urlset>`;
+
+  res.header('Content-Type', 'application/xml');
+  res.send(xml);
 });
 
 
