@@ -24,6 +24,61 @@ const smartExtract = (text, maxChars = 14000) => {
   return `${start}\n...\n${mid}\n...\n${end}`;
 };
 
+const extractJsonCandidate = (text) => {
+  const withoutFences = String(text || '').replace(/```json|```/gi, '').trim();
+  const start = withoutFences.indexOf('{');
+  const end = withoutFences.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) return withoutFences;
+  return withoutFences.slice(start, end + 1);
+};
+
+const repairJsonString = (jsonLike) => {
+  return String(jsonLike || '')
+    .replace(/,\s*([}\]])/g, '$1')
+    .replace(/\u201c|\u201d/g, '"')
+    .replace(/\u2018|\u2019/g, "'")
+    .replace(/\t/g, ' ');
+};
+
+const parseAiJson = (content) => {
+  const candidate = extractJsonCandidate(content);
+  try {
+    return JSON.parse(candidate);
+  } catch (_e) {
+    const repaired = repairJsonString(candidate);
+    return JSON.parse(repaired);
+  }
+};
+
+const requestJsonRepair = async (rawContent) => {
+  const repairPrompt = `Convert the following content into valid JSON only.
+Rules:
+- Output valid JSON only (no markdown, no explanation)
+- Keep original meaning
+- Ensure the root shape is:
+{"subject":"General","totalFound":0,"questions":[]}
+
+CONTENT:
+${rawContent}`;
+
+  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [{ role: 'user', content: repairPrompt }],
+      max_tokens: 2500,
+      temperature: 0,
+    }),
+  });
+
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content?.trim() || '';
+};
+
 export const extractQuestionsFromPDF = async (req, res) => {
   try {
     if (!req.file) {
@@ -45,6 +100,11 @@ export const extractQuestionsFromPDF = async (req, res) => {
       });
     }
 
+    const requestedCountRaw = Number.parseInt(String(req.body?.requestedCount || ''), 10);
+    const requestedCount = Number.isFinite(requestedCountRaw)
+      ? Math.min(Math.max(requestedCountRaw, 1), 100)
+      : 60;
+
     const cleaned = cleanPdfText(rawText);
     const truncated = smartExtract(cleaned, 14000);
 
@@ -61,7 +121,7 @@ Rules:
 - Include theory/essay/short-answer questions even if options are not available
 - If a question has an answer key or "Answer: X" nearby, capture that answer
 - If no answer is found, provide the most likely concise answer
-- Extract as many complete questions as possible (target up to 60)
+- Extract as many complete questions as possible (target up to ${requestedCount})
 - Keep questions exactly as written — do not rephrase
 
 Return ONLY this JSON format with no extra text:
@@ -107,8 +167,13 @@ ${truncated}`;
       return res.status(500).json({ error: 'AI failed to process the PDF' });
     }
 
-    const clean = content.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
+    let parsed;
+    try {
+      parsed = parseAiJson(content);
+    } catch (_parseError) {
+      const repairedContent = await requestJsonRepair(content);
+      parsed = parseAiJson(repairedContent);
+    }
 
     if (!parsed?.questions || parsed.questions.length === 0) {
       return res.status(400).json({
@@ -118,7 +183,7 @@ ${truncated}`;
 
     const questions = parsed.questions
       .filter((q) => q?.question)
-      .slice(0, 60)
+      .slice(0, requestedCount)
       .map((q) => {
         const hasObjectiveOptions = q?.options?.A && q?.options?.B && q?.options?.C && q?.options?.D;
         const answerText = String(q.answer || '').trim();
