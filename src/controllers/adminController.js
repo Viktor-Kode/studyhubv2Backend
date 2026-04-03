@@ -15,6 +15,7 @@ import UserProgress from '../models/UserProgress.js';
 import UserDailyActivity from '../models/UserDailyActivity.js';
 import ChatHistory from '../models/ChatHistory.js';
 import { PLANS } from '../config/plans.js';
+import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
 
 const userId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -375,14 +376,24 @@ export const getTodayLogins = async (req, res) => {
         const users = await User.find({
             lastSeen: { $gte: startOfDay }
         })
-            .select('name email subscriptionStatus subscriptionPlan lastSeen role avatar')
+            .select('name email subscriptionStatus subscriptionPlan lastSeen role avatar firebaseUid')
             .sort({ lastSeen: -1 })
             .lean();
 
+        const syncedUsers = await Promise.all(
+            (users || []).map(async (u) => {
+                if (!u.firebaseUid || u.role === 'teacher') return u;
+                const currentUser = await User.findById(u._id);
+                if (!currentUser) return u;
+                const updated = await syncRoleFromFirestore(u.firebaseUid, currentUser);
+                return { ...u, role: updated.role };
+            })
+        );
+
         res.json({
             success: true,
-            count: users.length,
-            users
+            count: syncedUsers.length,
+            users: syncedUsers
         });
     } catch (err) {
         console.error('[Admin] getTodayLogins error:', err);
@@ -436,7 +447,7 @@ export const getDashboardLogins = async (req, res) => {
 
         const [users, total] = await Promise.all([
             User.find(filter)
-                .select('name email role subscriptionStatus subscriptionPlan lastSeen isVerified avatar')
+                .select('name email role subscriptionStatus subscriptionPlan lastSeen isVerified avatar firebaseUid')
                 .sort({ lastSeen: -1 })
                 .skip((page - 1) * limit)
                 .limit(limit)
@@ -444,9 +455,19 @@ export const getDashboardLogins = async (req, res) => {
             User.countDocuments(filter),
         ]);
 
+        const syncedUsers = await Promise.all(
+            (users || []).map(async (u) => {
+                if (!u.firebaseUid || u.role === 'teacher') return u;
+                const currentUser = await User.findById(u._id);
+                if (!currentUser) return u;
+                const updated = await syncRoleFromFirestore(u.firebaseUid, currentUser);
+                return { ...u, role: updated.role };
+            })
+        );
+
         res.json({
             success: true,
-            users,
+            users: syncedUsers,
             total,
             page,
             pages: Math.max(1, Math.ceil(total / limit)),
