@@ -21,15 +21,27 @@ export async function syncRoleFromFirestore(firebaseUid, currentUser) {
         if (!fsRole || !VALID_ROLES.has(fsRole)) return currentUser;
         if (fsRole === currentUser.role) return currentUser;
 
-        // Avoid accidental demotion: only promote student -> teacher from Firestore here.
-        if (fsRole === 'teacher' && currentUser.role === 'student') {
+        // Avoid accidental demotion: only promote to teacher from Firestore here.
+        // MongoDB might still have an older/stale value (e.g. `student` or `unknown`),
+        // so we promote whenever Firestore says `teacher` and Mongo isn't already teacher.
+        if (fsRole === 'teacher' && currentUser.role !== 'teacher') {
+            const prevRole = currentUser.role
             await User.findByIdAndUpdate(currentUser._id, { role: 'teacher' }, { runValidators: false });
             currentUser.role = 'teacher';
-            console.log(`[AUTH] Synced teacher role from Firestore for ${currentUser.email || firebaseUid}`);
+            console.log(
+                `[AUTH] Synced teacher role from Firestore for ${currentUser.email || firebaseUid} (was: ${uRoleDebug(
+                    prevRole
+                )})`
+            );
         }
     } catch (err) {
         console.warn('[AUTH] Firestore role sync skipped:', err.message);
     }
 
     return currentUser;
+}
+
+// Minimal helper for log readability without introducing more dependencies.
+function uRoleDebug(role) {
+    return role ?? 'unknown'
 }
