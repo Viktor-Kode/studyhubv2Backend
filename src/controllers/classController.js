@@ -3,7 +3,14 @@ import User from '../models/User.js';
 
 export const getClasses = async (req, res) => {
     try {
-        const classes = await Class.find({ teacherId: req.user._id });
+        let classes;
+        if (req.user.role === 'teacher') {
+            classes = await Class.find({ teacherId: req.user._id });
+        } else if (req.user.role === 'student') {
+            classes = await Class.find({ students: req.user._id });
+        } else {
+            return res.status(403).json({ success: false, message: 'Forbidden' });
+        }
         res.status(200).json({ success: true, classes });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });

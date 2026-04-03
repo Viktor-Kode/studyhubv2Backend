@@ -14,7 +14,7 @@ const router = express.Router();
 
 router.use(protect);
 
-router.get('/', restrictTo('teacher'), getClasses);
+router.get('/', restrictTo('teacher', 'student'), getClasses);
 router.post('/', restrictTo('teacher'), createClass);
 router.get('/:id', restrictTo('teacher'), getClass);
 router.put('/:id', restrictTo('teacher'), updateClass);

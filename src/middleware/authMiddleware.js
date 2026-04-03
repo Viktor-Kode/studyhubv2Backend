@@ -2,6 +2,7 @@ import { adminAuth } from '../config/firebase-admin.js';
 import User from '../models/User.js';
 import UserDailyActivity from '../models/UserDailyActivity.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
+import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
 
 const utcDayKey = (d = new Date()) => d.toISOString().slice(0, 10);
 
@@ -76,6 +77,8 @@ export const protect = async (req, res, next) => {
 
         // Downgrade expired "active" subscriptions before any paid feature runs (no cron dependency)
         currentUser = await expireStaleActiveSubscription(currentUser);
+
+        currentUser = await syncRoleFromFirestore(decodedToken.uid, currentUser);
 
         // GRANT ACCESS TO PROTECTED ROUTE
         req.user = currentUser;
