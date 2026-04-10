@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { createRequire } from 'module';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { updateStreak } from '../services/streakService.js';
+import { sampleStudyMaterial } from '../utils/studyMaterialSample.js';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 const require = createRequire(import.meta.url);
@@ -30,11 +31,13 @@ export const generateNotes = async (req, res) => {
   try {
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
 
-    console.log(`📝 Generating Notes for text length: ${text.length} using model: ${selectedModel.id}`);
+    const textForModel = sampleStudyMaterial(text.trim(), 12000);
+
+    console.log(`📝 Generating Notes for text length: ${text.length} (model input ${textForModel.length}) using model: ${selectedModel.id}`);
 
     const response = await aiClient.chatCompletion({
       model: selectedModel.id,
-      messages: [{ role: "user", content: notesPrompt(text) }],
+      messages: [{ role: "user", content: notesPrompt(textForModel) }],
       max_tokens: 2000,
       temperature: 0.3,
     });
@@ -171,6 +174,8 @@ export const generateQuiz = async (req, res) => {
     const questionCount = Math.min(Math.max(parseInt(amount) || 5, 1), 50);
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
 
+    const textForModel = sampleStudyMaterial(text.trim(), 14000);
+
     let typeInstructions;
     switch (questionType) {
       case 'multiple-choice': typeInstructions = 'multiple-choice questions with 4 options each'; break;
@@ -182,8 +187,8 @@ export const generateQuiz = async (req, res) => {
 
     const response = await aiClient.chatCompletion({
       model: selectedModel.id,
-      messages: [{ role: "user", content: quizPrompt(text, questionCount, typeInstructions, excludeQuestionContents.slice(0, 20)) }],
-      max_tokens: 3000,
+      messages: [{ role: "user", content: quizPrompt(textForModel, questionCount, typeInstructions, excludeQuestionContents.slice(0, 20)) }],
+      max_tokens: Math.min(3200, 900 + questionCount * 380),
       temperature: 0.7,
     });
 
@@ -326,8 +331,11 @@ export const chatWithTutor = async (req, res) => {
 
   try {
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
+    const contextForModel = context
+      ? sampleStudyMaterial(String(context), 8000)
+      : 'No specific document provided.';
     const systemPrompt = `You are an expert AI Study Tutor. Your goal is to help students understand their study materials. 
-    Context: """${context || 'No specific document provided.'}"""
+    Context: """${contextForModel}"""
 
 At the end of every response, append suggested follow-up questions in this exact format on the last line:
 [[Question one?||Question two?||Question three?]]
@@ -525,10 +533,12 @@ export const generateQuestionsFromPDF = async (req, res) => {
 
     // 3. Generate questions using AI
     console.log(`📝 Generating ${numberOfQuestions} questions from PDF for user ${userId}`);
+    const textForModel = sampleStudyMaterial(text.trim(), 10000);
+
     const aiResponse = await aiClient.chatCompletion({
       model: selectedModel.id,
-      messages: [{ role: "user", content: quizPrompt(text.substring(0, 10000), numberOfQuestions, typeInstructions) }],
-      max_tokens: 3000,
+      messages: [{ role: "user", content: quizPrompt(textForModel, numberOfQuestions, typeInstructions) }],
+      max_tokens: Math.min(3200, 900 + Number(numberOfQuestions) * 380),
       temperature: 0.7,
     });
 
