@@ -2,6 +2,7 @@ import admin from '../config/firebase-admin.js';
 import User from '../models/User.js';
 
 const VALID_ROLES = new Set(['student', 'teacher', 'admin']);
+let firestoreSyncDisabled = false;
 
 /**
  * Client writes `role` to Firestore (`users/{uid}`) on signup / role picker,
@@ -11,6 +12,7 @@ const VALID_ROLES = new Set(['student', 'teacher', 'admin']);
 export async function syncRoleFromFirestore(firebaseUid, currentUser) {
     if (!firebaseUid || !currentUser) return currentUser;
     if (currentUser.role === 'admin') return currentUser;
+    if (firestoreSyncDisabled || process.env.FIRESTORE_ROLE_SYNC_ENABLED === 'false') return currentUser;
 
     try {
         const db = admin.firestore();
@@ -35,6 +37,16 @@ export async function syncRoleFromFirestore(firebaseUid, currentUser) {
             );
         }
     } catch (err) {
+        const msg = String(err?.message || '');
+        const missingCreds =
+            msg.includes('Could not load the default credentials') ||
+            msg.includes('applicationDefault') ||
+            msg.includes('GOOGLE_APPLICATION_CREDENTIALS');
+
+        if (missingCreds) {
+            firestoreSyncDisabled = true;
+            console.warn('[AUTH] Firestore role sync disabled for this process (missing Google credentials).');
+        }
         console.warn('[AUTH] Firestore role sync skipped:', err.message);
     }
 
