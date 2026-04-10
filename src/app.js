@@ -50,9 +50,18 @@ const app = express();
 
 // TRUST PROXY - Required for Render/Vercel to get real IP for rate limiting
 app.set('trust proxy', 1);
+app.disable('x-powered-by');
 
 // Middlewares
-app.use(helmet());
+app.use(
+  helmet({
+    // API service: CSP is handled by the frontend app and can block legitimate API tooling.
+    contentSecurityPolicy: false,
+    hsts: process.env.NODE_ENV === 'production',
+    referrerPolicy: { policy: 'no-referrer' },
+    frameguard: { action: 'deny' },
+  })
+);
 
 // URL normalization and protocol enforcement for canonical URLs.
 app.use((req, res, next) => {
@@ -75,6 +84,7 @@ const limiter = rateLimit({
   max: 100, // Limit each IP to 100 requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
+  ipv6Subnet: 56,
   message: { status: 429, message: 'Too many requests from this IP, please try again later.' }
 });
 
@@ -211,14 +221,24 @@ const cbtAILimiter = rateLimit({
   max: 10, // Limit each user to 10 requests per minute
   standardHeaders: true,
   legacyHeaders: false,
+  ipv6Subnet: 56,
   message: { status: 429, message: 'Too many requests, please slow down.' }
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // Throttle auth workflows to reduce brute-force attacks
+  standardHeaders: true,
+  legacyHeaders: false,
+  ipv6Subnet: 56,
+  message: { status: 429, message: 'Too many authentication attempts. Please try again later.' }
 });
 
 // Routes
 app.use('/api/ai', cbtAILimiter, aiRoutes);
 app.use('/api/study', studyRoutes);
 app.use('/api/flashcards', flashCardRoutes);
-app.use('/api/users', authRoutes);
+app.use('/api/users', authLimiter, authRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/classes', classRoutes);
