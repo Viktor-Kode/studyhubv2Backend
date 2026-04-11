@@ -335,9 +335,7 @@ export const createDocument = async (req, res) => {
 
     const fileUrl = req.file.path;
     const isPdf = (req.file.mimetype || '').toLowerCase() === 'application/pdf';
-    const pages = isPdf ? await getPdfPagesFromUrl(fileUrl) : 0;
     const originalName = req.file.originalname || '';
-
     const document = await LibraryDocument.create({
       userId,
       title: title || originalName.replace(/\.[^/.]+$/i, ''),
@@ -346,12 +344,26 @@ export const createDocument = async (req, res) => {
       fileSize: req.file.size,
       fileType: req.file.mimetype || 'application/pdf',
       coverColor: coverColor || '#5B4CF5',
-      pages,
+      pages: 0, // initially 0, will be updated in background
       publicId: req.file.filename,
       originalName,
     });
 
     res.status(201).json({ success: true, document });
+
+    // Update page count in the background to avoid 504 timeouts
+    if (isPdf) {
+      void (async () => {
+        try {
+          const pages = await getPdfPagesFromUrl(fileUrl);
+          if (pages > 0) {
+            await LibraryDocument.findByIdAndUpdate(document._id, { pages });
+          }
+        } catch (err) {
+          console.error('[Library] Background page count failed:', err.message);
+        }
+      })();
+    }
   } catch (error) {
     console.error('[Library] Document upload error:', error);
     res.status(500).json({ success: false, error: error.message });
