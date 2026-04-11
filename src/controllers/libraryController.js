@@ -247,13 +247,16 @@ const clampPercentage = (value) => {
 
 const getPdfPagesFromUrl = async (fileUrl) => {
   try {
-    const response = await fetch(fileUrl);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const response = await fetch(fileUrl, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!response.ok) return 0;
     const buffer = Buffer.from(await response.arrayBuffer());
     const data = await pdf(buffer);
     return data?.numpages || 0;
   } catch (error) {
-    console.error('[Library] Failed to parse PDF pages:', error.message);
+    console.error('[Library] Failed to parse PDF pages (skipping to avoid timeout):', error.message);
     return 0;
   }
 };
