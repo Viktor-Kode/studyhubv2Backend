@@ -559,6 +559,9 @@ export const upsertProgress = async (req, res) => {
 /**
  * Stream PDF for LibraryDocument or legacy LibraryMaterial (same Cloudinary fetch logic as route).
  */
+/**
+ * Stream PDF for LibraryDocument, legacy LibraryMaterial, or approved SharedLibraryItem.
+ */
 export const proxyLibraryPdf = async (req, res) => {
   try {
     const id = req.params.id;
@@ -569,21 +572,39 @@ export const proxyLibraryPdf = async (req, res) => {
     let fileUrl;
     let publicId;
 
-    // Try finding in both new and legacy collections
-    const doc = await LibraryDocument.findOne({ _id: id, userId: userIdStr }).lean();
+    // 1. Try LibraryDocument (New system, own)
+    const doc = await LibraryDocument.findOne({
+      $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
+      userId: userIdStr
+    }).lean();
+
     if (doc) {
       console.log(`[PDF Proxy] Found in LibraryDocument: ${doc.title}`);
       fileUrl = doc.fileUrl;
       publicId = doc.publicId;
     } else {
+      // 2. Try LibraryMaterial (Legacy system, own)
       const legacy = await LibraryMaterial.findOne({
-        _id: id,
+        $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
         userId: req.user._id,
       }).lean();
+
       if (legacy) {
         console.log(`[PDF Proxy] Found in LibraryMaterial: ${legacy.title}`);
         fileUrl = legacy.fileUrl;
         publicId = legacy.publicId;
+      } else {
+        // 3. Try SharedLibraryItem (Approved community items)
+        const shared = await SharedLibraryItem.findOne({
+          $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
+          moderationStatus: 'approved'
+        }).lean();
+
+        if (shared) {
+          console.log(`[PDF Proxy] Found in SharedLibraryItem: ${shared.title}`);
+          fileUrl = shared.fileUrl;
+          publicId = shared.publicId || (shared.fileUrl ? shared.fileUrl.split('/').pop().split('.')[0] : null);
+        }
       }
     }
 
@@ -594,6 +615,7 @@ export const proxyLibraryPdf = async (req, res) => {
 
     let response = await fetch(fileUrl);
 
+    // Fallback logic for Cloudinary URL formatting mismatches
     if (!response.ok && fileUrl.includes('/raw/upload/')) {
       const altUrl = fileUrl.replace('/raw/upload/', '/image/upload/');
       response = await fetch(altUrl);
@@ -613,18 +635,14 @@ export const proxyLibraryPdf = async (req, res) => {
         });
         response = await fetch(signedUrl);
       } catch (signErr) {
-        console.error('[PDF Proxy] Signed URL failed:', signErr.message);
+        console.error('[PDF Proxy] Signed URL fallback failed:', signErr.message);
       }
     }
 
     if (!response.ok) {
-      if (response.status === 404) {
-        return res.status(404).json({
-          error: 'PDF file not found on Cloudinary (404)',
-        });
-      }
-      return res.status(502).json({
-        error: `Cloudinary returned ${response.status}`,
+      console.warn(`[PDF Proxy] Cloudinary fetch failed for ${fileUrl}: ${response.status}`);
+      return res.status(response.status === 404 ? 404 : 502).json({
+        error: response.status === 404 ? 'PDF file not found on storage provider' : `Storage provider returned ${response.status}`
       });
     }
 
@@ -634,13 +652,16 @@ export const proxyLibraryPdf = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.send(Buffer.from(buffer));
   } catch (err) {
-    console.error('[PDF Proxy] ERROR:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[PDF Proxy] UNEXPECTED ERROR:', err.message);
+    res.status(500).json({ error: 'Internal server error during PDF proxying' });
   }
 };
 
 /**
  * Stream any library file for LibraryDocument or legacy LibraryMaterial.
+ */
+/**
+ * Stream any library file for LibraryDocument, legacy LibraryMaterial, or approved SharedLibraryItem.
  */
 export const proxyLibraryFile = async (req, res) => {
   try {
@@ -650,23 +671,41 @@ export const proxyLibraryFile = async (req, res) => {
     let fileUrl;
     let publicId;
 
-    const doc = await LibraryDocument.findOne({ _id: id, userId: userIdStr }).lean();
+    // 1. Try LibraryDocument
+    const doc = await LibraryDocument.findOne({
+      $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
+      userId: userIdStr
+    }).lean();
+
     if (doc) {
       fileUrl = doc.fileUrl;
       publicId = doc.publicId;
     } else {
+      // 2. Try LibraryMaterial
       const legacy = await LibraryMaterial.findOne({
-        _id: id,
+        $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
         userId: req.user._id,
       }).lean();
+
       if (legacy) {
         fileUrl = legacy.fileUrl;
         publicId = legacy.publicId;
+      } else {
+        // 3. Try SharedLibraryItem
+        const shared = await SharedLibraryItem.findOne({
+          $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
+          moderationStatus: 'approved'
+        }).lean();
+
+        if (shared) {
+          fileUrl = shared.fileUrl;
+          publicId = shared.publicId;
+        }
       }
     }
 
     if (!fileUrl) {
-      return res.status(404).json({ error: 'Not found' });
+      return res.status(404).json({ error: 'File not found or access denied' });
     }
 
     let response = await fetch(fileUrl);
@@ -690,12 +729,14 @@ export const proxyLibraryFile = async (req, res) => {
         });
         response = await fetch(signedUrl);
       } catch (signErr) {
-        console.error('[File Proxy] Signed URL failed:', signErr.message);
+        console.error('[File Proxy] Signed URL fallback failed:', signErr.message);
       }
     }
 
     if (!response.ok) {
-      return res.status(502).json({ error: `Cloudinary returned ${response.status}` });
+      return res.status(response.status === 404 ? 404 : 502).json({
+        error: `Storage provider returned ${response.status}`
+      });
     }
 
     const buffer = await response.arrayBuffer();
@@ -705,8 +746,8 @@ export const proxyLibraryFile = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.send(Buffer.from(buffer));
   } catch (err) {
-    console.error('[File Proxy] ERROR:', err.message);
-    res.status(500).json({ error: err.message });
+    console.error('[File Proxy] UNEXPECTED ERROR:', err.message);
+    res.status(500).json({ error: 'Internal server error during file proxying' });
   }
 };
 
