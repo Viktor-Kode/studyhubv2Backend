@@ -18,6 +18,8 @@ import {
   getRecentDocuments,
   proxyLibraryPdf,
   proxyLibraryFile,
+  getUploadSignature,
+  finalizeUpload,
 } from '../controllers/libraryController.js';
 
 const router = express.Router();
@@ -27,6 +29,10 @@ router.use(protect);
 // Proxy PDF (LibraryDocument or legacy LibraryMaterial)
 router.get('/proxy-pdf/:id', proxyLibraryPdf);
 router.get('/proxy-file/:id', proxyLibraryFile);
+
+// New robust direct upload routes
+router.get('/upload-signature', getUploadSignature);
+router.post('/finalize-upload', finalizeUpload);
 
 // Library CRUD routes
 router.get('/documents', listDocuments);

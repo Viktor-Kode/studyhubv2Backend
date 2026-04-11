@@ -13,6 +13,80 @@ const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
 const FREE_DOCUMENT_LIMIT = 5;
 
+// GET /api/library/upload-signature
+export const getUploadSignature = async (req, res) => {
+  try {
+    const timestamp = Math.round(new Date().getTime() / 1000);
+    const signature = cloudinary.utils.api_sign_request(
+      { timestamp, folder: 'studyhelp/library' },
+      process.env.CLOUDINARY_API_SECRET
+    );
+    res.json({
+      success: true,
+      signature,
+      timestamp,
+      apiKey: process.env.CLOUDINARY_API_KEY,
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+      folder: 'studyhelp/library',
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// POST /api/library/finalize-upload
+export const finalizeUpload = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const { title, subject, coverColor, fileUrl, fileSize, fileType, publicId, originalName } = req.body;
+
+    const user = await User.findById(userId).lean();
+    const isPaid = hasActivePaidStudentPlan(user);
+
+    if (!isPaid) {
+      const currentCount = await LibraryDocument.countDocuments({ userId });
+      if (currentCount >= FREE_DOCUMENT_LIMIT) {
+        return res.status(403).json({
+          success: false,
+          error: `Free users can only keep ${FREE_DOCUMENT_LIMIT} documents.`,
+          showUpgrade: true,
+          code: 'library_limit',
+        });
+      }
+    }
+
+    const document = await LibraryDocument.create({
+      userId,
+      title: title || originalName.replace(/\.[^/.]+$/i, ''),
+      subject: subject || '',
+      fileUrl,
+      fileSize: Number(fileSize) || 0,
+      fileType: fileType || 'application/pdf',
+      coverColor: coverColor || '#5B4CF5',
+      pages: 0,
+      publicId,
+      originalName,
+    });
+
+    res.status(201).json({ success: true, document });
+
+    if ((fileType || '').toLowerCase() === 'application/pdf') {
+      void (async () => {
+        try {
+          const pages = await getPdfPagesFromUrl(fileUrl);
+          if (pages > 0) {
+            await LibraryDocument.findByIdAndUpdate(document._id, { pages });
+          }
+        } catch (err) {
+          console.error('[Library] Background page count failed:', err.message);
+        }
+      })();
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 // GET /api/library
 export const getMaterials = async (req, res) => {
   try {
