@@ -2,13 +2,14 @@ import LibraryMaterial from '../models/LibraryMaterial.js';
 import cloudinary from '../config/cloudinary.js';
 import User from '../models/User.js';
 import { hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
-import { PDFParse } from 'pdf-parse';
+import pdf from 'pdf-parse';
 import LibraryDocument from '../models/LibraryDocument.js';
 import ReadingProgress from '../models/ReadingProgress.js';
+import fetch from 'node-fetch';
 
 const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
-const FREE_DOCUMENT_LIMIT = 2;
+const FREE_DOCUMENT_LIMIT = 5;
 
 // GET /api/library
 export const getMaterials = async (req, res) => {
@@ -247,17 +248,8 @@ const getPdfPagesFromUrl = async (fileUrl) => {
     const response = await fetch(fileUrl);
     if (!response.ok) return 0;
     const buffer = Buffer.from(await response.arrayBuffer());
-    const parser = new PDFParse({ data: buffer });
-    try {
-      const info = await parser.getInfo();
-      if (typeof info?.total === 'number') {
-        return info.total;
-      }
-      const text = await parser.getText();
-      return text?.numpages || 0;
-    } finally {
-      await parser.destroy();
-    }
+    const data = await pdf(buffer);
+    return data?.numpages || 0;
   } catch (error) {
     console.error('[Library] Failed to parse PDF pages:', error.message);
     return 0;
