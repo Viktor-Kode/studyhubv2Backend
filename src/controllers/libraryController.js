@@ -564,11 +564,15 @@ export const proxyLibraryPdf = async (req, res) => {
     const id = req.params.id;
     const userIdStr = String(req.user._id);
 
+    console.log(`[PDF Proxy] Requesting document ID: ${id} for user: ${userIdStr}`);
+
     let fileUrl;
     let publicId;
 
+    // Try finding in both new and legacy collections
     const doc = await LibraryDocument.findOne({ _id: id, userId: userIdStr }).lean();
     if (doc) {
+      console.log(`[PDF Proxy] Found in LibraryDocument: ${doc.title}`);
       fileUrl = doc.fileUrl;
       publicId = doc.publicId;
     } else {
@@ -577,13 +581,15 @@ export const proxyLibraryPdf = async (req, res) => {
         userId: req.user._id,
       }).lean();
       if (legacy) {
+        console.log(`[PDF Proxy] Found in LibraryMaterial: ${legacy.title}`);
         fileUrl = legacy.fileUrl;
         publicId = legacy.publicId;
       }
     }
 
     if (!fileUrl) {
-      return res.status(404).json({ error: 'Not found' });
+      console.warn(`[PDF Proxy] Document ${id} not found or access denied for user ${userIdStr}`);
+      return res.status(404).json({ error: 'Document not found or access denied' });
     }
 
     let response = await fetch(fileUrl);
