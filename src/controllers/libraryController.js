@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import LibraryMaterial from '../models/LibraryMaterial.js';
 import cloudinary from '../config/cloudinary.js';
 import User from '../models/User.js';
@@ -8,6 +9,15 @@ const pdf = require('pdf-parse');
 import LibraryDocument from '../models/LibraryDocument.js';
 import ReadingProgress from '../models/ReadingProgress.js';
 import fetch from 'node-fetch';
+
+// SharedLibraryItem may not exist yet — import defensively
+let SharedLibraryItem = null;
+try {
+  const mod = await import('../models/SharedLibraryItem.js');
+  SharedLibraryItem = mod.default;
+} catch {
+  // Model not yet created — shared-library proxy fallback will be skipped
+}
 
 const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
@@ -593,7 +603,7 @@ export const proxyLibraryPdf = async (req, res) => {
         console.log(`[PDF Proxy] Found in LibraryMaterial: ${legacy.title}`);
         fileUrl = legacy.fileUrl;
         publicId = legacy.publicId;
-      } else {
+      } else if (SharedLibraryItem) {
         // 3. Try SharedLibraryItem (Approved community items)
         const shared = await SharedLibraryItem.findOne({
           $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
@@ -690,7 +700,7 @@ export const proxyLibraryFile = async (req, res) => {
       if (legacy) {
         fileUrl = legacy.fileUrl;
         publicId = legacy.publicId;
-      } else {
+      } else if (SharedLibraryItem) {
         // 3. Try SharedLibraryItem
         const shared = await SharedLibraryItem.findOne({
           $or: [{ _id: mongoose.isValidObjectId(id) ? id : null }, { publicId: id }],
