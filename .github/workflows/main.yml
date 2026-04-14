@@ -23,7 +23,7 @@ jobs:
 
       - name: Start check
         run: |
-          node -e "try { require('./src/server.js'); console.log('✅ Entry point loads'); process.exit(0); } catch(e) { console.error(e); process.exit(1); }"
+          node --input-type=module -e "try { await import('./src/server.js'); console.log('✅ Entry point loads'); process.exit(0); } catch(e) { console.error(e); process.exit(1); }"
         env:
           MONGO_URI: mongodb://localhost:27017/test
           JWT_SECRET: test-secret
