@@ -3,12 +3,10 @@ import LibraryMaterial from '../models/LibraryMaterial.js';
 import cloudinary from '../config/cloudinary.js';
 import User from '../models/User.js';
 import { hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
 import LibraryDocument from '../models/LibraryDocument.js';
 import ReadingProgress from '../models/ReadingProgress.js';
 import fetch from 'node-fetch';
+import { parsePdfBuffer } from '../utils/parsePdf.js';
 
 // SharedLibraryItem may not exist yet — import defensively
 let SharedLibraryItem = null;
@@ -337,7 +335,7 @@ const getPdfPagesFromUrl = async (fileUrl) => {
     clearTimeout(timeoutId);
     if (!response.ok) return 0;
     const buffer = Buffer.from(await response.arrayBuffer());
-    const data = await pdf(buffer);
+    const data = await parsePdfBuffer(buffer);
     return data?.numpages || 0;
   } catch (error) {
     console.error('[Library] Failed to parse PDF pages (skipping to avoid timeout):', error.message);

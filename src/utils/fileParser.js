@@ -1,16 +1,13 @@
 import mammoth from 'mammoth';
 import fs from 'fs';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const { pdf } = require('pdf-parse');
+import { parsePdfBuffer } from './parsePdf.js';
 
 export const parseFile = async (filePath, mimetype) => {
     try {
         if (mimetype === 'application/pdf') {
             const buffer = fs.readFileSync(filePath);
-            const data = await pdf(buffer);
-            return data.text;
+            const parsed = await parsePdfBuffer(buffer);
+            return parsed.text;
         }
 
         if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||

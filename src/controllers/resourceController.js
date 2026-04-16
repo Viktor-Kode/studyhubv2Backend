@@ -1,12 +1,9 @@
 import Resource from '../models/Resource.js';
-import { createRequire } from 'module';
 import mammoth from 'mammoth';
 import officeparser from 'officeparser';
 import aiClient from '../utils/aiClient.js';
 import Question from '../models/Question.js';
-
-const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
+import { parsePdfBuffer } from '../utils/parsePdf.js';
 
 export const uploadResource = async (req, res) => {
     try {
@@ -19,8 +16,8 @@ export const uploadResource = async (req, res) => {
         const fileExtension = file.originalname.split('.').pop().toLowerCase();
 
         if (fileExtension === 'pdf') {
-            const data = await pdf(file.buffer);
-            extractedText = data.text;
+            const parsed = await parsePdfBuffer(file.buffer);
+            extractedText = parsed.text;
         } else if (fileExtension === 'docx') {
             const data = await mammoth.extractRawText({ buffer: file.buffer });
             extractedText = data.value;

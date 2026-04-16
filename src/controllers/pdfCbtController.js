@@ -1,6 +1,4 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
+import { parsePdfBuffer } from '../utils/parsePdf.js';
 import fetch from 'node-fetch';
 
 const cleanPdfText = (text) => {
@@ -153,8 +151,7 @@ export const extractQuestionsFromPDF = async (req, res) => {
       return res.status(400).json({ error: 'No PDF uploaded' });
     }
 
-    const pdfData = await pdf(req.file.buffer);
-    const rawText = pdfData?.text || '';
+    const { text: rawText } = await parsePdfBuffer(req.file.buffer);
 
     if (!rawText || rawText.trim().length < 50) {
       return res.status(400).json({
