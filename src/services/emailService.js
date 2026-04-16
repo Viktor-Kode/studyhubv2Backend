@@ -1,41 +1,34 @@
+import { Resend } from 'resend';
 import { getEnv } from '../config/env.js';
 
-const BREVO_API_KEY = getEnv('BREVO_API_KEY');
-const FROM_EMAIL = 'dosunmuvictor16@gmail.com';
+const RESEND_API_KEY = getEnv('RESEND_API_KEY');
+const FROM_EMAIL = getEnv('FROM_EMAIL', 'notifications@studyhelp.site');
 const FROM_NAME = 'StudyHelp';
 
 // ── Send single email ─────────────────────────────────
 export const sendEmail = async ({ to, subject, html }) => {
     try {
-        if (!BREVO_API_KEY) {
-            console.warn('[Email] BREVO_API_KEY not set. Skipping send.');
-            return { success: false, error: 'Email not configured' };
+        if (!RESEND_API_KEY) {
+            console.warn('[Email] RESEND_API_KEY not set. Skipping send.');
+            return { success: false, error: 'Email service not configured' };
         }
 
-        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-            method: 'POST',
-            headers: {
-                accept: 'application/json',
-                'api-key': BREVO_API_KEY,
-                'content-type': 'application/json'
-            },
-            body: JSON.stringify({
-                sender: { name: FROM_NAME, email: FROM_EMAIL },
-                to: [{ email: to }],
-                subject,
-                htmlContent: html
-            })
+        const resend = new Resend(RESEND_API_KEY);
+        
+        const { data, error } = await resend.emails.send({
+            from: `${FROM_NAME} <${FROM_EMAIL}>`,
+            to,
+            subject,
+            html: html
         });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            console.error('[Email] Brevo error:', data);
-            return { success: false, error: data.message || 'Send failed' };
+        if (error) {
+            console.error('[Email] Resend error:', error);
+            return { success: false, error: error.message || 'Send failed' };
         }
 
-        console.log('[Email] Sent successfully. ID:', data.messageId);
-        return { success: true, id: data.messageId };
+        console.log('[Email] Sent successfully. ID:', data.id);
+        return { success: true, id: data.id };
     } catch (err) {
         console.error('[Email] Failed:', err.message);
         return { success: false, error: err.message };
@@ -46,6 +39,9 @@ export const sendEmail = async ({ to, subject, html }) => {
 export const sendBulkEmail = async (recipients, subject, html) => {
     const results = { sent: 0, failed: 0, errors: [] };
     const batchSize = 10;
+    
+    // We use a singleton-like instance for the bulk operation if possible, 
+    // but the sendEmail function already creates one. That's fine for small batches.
 
     for (let i = 0; i < recipients.length; i += batchSize) {
         const batch = recipients.slice(i, i + batchSize);
@@ -70,7 +66,7 @@ export const sendBulkEmail = async (recipients, subject, html) => {
 
         // Small delay between batches to respect rate limits
         if (i + batchSize < recipients.length) {
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 600));
         }
 
         console.log(`[Bulk Email] Batch ${Math.floor(i / batchSize) + 1} done — Sent: ${results.sent}, Failed: ${results.failed}`);
@@ -79,73 +75,70 @@ export const sendBulkEmail = async (recipients, subject, html) => {
     return results;
 };
 
-// ── Templates ─────────────────────────────────────────
-export const upgradeEmailTemplate = ({ planHighlight = 'monthly' } = {}) => `
+// ── Templates (Refined with Premium Aesthetics) ────────
+export const upgradeEmailTemplate = () => `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
-<body style="margin:0;padding:0;background:#F3F4F6;font-family:'Segoe UI',Arial,sans-serif;">
-  <div style="max-width:600px;margin:0 auto;padding:20px;">
-    <div style="background:linear-gradient(135deg,#4F46E5,#7C3AED);border-radius:16px 16px 0 0;padding:40px 32px;text-align:center;">
-      <h1 style="color:white;font-size:28px;font-weight:900;margin:0 0 8px;">StudyHelp</h1>
-      <p style="color:rgba(255,255,255,0.85);font-size:16px;margin:0;">Study Smarter. Score Higher.</p>
+<body style="margin:0;padding:0;background-color:#f6f9fc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
+    <div style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:24px 24px 0 0;padding:60px 40px;text-align:center;box-shadow:0 10px 25px rgba(59,130,246,0.15);">
+      <h1 style="color:white;font-size:32px;font-weight:900;margin:0 0 12px;letter-spacing:-0.5px;">StudyHelp</h1>
+      <p style="color:rgba(255,255,255,0.9);font-size:18px;margin:0;font-weight:500;">Your AI-Powered Academic Edge</p>
     </div>
-    <div style="background:white;padding:32px;border-radius:0 0 16px 16px;border:1px solid #E5E7EB;border-top:none;">
-      <p style="font-size:18px;font-weight:700;color:#111827;margin:0 0 8px;">Hi {{name}} 👋</p>
-      <p style="font-size:15px;color:#374151;line-height:1.7;margin:0 0 20px;">
-        You've been using StudyHelp on the free plan. We want to make sure you have
-        <strong>everything you need</strong> to ace your exams.
+    <div style="background-color:#ffffff;padding:40px;border-radius:0 0 24px 24px;border:1px solid #e2e8f0;border-top:none;box-shadow:0 20px 40px rgba(0,0,0,0.05);">
+      <p style="font-size:20px;font-weight:700;color:#1e293b;margin:0 0 16px;">Hello {{name}} 👋</p>
+      <p style="font-size:16px;color:#475569;line-height:1.7;margin:0 0 24px;">
+        You've been making great progress on StudyHelp! But did you know you're only seeing a fraction of what our platform can do? 
       </p>
-      <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:12px;padding:16px 20px;margin-bottom:24px;">
-        <p style="font-size:13px;font-weight:800;color:#92400E;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 10px;">What you're missing on the free plan:</p>
-        <ul style="margin:0;padding-left:20px;color:#78350F;font-size:14px;line-height:2;">
-          <li>Unlimited CBT practice tests</li>
-          <li>AI question generation</li>
-          <li>Full analytics and progress tracking</li>
-          <li>Unlimited flashcard reviews</li>
-        </ul>
+      
+      <div style="background-color:#eff6ff;border:1px dashed #bfdbfe;border-radius:18px;padding:24px;margin-bottom:32px;">
+        <p style="font-size:14px;font-weight:800;color:#1d4ed8;text-transform:uppercase;letter-spacing:1px;margin:0 0 16px;">Unlock Your Full Potential:</p>
+        <div style="display:grid;gap:12px;">
+          <div style="display:flex;align-items:center;margin-bottom:10px;">
+            <span style="color:#2563eb;margin-right:12px;">✓</span>
+            <span style="color:#334155;font-size:15px;"><strong>Unlimited</strong> CBT Mock Exams</span>
+          </div>
+          <div style="display:flex;align-items:center;margin-bottom:10px;">
+            <span style="color:#2563eb;margin-right:12px;">✓</span>
+            <span style="color:#334155;font-size:15px;"><strong>250+</strong> AI-Generated Explanations</span>
+          </div>
+          <div style="display:flex;align-items:center;margin-bottom:10px;">
+            <span style="color:#2563eb;margin-right:12px;">✓</span>
+            <span style="color:#334155;font-size:15px;"><strong>Premium</strong> Study Group Access</span>
+          </div>
+          <div style="display:flex;align-items:center;">
+            <span style="color:#2563eb;margin-right:12px;">✓</span>
+            <span style="color:#334155;font-size:15px;">Advanced Performance Analytics</span>
+          </div>
+        </div>
       </div>
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-        <tr>
-          <td width="48%" style="padding-right:8px;vertical-align:top;">
-            <div style="border:2px solid #E5E7EB;border-radius:12px;padding:16px;text-align:center;">
-              <p style="font-size:12px;font-weight:700;color:#6B7280;text-transform:uppercase;margin:0 0 6px;">Weekly</p>
-              <p style="font-size:28px;font-weight:900;color:#111827;margin:0 0 4px;">₦600</p>
-              <p style="font-size:12px;color:#9CA3AF;margin:0 0 12px;">per week</p>
-              <p style="font-size:12px;color:#374151;margin:0;">80 AI questions + Unlimited CBT</p>
-            </div>
-          </td>
-          <td width="48%" style="padding-left:8px;vertical-align:top;">
-            <div style="border:2px solid #4F46E5;border-radius:12px;padding:16px;text-align:center;background:#FAFBFF;">
-              <div style="background:#4F46E5;color:white;font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;">⭐ BEST VALUE</div>
-              <p style="font-size:12px;font-weight:700;color:#4F46E5;text-transform:uppercase;margin:0 0 6px;">Monthly</p>
-              <p style="font-size:28px;font-weight:900;color:#111827;margin:0 0 4px;">₦2,300</p>
-              <p style="font-size:12px;color:#9CA3AF;margin:0 0 12px;">per month</p>
-              <p style="font-size:12px;color:#374151;margin:0;">250 AI questions + Everything unlocked</p>
-            </div>
-          </td>
-        </tr>
-      </table>
-      <div style="text-align:center;margin-bottom:28px;">
-        <a href="${getEnv('FRONTEND_URL') || 'https://studyhubv2-self.vercel.app'}/upgrade"
-          style="display:inline-block;background:linear-gradient(135deg,#4F46E5,#7C3AED);color:white;font-size:16px;font-weight:800;padding:16px 40px;border-radius:12px;text-decoration:none;">
-          Upgrade My Account →
+
+      <div style="text-align:center;margin-bottom:32px;">
+        <a href="https://www.studyhelp.site/dashboard/upgrade"
+          style="display:inline-block;background:linear-gradient(135deg,#3b82f6,#2563eb);color:white;font-size:18px;font-weight:700;padding:20px 48px;border-radius:16px;text-decoration:none;box-shadow:0 10px 20px rgba(37,99,235,0.25);">
+          Upgrade My Account Now →
         </a>
-        <p style="font-size:12px;color:#9CA3AF;margin:12px 0 0;">No auto-renewal. Pay once, study unlimited.</p>
+        <p style="font-size:13px;color:#94a3b8;margin:16px 0 0;">Secure payment. One-time fee, no subscriptions.</p>
       </div>
-      <p style="font-size:14px;color:#374151;line-height:1.7;margin:0;">
-        Your exams are coming. Make sure you're ready. 💪
+
+      <hr style="border:none;border-top:1px solid #f1f5f9;margin:32px 0;">
+
+      <p style="font-size:14px;color:#64748b;line-height:1.6;margin:0;">
+        Study smart, not hard. Join the thousands of students who are acing their JAMB, WAEC, and Post-UTME exams with our premium tools.
       </p>
-      <p style="font-size:14px;color:#374151;margin:8px 0 0;">— The StudyHelp Team</p>
+      <p style="font-size:14px;font-weight:600;color:#1e293b;margin:20px 0 0;">— The StudyHelp Team</p>
     </div>
-    <div style="text-align:center;padding:20px;font-size:12px;color:#9CA3AF;">
-      <p style="margin:0;">You're receiving this because you signed up with {{email}}.</p>
-      <p style="margin:4px 0 0;">
-        <a href="${getEnv('FRONTEND_URL') || 'https://studyhubv2-self.vercel.app'}/unsubscribe?email={{email}}" style="color:#9CA3AF;">Unsubscribe</a>
-      </p>
+    <div style="text-align:center;padding:32px;font-size:12px;color:#94a3b8;line-height:1.6;">
+      <p style="margin:0;">You are receiving this because you are a valued member of StudyHelp.</p>
+      <div style="margin-top:12px;">
+        <a href="https://www.studyhelp.site/unsubscribe?email={{email}}" style="color:#3b82f6;text-decoration:none;font-weight:600;">Unsubscribe</a>
+        <span style="margin:0 8px;">•</span>
+        <a href="https://www.studyhelp.site/privacy" style="color:#94a3b8;text-decoration:none;">Privacy Policy</a>
+      </div>
     </div>
   </div>
 </body>
@@ -156,42 +149,45 @@ export const teacherUpgradeEmailTemplate = () => `
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#F3F4F6;font-family:'Segoe UI',Arial,sans-serif;">
-  <div style="max-width:600px;margin:0 auto;padding:20px;">
-    <div style="background:linear-gradient(135deg,#059669,#0891B2);border-radius:16px 16px 0 0;padding:40px 32px;text-align:center;">
-      <h1 style="color:white;font-size:26px;font-weight:900;margin:0 0 8px;">StudyHelp for Teachers</h1>
-      <p style="color:rgba(255,255,255,0.85);font-size:15px;margin:0;">Save hours every week. Teach better.</p>
+<body style="margin:0;padding:0;background-color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
+    <div style="background:linear-gradient(135deg,#059669,#0d9488);border-radius:24px 24px 0 0;padding:60px 40px;text-align:center;box-shadow:0 10px 25px rgba(5,150,105,0.15);">
+      <h1 style="color:white;font-size:28px;font-weight:900;margin:0 0 12px;letter-spacing:-0.5px;">StudyHelp for Educators</h1>
+      <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:0;font-weight:500;">AI Tools Optimized for Professional Teaching</p>
     </div>
-    <div style="background:white;padding:32px;border-radius:0 0 16px 16px;border:1px solid #E5E7EB;border-top:none;">
-      <p style="font-size:18px;font-weight:700;color:#111827;margin:0 0 16px;">Hi {{name}} 👋</p>
-      <p style="font-size:15px;color:#374151;line-height:1.7;margin:0 0 20px;">
-        Here's what the <strong>full Teacher Plan</strong> unlocks:
+    <div style="background-color:#ffffff;padding:40px;border-radius:0 0 24px 24px;border:1px solid #e2e8f0;border-top:none;box-shadow:0 20px 40px rgba(0,0,0,0.05);">
+      <p style="font-size:18px;font-weight:700;color:#0f172a;margin:0 0 16px;">Hello {{name}} 👋</p>
+      <p style="font-size:15px;color:#475569;line-height:1.7;margin:0 0 24px;">
+        As a teacher, your time is your most precious resource. Our premium educator plan is designed to give you hours of your life back every single week.
       </p>
-      <ul style="font-size:14px;color:#374151;line-height:2.2;padding-left:20px;margin:0 0 24px;">
-        <li>✅ Unlimited lesson note generation</li>
-        <li>✅ Result compiler for any class size</li>
-        <li>✅ 30+ report card comments at once</li>
-        <li>✅ Full term scheme of work in seconds</li>
-        <li>✅ Differentiated question sets</li>
-        <li>✅ Reading comprehension builder</li>
-      </ul>
-      <div style="text-align:center;margin-bottom:24px;">
-        <p style="font-size:14px;color:#6B7280;margin:0 0 16px;">
-          <strong style="font-size:24px;color:#059669;">₦1,500/week</strong>
-          &nbsp;or&nbsp;
-          <strong style="font-size:24px;color:#059669;">₦3,500/month</strong>
-        </p>
-        <a href="${getEnv('FRONTEND_URL') || 'https://studyhubv2-self.vercel.app'}/teacher/upgrade"
-          style="display:inline-block;background:linear-gradient(135deg,#059669,#0891B2);color:white;font-size:16px;font-weight:800;padding:16px 40px;border-radius:12px;text-decoration:none;">
-          Upgrade Teacher Plan →
+      
+      <div style="background-color:#f0fdf4;border-left:4px solid #10b981;border-radius:8px;padding:24px;margin-bottom:32px;">
+        <p style="font-size:14px;font-weight:800;color:#047857;text-transform:uppercase;letter-spacing:1px;margin:0 0- 12px;">Premium Educator Toolkit:</p>
+        <ul style="font-size:14px;color:#334155;line-height:2.2;padding-left:0;list-style:none;margin:0;">
+          <li>✨ <strong>Instant Lesson Notes</strong>: High-quality notes in seconds.</li>
+          <li>🎯 <strong>Result Compiler</strong>: Process class results automatically.</li>
+          <li>📝 <strong>30+ Report Comments</strong>: Personalised feedback in one click.</li>
+          <li>📅 <strong>Scheme of Work</strong>: Full term planning with AI.</li>
+          <li>📖 <strong>Comprehension Builder</strong>: Dynamic reading assessments.</li>
+        </ul>
+      </div>
+
+      <div style="text-align:center;margin-bottom:32px;">
+        <a href="https://www.studyhelp.site/teacher/upgrade"
+          style="display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:white;font-size:18px;font-weight:700;padding:18px 44px;border-radius:14px;text-decoration:none;box-shadow:0 10px 20px rgba(16,185,129,0.2);">
+          Boost My Productivity →
         </a>
       </div>
-      <p style="font-size:14px;color:#374151;">— The StudyHelp Team</p>
+
+      <p style="font-size:14px;color:#64748b;line-height:1.6;margin:0;">
+        Join hundreds of educators who have transformed their teaching workflow with StudyHelp.
+      </p>
+      <p style="font-size:14px;font-weight:600;color:#0f172a;margin:16px 0 0;">— The StudyHelp Team</p>
     </div>
-    <div style="text-align:center;padding:20px;font-size:12px;color:#9CA3AF;">
-      <p style="margin:0;">You're receiving this because you signed up with {{email}}.</p>
-      <p style="margin:4px 0 0;">
-        <a href="${getEnv('FRONTEND_URL') || 'https://studyhubv2-self.vercel.app'}/unsubscribe?email={{email}}" style="color:#9CA3AF;">Unsubscribe</a>
+    <div style="text-align:center;padding:24px;font-size:11px;color:#94a3b8;">
+      <p style="margin:0;">Sent with ❤️ for educators everywhere.</p>
+      <p style="margin:8px 0 0;">
+        <a href="https://www.studyhelp.site/unsubscribe?email={{email}}" style="color:#059669;text-decoration:none;">Unsubscribe</a> from these updates.
       </p>
     </div>
   </div>

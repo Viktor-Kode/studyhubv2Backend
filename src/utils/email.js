@@ -2,11 +2,11 @@ import { sendEmail as sendHtmlEmail } from '../services/emailService.js';
 import { getEnv } from '../config/env.js';
 
 const sendEmail = async (options) => {
-    if (!getEnv('BREVO_API_KEY')) {
+    if (!getEnv('RESEND_API_KEY')) {
         if (getEnv('NODE_ENV') === 'production') {
-            console.error('❌ CRITICAL: BREVO_API_KEY missing in production!');
+            console.error('❌ CRITICAL: RESEND_API_KEY missing in production!');
         } else {
-            console.warn('⚠️ Warning: BREVO_API_KEY not set. Email delivery disabled.');
+            console.warn('⚠️ Warning: RESEND_API_KEY not set. Email delivery disabled.');
         }
         return;
     }
@@ -22,7 +22,7 @@ const sendEmail = async (options) => {
             html
         });
     } catch (error) {
-        console.error('❌ Email failed to send via Brevo:', error.message);
+        console.error('❌ Email failed to send via Resend:', error.message);
     }
 };
 
