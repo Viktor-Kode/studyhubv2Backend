@@ -9,12 +9,11 @@ const FROM_NAME = 'StudyHelp';
 export const sendEmail = async ({ to, subject, html }) => {
     try {
         if (!RESEND_API_KEY) {
-            console.warn('[Email] RESEND_API_KEY not set. Skipping send.');
-            return { success: false, error: 'Email service not configured' };
+            console.error('[Email] Error: RESEND_API_KEY missing in backend environment.');
+            return { success: false, error: 'Email service not configured on server' };
         }
 
         const resend = new Resend(RESEND_API_KEY);
-        
         const { data, error } = await resend.emails.send({
             from: `${FROM_NAME} <${FROM_EMAIL}>`,
             to,
@@ -23,14 +22,13 @@ export const sendEmail = async ({ to, subject, html }) => {
         });
 
         if (error) {
-            console.error('[Email] Resend error:', error);
-            return { success: false, error: error.message || 'Send failed' };
+            console.error('[Email] Resend API error:', JSON.stringify(error, null, 2));
+            return { success: false, error: error.message || 'Resend send failed' };
         }
 
-        console.log('[Email] Sent successfully. ID:', data.id);
-        return { success: true, id: data.id };
+        return { success: true, id: data?.id };
     } catch (err) {
-        console.error('[Email] Failed:', err.message);
+        console.error('[Email] Server crash during send:', err);
         return { success: false, error: err.message };
     }
 };
