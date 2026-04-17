@@ -97,6 +97,8 @@ const allowedOrigins = [
   'https://studyhubv2-self.vercel.app',
   'https://studyhelp-zyqw.onrender.com',
   'https://mozilla.github.io',
+  'https://studyhelp.site',
+  'https://www.studyhelp.site',
 ].filter(Boolean);
 
 app.use(cors({
