@@ -422,7 +422,7 @@ export const getCBTResults = async (req, res) => {
 };
 
 export const explainQuestion = async (req, res) => {
-    const { question, correctAnswer, options = [] } = req.body;
+    const { question, correctAnswer, options = [], stream = false } = req.body;
     if (!question || !correctAnswer) {
         return res.status(400).json({ status: 'error', message: 'Missing required fields' });
     }
@@ -435,7 +435,15 @@ export const explainQuestion = async (req, res) => {
 
         // 1. Check Cache First (Doesn't cost a credit)
         const cached = await ExplanationCache.findOne({ questionHash: qHash });
-        if (cached) return res.status(200).json({ status: 'success', explanation: cached.explanation });
+        if (cached) {
+            if (stream) {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.write(`data: ${JSON.stringify({ content: cached.explanation })}\n\n`);
+                res.write('data: [DONE]\n\n');
+                return res.end();
+            }
+            return res.status(200).json({ status: 'success', explanation: cached.explanation });
+        }
 
         // 2. Check Plan Limit (Only for new generations)
         const user = await User.findById(studentId);
@@ -464,6 +472,41 @@ export const explainQuestion = async (req, res) => {
         Instruction: Briefly explain (in 3-4 sentences) why "${correctAnswer}" is the correct answer. 
         Focus on the core concept and logic. Help the student understand the principle so they don't make similar mistakes.`;
 
+        if (stream) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+
+            const streamResponse = await aiClient.chatCompletion({
+                model: selectedModel.id,
+                messages: [{ role: "user", content: prompt }],
+                max_tokens: 400,
+                temperature: 0.5,
+                stream: true
+            });
+
+            let fullExplanation = '';
+            for await (const chunk of streamResponse) {
+                const content = chunk.choices[0]?.delta?.content || '';
+                if (content) {
+                    fullExplanation += content;
+                    res.write(`data: ${JSON.stringify({ content })}\n\n`);
+                }
+            }
+
+            // Save to Cache after streaming
+            await ExplanationCache.create({
+                questionHash: qHash,
+                questionText: question,
+                correctAnswer,
+                explanation: fullExplanation
+            });
+
+            await incrementAIUsage(studentId);
+            res.write('data: [DONE]\n\n');
+            return res.end();
+        }
+
         const response = await aiClient.chatCompletion({
             model: selectedModel.id,
             messages: [{ role: "user", content: prompt }],
@@ -487,6 +530,12 @@ export const explainQuestion = async (req, res) => {
         return res.status(200).json({ status: 'success', explanation });
     } catch (error) {
         console.error('Explanation Error:', error);
+        if (stream && !res.headersSent) {
+            return res.status(500).json({ error: 'Failed to generate explanation', details: error.message });
+        } else if (stream) {
+            res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+            return res.end();
+        }
         res.status(500).json({ error: 'Failed to generate explanation', details: error.message });
     }
 };

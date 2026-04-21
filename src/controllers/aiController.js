@@ -18,7 +18,7 @@ import { parsePdfBuffer } from '../utils/parsePdf.js';
  * Controller to generate study notes.
  */
 export const generateNotes = async (req, res) => {
-  const { text, modelId } = req.body;
+  const { text, modelId, stream = false } = req.body;
 
   if (!text || text.trim().length < 50) {
     return res.status(400).json({
@@ -32,7 +32,37 @@ export const generateNotes = async (req, res) => {
 
     const textForModel = sampleStudyMaterial(text.trim(), 12000);
 
-    console.log(`📝 Generating Notes for text length: ${text.length} (model input ${textForModel.length}) using model: ${selectedModel.id}`);
+    console.log(`📝 Generating Notes for text length: ${text.length} (model input ${textForModel.length}) using model: ${selectedModel.id} (stream=${stream})`);
+
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const streamResponse = await aiClient.chatCompletion({
+        model: selectedModel.id,
+        messages: [{ role: "user", content: notesPrompt(textForModel) }],
+        max_tokens: 2000,
+        temperature: 0.3,
+        stream: true
+      });
+
+      let fullNotes = '';
+      for await (const chunk of streamResponse) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullNotes += content;
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
+      }
+
+      // After generation, increment usage and update streak
+      await incrementAIUsage(req.user._id);
+      await updateStreak(req.user._id, 'question_generator');
+
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
 
     const response = await aiClient.chatCompletion({
       model: selectedModel.id,
@@ -59,6 +89,12 @@ export const generateNotes = async (req, res) => {
 
   } catch (error) {
     console.error("❌ generateNotes Error Details:", error);
+    if (stream && !res.headersSent) {
+      return res.status(500).json({ success: false, message: error.message || "Failed to generate notes" });
+    } else if (stream) {
+      res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+      return res.end();
+    }
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to generate notes"
@@ -128,7 +164,7 @@ export const deleteStudyNote = async (req, res) => {
  * Controller to generate quiz questions.
  */
 export const generateQuiz = async (req, res) => {
-  const { text, subject, modelId, amount = 5, questionType = 'multiple-choice', fileName, forceNew = false } = req.body;
+  const { text, subject, modelId, amount = 5, questionType = 'multiple-choice', fileName, forceNew = false, stream = false } = req.body;
   const userId = req.user._id;
 
   if (!text || text.trim().length < 50) {
@@ -184,9 +220,113 @@ export const generateQuiz = async (req, res) => {
       default: typeInstructions = 'multiple-choice questions';
     }
 
+    const aiPrompt = quizPrompt(textForModel, questionCount, typeInstructions, excludeQuestionContents.slice(0, 20));
+
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const streamResponse = await aiClient.chatCompletion({
+        model: selectedModel.id,
+        messages: [{ role: "user", content: aiPrompt }],
+        max_tokens: Math.min(3200, 900 + questionCount * 380),
+        temperature: 0.7,
+        stream: true
+      });
+
+      let fullAiContent = '';
+      for await (const chunk of streamResponse) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullAiContent += content;
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
+      }
+
+      // After stream completes, process and save to DB in background (or just finish stream)
+      // We need to parse fullAiContent to save questions
+      try {
+        const startIdx = fullAiContent.indexOf('[');
+        const endIdx = fullAiContent.lastIndexOf(']');
+        let cleanJsonString = fullAiContent;
+        if (startIdx !== -1 && endIdx !== -1) {
+          cleanJsonString = fullAiContent.substring(startIdx, endIdx + 1);
+        } else {
+          cleanJsonString = fullAiContent.replace(/```json|```/g, "").trim();
+        }
+
+        const parsedQuestions = JSON.parse(cleanJsonString);
+        const formattedQuestions = parsedQuestions.map((q) => {
+          const options = q.options || q.choices || q.answers || [];
+          let correctAnswer = q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : (q.correct_answer !== undefined ? q.correct_answer : (q.modelAnswer !== undefined ? q.modelAnswer : q.model_answer)));
+
+          if (typeof correctAnswer === 'string' && options.length > 0) {
+            let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
+            if (idx === -1) {
+              const trimmed = correctAnswer.trim().toLowerCase();
+              if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+                idx = parseInt(trimmed);
+              } else if (trimmed.length === 1) {
+                const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+                if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
+                  idx = letterMap[trimmed];
+                }
+              }
+            }
+            if (idx !== -1) correctAnswer = idx;
+          }
+
+          return {
+            teacherId: userId,
+            question: q.question || q.content || q.text || q.prompt || q.questionText || "",
+            options: options,
+            correctAnswer: correctAnswer,
+            knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
+            subject: subject || "General Study",
+            type: questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-blank' ? 'fill-blank' : questionType))
+          };
+        });
+
+        const savedQuestions = await Question.insertMany(formattedQuestions);
+        const session = new QuizSession({
+          userId,
+          title: `${questionType.charAt(0).toUpperCase() + questionType.slice(1)} Quiz - ${new Date().toLocaleDateString()}`,
+          questionType,
+          questionCount: savedQuestions.length,
+          questions: savedQuestions.map(q => q._id)
+        });
+        await session.save();
+
+        if (existingDoc) {
+          existingDoc.quizSessionIds.push(session._id);
+          await existingDoc.save();
+        } else {
+          await DocumentHash.create({
+            hash: textHash,
+            userId,
+            fileName: fileName || 'unknown',
+            quizSessionIds: [session._id]
+          });
+        }
+
+        await incrementAIUsage(req.user._id);
+        await updateStreak(req.user._id, 'question_generator');
+
+        // Send final metadata
+        res.write(`data: ${JSON.stringify({ sessionId: session._id, done: true, questions: savedQuestions })}\n\n`);
+      } catch (err) {
+        console.error("❌ generateQuiz Parsing Error:", err.message);
+        res.write(`data: ${JSON.stringify({ error: "Failed to parse generated questions. Please try again." })}\n\n`);
+      }
+
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+
     const response = await aiClient.chatCompletion({
       model: selectedModel.id,
-      messages: [{ role: "user", content: quizPrompt(textForModel, questionCount, typeInstructions, excludeQuestionContents.slice(0, 20)) }],
+      messages: [{ role: "user", content: aiPrompt }],
       max_tokens: Math.min(3200, 900 + questionCount * 380),
       temperature: 0.7,
     });
@@ -277,6 +417,12 @@ export const generateQuiz = async (req, res) => {
 
   } catch (error) {
     console.error("❌ generateQuiz Error:", error.message);
+    if (stream && !res.headersSent) {
+      return res.status(500).json({ success: false, message: error.message || "Failed to generate quiz" });
+    } else if (stream) {
+      res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+      return res.end();
+    }
     return res.status(500).json({ success: false, message: error.message || "Failed to generate quiz" });
   }
 };
@@ -322,7 +468,7 @@ export const deleteQuizSession = async (req, res) => {
 };
 
 export const chatWithTutor = async (req, res) => {
-  const { message, context, chatHistory = [], modelId } = req.body;
+  const { message, context, chatHistory = [], modelId, stream = false } = req.body;
 
   if (!message) {
     return res.status(400).json({ success: false, message: 'Message is required' });
@@ -347,6 +493,35 @@ Do not number them or add any text before the [[ brackets.`;
       { role: "user", content: message }
     ];
 
+    console.log(`💬 Tutor Chat: stream=${stream} using ${selectedModel.id}`);
+
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const streamResponse = await aiClient.chatCompletion({
+        model: selectedModel.id,
+        messages,
+        max_tokens: 1200,
+        temperature: 0.7,
+        stream: true
+      });
+
+      for await (const chunk of streamResponse) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
+      }
+
+      await incrementAIUsage(req.user._id);
+      await updateStreak(req.user._id, 'question_generator');
+
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+
     const response = await aiClient.chatCompletion({
       model: selectedModel.id,
       messages,
@@ -368,6 +543,13 @@ Do not number them or add any text before the [[ brackets.`;
       streak: streak ? { current: streak.currentStreak || 0, longest: streak.longestStreak || 0, studiedToday: lastDate === today } : null
     });
   } catch (error) {
+    console.error("❌ chatWithTutor Error:", error);
+    if (stream && !res.headersSent) {
+      return res.status(500).json({ success: false, message: error.message || "Tutor offline" });
+    } else if (stream) {
+      res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+      return res.end();
+    }
     return res.status(500).json({ success: false, message: error.message || "Tutor offline" });
   }
 };
@@ -531,12 +713,93 @@ export const generateQuestionsFromPDF = async (req, res) => {
     const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
 
     // 3. Generate questions using AI
-    console.log(`📝 Generating ${numberOfQuestions} questions from PDF for user ${userId}`);
+    console.log(`📝 Generating ${numberOfQuestions} questions from PDF for user ${userId} (stream=${req.body.stream})`);
     const textForModel = sampleStudyMaterial(text.trim(), 10000);
+    const aiPrompt = quizPrompt(textForModel, numberOfQuestions, typeInstructions);
+
+    if (req.body.stream === 'true' || req.body.stream === true) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      const streamResponse = await aiClient.chatCompletion({
+        model: selectedModel.id,
+        messages: [{ role: "user", content: aiPrompt }],
+        max_tokens: Math.min(3200, 900 + Number(numberOfQuestions) * 380),
+        temperature: 0.7,
+        stream: true
+      });
+
+      let fullAiContent = '';
+      for await (const chunk of streamResponse) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          fullAiContent += content;
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
+      }
+
+      try {
+        const startIdx = fullAiContent.indexOf('[');
+        const endIdx = fullAiContent.lastIndexOf(']');
+        let cleanJsonString = fullAiContent;
+        if (startIdx !== -1 && endIdx !== -1) {
+          cleanJsonString = fullAiContent.substring(startIdx, endIdx + 1);
+        } else {
+          cleanJsonString = fullAiContent.replace(/```json|```/g, "").trim();
+        }
+
+        const parsedQuestions = JSON.parse(cleanJsonString);
+        const formattedQuestions = parsedQuestions.map((q) => {
+          const options = q.options || q.choices || q.answers || [];
+          let correctAnswer = q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : (q.correct_answer !== undefined ? q.correct_answer : (q.modelAnswer !== undefined ? q.modelAnswer : q.model_answer)));
+
+          if (typeof correctAnswer === 'string' && options.length > 0) {
+            let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
+            if (idx === -1) {
+              const trimmed = correctAnswer.trim().toLowerCase();
+              if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+                idx = parseInt(trimmed);
+              } else if (trimmed.length === 1) {
+                const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
+                if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
+                  idx = letterMap[trimmed];
+                }
+              }
+            }
+            if (idx !== -1) correctAnswer = idx;
+          }
+
+          return {
+            teacherId: userId,
+            question: q.question || q.content || q.text || q.prompt || q.questionText || "",
+            options: options,
+            correctAnswer: correctAnswer,
+            knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
+            subject: subject || "General Study",
+            difficulty: difficulty,
+            type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-gap' ? 'fill-blank' : questionType))),
+            totalMarks: parseInt(marksPerQuestion) || 1,
+            source: 'AI'
+          };
+        });
+
+        const savedQuestions = await Question.insertMany(formattedQuestions);
+        await incrementAIUsage(req.user._id);
+
+        res.write(`data: ${JSON.stringify({ questions: savedQuestions, done: true })}\n\n`);
+      } catch (err) {
+        console.error("❌ generateQuestionsFromPDF Parsing Error:", err.message);
+        res.write(`data: ${JSON.stringify({ error: "Failed to parse generated questions." })}\n\n`);
+      }
+
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
 
     const aiResponse = await aiClient.chatCompletion({
       model: selectedModel.id,
-      messages: [{ role: "user", content: quizPrompt(textForModel, numberOfQuestions, typeInstructions) }],
+      messages: [{ role: "user", content: aiPrompt }],
       max_tokens: Math.min(3200, 900 + Number(numberOfQuestions) * 380),
       temperature: 0.7,
     });
