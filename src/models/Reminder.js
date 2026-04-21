@@ -22,7 +22,7 @@ const reminderSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ['deadline', 'study', 'exam', 'other'],
+            enum: ['deadline', 'study', 'exam', 'assignment', 'class', 'other'],
             default: 'study'
         },
         completed: {
