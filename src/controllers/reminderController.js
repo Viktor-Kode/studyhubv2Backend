@@ -1,5 +1,4 @@
 import Reminder from '../models/Reminder.js';
-import { sendTimetableWhatsApp, sendWhatsAppText } from '../services/twilioService.js';
 
 export const getReminders = async (req, res) => {
     try {
@@ -46,44 +45,3 @@ export const deleteReminder = async (req, res) => {
     }
 };
 
-export const sendWhatsAppNotification = async (req, res) => {
-    try {
-        const { phoneNumber, message } = req.body;
-        if (!phoneNumber || !message) {
-            return res.status(400).json({ success: false, message: 'Phone number and message are required' });
-        }
-
-        const result = await sendWhatsAppText({ to: phoneNumber, body: message });
-
-        if (!result.success) {
-            return res.status(500).json({ success: false, message: result.error });
-        }
-
-        res.status(200).json({ success: true, sid: result.sid });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-export const sendTwilioTimetableReminder = async (req, res) => {
-    try {
-        const { to, dateLabel, timeLabel } = req.body;
-
-        if (!to || !dateLabel || !timeLabel) {
-            return res.status(400).json({
-                success: false,
-                message: 'to, dateLabel and timeLabel are required',
-            });
-        }
-
-        const result = await sendTimetableWhatsApp({ to, dateLabel, timeLabel });
-
-        if (!result.success) {
-            return res.status(500).json({ success: false, message: result.error });
-        }
-
-        res.status(200).json({ success: true, sid: result.sid });
-    } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
-    }
-};

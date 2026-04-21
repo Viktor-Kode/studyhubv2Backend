@@ -1,20 +1,20 @@
 import cron from 'node-cron';
 import Reminder from '../models/Reminder.js';
 import User from '../models/User.js';
-import { sendWhatsAppText } from '../services/twilioService.js';
+import { sendEmail, reminderEmailTemplate } from '../services/emailService.js';
 import { parseReminderWallClockToUtc } from '../utils/reminderTime.js';
 
-// Run every minute to check due reminders and send WhatsApp messages
+// Run every minute to check due reminders and send Email messages
 cron.schedule(
   '* * * * *',
   async () => {
     const now = new Date();
 
     try {
-      // Fetch reminders that can send WhatsApp
+      // Fetch reminders that can send Email
       const reminders = await Reminder.find({
         completed: false,
-        $or: [{ whatsappEnabled: true }, { sendWhatsApp: true }],
+        emailEnabled: true,
       }).lean();
 
       if (!reminders.length) return;
@@ -35,73 +35,54 @@ cron.schedule(
             continue;
           }
 
-          // Determine destination WhatsApp number
-          let to = reminder.whatsappNumber;
-          if (!to) {
-            const user = await User.findById(reminder.userId).select('phoneNumber phone').lean();
-            to = user?.phone || user?.phoneNumber;
-          }
+          // Determine destination Email address
+          const user = await User.findById(reminder.userId).select('email').lean();
+          const to = user?.email;
 
           if (!to) continue;
 
-          // Build common message body
-          const baseLines = [
-            reminder.title || 'Upcoming task',
-            '',
-            `Date: ${reminder.date}`,
-            `Time: ${reminder.time}`,
-          ];
-
-          if (reminder.subject) baseLines.push(`Subject: ${reminder.subject}`);
-          if (reminder.location) baseLines.push(`Location: ${reminder.location}`);
-          if (reminder.description) {
-            baseLines.push('', reminder.description);
-          }
-
-          baseLines.push('', 'studyhelp.com');
-
           // 1) Send BEFORE reminder time (notifyBefore minutes)
-          if (!reminder.whatsappBeforeNotifiedAt && now >= notifyTime) {
-            const beforeLines = [
-              'StudyHelp Reminder (upcoming)',
-              '',
-              ...baseLines,
-            ];
+          if (!reminder.emailBeforeNotifiedAt && now >= notifyTime && now < eventTime) {
+            const html = reminderEmailTemplate({
+              ...reminder,
+              isNow: false
+            });
 
-            const beforeBody = beforeLines.join('\n');
-            const beforeResult = await sendWhatsAppText({ to, body: beforeBody });
-            if (!beforeResult.success) {
+            const subject = `Reminder: ${reminder.title || 'Upcoming task'}`;
+            const result = await sendEmail({ to, subject, html });
+
+            if (!result.success) {
               console.error(
-                `[ReminderJobs] Failed to send BEFORE WhatsApp for reminder ${reminder._id}:`,
-                beforeResult.error,
+                `[ReminderJobs] Failed to send BEFORE Email for reminder ${reminder._id}:`,
+                result.error,
               );
             } else {
               await Reminder.updateOne(
                 { _id: reminder._id },
-                { $set: { whatsappBeforeNotifiedAt: new Date() } },
+                { $set: { emailBeforeNotifiedAt: new Date() } },
               );
             }
           }
 
           // 2) Send AT the reminder time
-          if (!reminder.whatsappAtTimeNotifiedAt && now >= eventTime) {
-            const atLines = [
-              'StudyHelp Reminder (now)',
-              '',
-              ...baseLines,
-            ];
+          if (!reminder.emailAtTimeNotifiedAt && now >= eventTime) {
+            const html = reminderEmailTemplate({
+              ...reminder,
+              isNow: true
+            });
 
-            const atBody = atLines.join('\n');
-            const atResult = await sendWhatsAppText({ to, body: atBody });
-            if (!atResult.success) {
+            const subject = `StudyHelp Reminder: ${reminder.title || 'Task starting now'}`;
+            const result = await sendEmail({ to, subject, html });
+
+            if (!result.success) {
               console.error(
-                `[ReminderJobs] Failed to send AT-TIME WhatsApp for reminder ${reminder._id}:`,
-                atResult.error,
+                `[ReminderJobs] Failed to send AT-TIME Email for reminder ${reminder._id}:`,
+                result.error,
               );
             } else {
               await Reminder.updateOne(
                 { _id: reminder._id },
-                { $set: { whatsappAtTimeNotifiedAt: new Date() } },
+                { $set: { emailAtTimeNotifiedAt: new Date() } },
               );
             }
           }
@@ -116,5 +97,5 @@ cron.schedule(
   { timezone: 'Africa/Lagos' },
 );
 
-console.log('⏰ Reminder WhatsApp cron job registered (every minute, Africa/Lagos)');
+console.log('⏰ Reminder Email cron job registered (every minute, Africa/Lagos)');
 

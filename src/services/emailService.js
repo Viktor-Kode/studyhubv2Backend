@@ -192,3 +192,67 @@ export const teacherUpgradeEmailTemplate = () => `
 </body>
 </html>
 `;
+
+export const reminderEmailTemplate = ({ title, date, time, subject, location, description, isNow }) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#f6f9fc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="max-width:600px;margin:0 auto;padding:40px 20px;">
+    <div style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:24px 24px 0 0;padding:40px;text-align:center;">
+      <h1 style="color:white;font-size:24px;font-weight:800;margin:0;">StudyHelp Reminder</h1>
+      <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:8px 0 0;">${isNow ? "It's time for your task!" : "Upcoming task scheduled soon"}</p>
+    </div>
+    
+    <div style="background-color:#ffffff;padding:40px;border-radius:0 0 24px 24px;border:1px solid #e2e8f0;border-top:none;box-shadow:0 10px 25px rgba(0,0,0,0.05);">
+      <h2 style="font-size:20px;font-weight:700;color:#1e293b;margin:0 0 20px;">${title || 'Untitled Task'}</h2>
+      
+      <div style="background-color:#f8fafc;border-radius:12px;padding:20px;margin-bottom:24px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="padding:4px 0;color:#64748b;font-size:14px;width:80px;">Date:</td>
+            <td style="padding:4px 0;color:#1e293b;font-size:14px;font-weight:600;">${date}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;color:#64748b;font-size:14px;">Time:</td>
+            <td style="padding:4px 0;color:#1e293b;font-size:14px;font-weight:600;">${time}</td>
+          </tr>
+          ${subject ? `
+          <tr>
+            <td style="padding:4px 0;color:#64748b;font-size:14px;">Subject:</td>
+            <td style="padding:4px 0;color:#1e293b;font-size:14px;font-weight:600;">${subject}</td>
+          </tr>` : ''}
+          ${location ? `
+          <tr>
+            <td style="padding:4px 0;color:#64748b;font-size:14px;">Location:</td>
+            <td style="padding:4px 0;color:#1e293b;font-size:14px;font-weight:600;">${location}</td>
+          </tr>` : ''}
+        </table>
+      </div>
+
+      ${description ? `
+      <div style="margin-bottom:24px;">
+        <p style="color:#64748b;font-size:14px;margin:0 0 8px;">Description:</p>
+        <p style="color:#334155;font-size:15px;line-height:1.6;margin:0;">${description}</p>
+      </div>` : ''}
+
+      <div style="text-align:center;margin-top:32px;">
+        <a href="https://www.studyhelp.site/dashboard/timetable" 
+           style="display:inline-block;background-color:#3b82f6;color:white;font-size:16px;font-weight:600;padding:14px 28px;border-radius:12px;text-decoration:none;">
+          View Timetable
+        </a>
+      </div>
+      
+      <hr style="border:none;border-top:1px solid #f1f5f9;margin:32px 0;">
+      
+      <p style="font-size:12px;color:#94a3b8;text-align:center;margin:0;">
+        You're receiving this because you set a reminder on StudyHelp. You can manage your notifications in your account settings.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+`;
