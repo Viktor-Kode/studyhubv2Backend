@@ -63,7 +63,7 @@ const extractQuestionsHeuristically = (text, requestedCount = 60) => {
 
   while (i < lines.length && questions.length < requestedCount) {
     const line = lines[i];
-    const qMatch = line.match(/^(\d+[\).\s-]+|Q(?:uestion)?\s*\d+[:.)\s-]+)(.+)$/i);
+    const qMatch = line.match(/^(\d+[\).\s]+|Q(?:uestion)?\s*\d+[:.)\s]+|\*\s*\d+\.?)(.+)$/i);
 
     if (!qMatch) {
       i += 1;
@@ -93,7 +93,7 @@ const extractQuestionsHeuristically = (text, requestedCount = 60) => {
     }
 
     if (questionText) {
-      if (optionHits >= 3 && optionBag.A && optionBag.B) {
+      if (optionHits >= 2 && (optionBag.A || optionBag.B)) {
         questions.push({
           type: 'objective',
           question: questionText,
@@ -150,13 +150,21 @@ export const extractQuestionsFromPDF = async (req, res) => {
     let rawText = req.body?.text;
 
     if (!rawText && req.file) {
-      const parsed = await parsePdfBuffer(req.file.buffer);
-      rawText = parsed.text;
+      try {
+        const parsed = await parsePdfBuffer(req.file.buffer);
+        rawText = parsed.text;
+        console.log(`[PDF CBT] Extracted ${rawText?.length || 0} chars from PDF`);
+      } catch (parseErr) {
+        console.error('[PDF CBT] parsePdfBuffer failed:', parseErr.message);
+        return res.status(400).json({
+          error: `Unable to read this PDF file. ${parseErr.message}. Please try converting to .txt or .docx format instead.`,
+        });
+      }
     }
 
     if (!rawText || rawText.trim().length < 50) {
       return res.status(400).json({
-        error: 'Could not extract enough text from this document. If it is a scanned image or handwritten, please wait for the OCR to finish or try a clearer file.',
+        error: `Unable to read this PDF file. It appears to be scanned or image-based with no extractable text. Please convert to .txt or .docx format instead.`,
       });
     }
 
