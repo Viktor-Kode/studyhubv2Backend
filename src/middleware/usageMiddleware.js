@@ -7,7 +7,7 @@ export const checkAIUsage = async (req, res, next) => {
     try {
         let user = await User.findById(req.user.id);
         if (!user) {
-            return res.status(401).json({ error: 'User not found' });
+            return res.status(401).json({ error: 'User not found', message: 'User not found' });
         }
         user = await expireStaleActiveSubscription(user);
 
@@ -72,7 +72,7 @@ export const checkFlashcardUsage = async (req, res, next) => {
     let user = await User.findById(req.user.id);
 
     if (!user) {
-        return res.status(401).json({ error: 'User not found' });
+        return res.status(401).json({ error: 'User not found', message: 'User not found' });
     }
     user = await expireStaleActiveSubscription(user);
 

@@ -475,6 +475,7 @@ export const chatWithTutor = async (req, res) => {
   }
 
   try {
+    console.log(`💬 chatWithTutor: msg="${message.substring(0, 30)}...", model=${modelId}, stream=${stream}, history=${chatHistory?.length}`);
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
     const contextForModel = context
       ? sampleStudyMaterial(String(context), 8000)
