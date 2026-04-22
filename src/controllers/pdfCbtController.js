@@ -147,15 +147,16 @@ ${rawContent}`;
 
 export const extractQuestionsFromPDF = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No PDF uploaded' });
-    }
+    let rawText = req.body?.text;
 
-    const { text: rawText } = await parsePdfBuffer(req.file.buffer);
+    if (!rawText && req.file) {
+      const parsed = await parsePdfBuffer(req.file.buffer);
+      rawText = parsed.text;
+    }
 
     if (!rawText || rawText.trim().length < 50) {
       return res.status(400).json({
-        error: 'Could not extract text from this PDF. Make sure it is not a scanned image.',
+        error: 'Could not extract enough text from this document. If it is a scanned image or handwritten, please wait for the OCR to finish or try a clearer file.',
       });
     }
 
