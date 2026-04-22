@@ -1,5 +1,6 @@
 import { parsePdfBuffer } from '../utils/parsePdf.js';
 import fetch from 'node-fetch';
+import { getEnv } from '../config/env.js';
 
 const cleanPdfText = (text) => {
   return text
@@ -131,7 +132,7 @@ ${rawContent}`;
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      Authorization: `Bearer ${getEnv('DEEPSEEK_API_KEY')}`,
     },
     body: JSON.stringify({
       model: 'deepseek-chat',
@@ -223,7 +224,7 @@ ${truncated}`;
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+          Authorization: `Bearer ${getEnv('DEEPSEEK_API_KEY')}`,
         },
         body: JSON.stringify({
           model: 'deepseek-chat',
