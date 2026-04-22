@@ -1,7 +1,8 @@
 import multer from 'multer';
-import cloudinaryStorage from 'multer-storage-cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
 import cloudinary from './cloudinary.js';
-const storage = cloudinaryStorage({
+
+const storage = new CloudinaryStorage({
   cloudinary,
   params: async (req, file) => ({
     folder: 'studyhelp-library',
