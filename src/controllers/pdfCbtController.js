@@ -246,10 +246,16 @@ ${truncated}`;
 
     let parsed;
     try {
-      parsed = parseAiJson(content);
-    } catch (_parseError) {
-      const repairedContent = await requestJsonRepair(content);
-      parsed = parseAiJson(repairedContent);
+      try {
+        parsed = parseAiJson(content);
+      } catch (_parseError) {
+        const repairedContent = await requestJsonRepair(content);
+        parsed = parseAiJson(repairedContent);
+      }
+    } catch (parseError) {
+      console.error('[PDF CBT] JSON Parsing failed even after repair:', parseError.message);
+      // If AI parsing fails, we continue with empty aiQuestions to trigger heuristic fallback below
+      parsed = { questions: [] };
     }
 
     const aiQuestions = Array.isArray(parsed?.questions) ? parsed.questions : [];
