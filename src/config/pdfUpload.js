@@ -1,16 +1,17 @@
 import multer from 'multer';
-import pkg from 'multer-storage-cloudinary';
-const { CloudinaryStorage } = pkg;
+import multerStorageCloudinary from 'multer-storage-cloudinary';
 import cloudinary from './cloudinary.js';
 
-const storage = new CloudinaryStorage({
+const storage = multerStorageCloudinary({
   cloudinary,
-  params: async (req, file) => ({
-    folder: 'studyhelp-library',
-    resource_type: 'raw', // store as raw so URLs are stable and work for any file type
-    public_id: `${Date.now()}-${(file.originalname || 'doc').replace(/\s+/g, '-')}`,
-    access_mode: 'public',
-  }),
+  params: (req, file, cb) => {
+    cb(null, {
+      folder: 'studyhelp-library',
+      resource_type: 'raw', // store as raw so URLs are stable and work for any file type
+      public_id: `${Date.now()}-${(file.originalname || 'doc').replace(/\s+/g, '-')}`,
+      access_mode: 'public',
+    });
+  },
 });
 
 export const pdfUpload = multer({
