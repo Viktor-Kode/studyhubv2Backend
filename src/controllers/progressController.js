@@ -161,7 +161,7 @@ export const getLeaderboard = async (req, res) => {
         const userId = String(req.user._id);
 
         const topProgress = await UserProgress.find()
-            .sort({ weeklyXP: -1 })
+            .sort({ xp: -1 })
             .limit(80)
             .lean();
 
@@ -215,7 +215,7 @@ export const getLeaderboard = async (req, res) => {
             });
         }
 
-        rows.sort((a, b) => b.weeklyXP - a.weeklyXP || b.totalXP - a.totalXP);
+        rows.sort((a, b) => b.totalXP - a.totalXP || b.weeklyXP - a.weeklyXP);
 
         const leaderboard = rows.map((row, i) => ({
             ...row,
