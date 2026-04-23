@@ -18,6 +18,8 @@ const userProgressSchema = new mongoose.Schema({
     badges: [badgeSchema],
     weeklyXP: { type: Number, default: 0 },
     weekStart: { type: String, default: null },
+    dailyXP: { type: Number, default: 0 },
+    dayStart: { type: String, default: null },
     totalCBTDone: { type: Number, default: 0 },
     totalQuestionsAnswered: { type: Number, default: 0 },
     totalTopicsStudied: { type: Number, default: 0 },

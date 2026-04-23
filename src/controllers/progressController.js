@@ -76,6 +76,12 @@ export const awardXP = async (userId, action, metadata = {}) => {
             progress.weekStart = weekStart;
         }
 
+        const todayStr = now.toISOString().split('T')[0];
+        if (progress.dayStart !== todayStr) {
+            progress.dailyXP = 0;
+            progress.dayStart = todayStr;
+        }
+
         if (action === 'daily_login') {
             const today = now.toISOString().split('T')[0];
             if (progress.lastLoginDate === today) return null;
@@ -106,6 +112,7 @@ export const awardXP = async (userId, action, metadata = {}) => {
 
         progress.xp += xpToAdd;
         progress.weeklyXP += xpToAdd;
+        progress.dailyXP = (progress.dailyXP || 0) + xpToAdd;
 
         const levelInfo = getLevelFromXP(progress.xp);
         progress.level = levelInfo.level;
@@ -157,11 +164,15 @@ export const awardXPEndpoint = async (req, res) => {
 
 export const getLeaderboard = async (req, res) => {
     try {
-        const { filter = 'all', subject } = req.query;
+        const { timeframe = 'today' } = req.query;
+        let sortField = 'dailyXP';
+        if (timeframe === 'week') sortField = 'weeklyXP';
+        if (timeframe === 'lifetime') sortField = 'xp';
+
         const userId = String(req.user._id);
 
         const topProgress = await UserProgress.find()
-            .sort({ xp: -1 })
+            .sort({ [sortField]: -1 })
             .limit(80)
             .lean();
 
@@ -192,22 +203,14 @@ export const getLeaderboard = async (req, res) => {
             if (!u) continue;
             if (u.role === 'admin') continue;
 
-            if (filter === 'exam' && subject) {
-                const ex = userExamLabel(u);
-                if (!normalizeExam(ex, subject)) continue;
-            }
-            if (filter === 'subject' && subject) {
-                if (!subjectMatches(u, subject)) continue;
-            }
+
 
             rows.push({
                 userId: p.userId,
                 isMe: p.userId === userId,
                 name: u.name || 'Anonymous',
                 avatar: u.avatar || u.profile?.avatar || null,
-                examType: userExamLabel(u),
-                weeklyXP: p.weeklyXP || 0,
-                totalXP: p.xp || 0,
+                displayXP: p[sortField] || 0,
                 level: p.level,
                 levelName: p.levelName,
                 badges: (p.badges || []).slice(-3),
@@ -215,7 +218,7 @@ export const getLeaderboard = async (req, res) => {
             });
         }
 
-        rows.sort((a, b) => b.totalXP - a.totalXP || b.weeklyXP - a.weeklyXP);
+        rows.sort((a, b) => b.displayXP - a.displayXP);
 
         const leaderboard = rows.map((row, i) => ({
             ...row,
@@ -234,7 +237,7 @@ export const getLeaderboard = async (req, res) => {
         res.json({
             leaderboard,
             myRank,
-            myWeeklyXP: myProgress?.weeklyXP || 0,
+            myDisplayXP: myProgress?.[sortField] || 0,
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
