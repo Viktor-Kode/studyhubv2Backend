@@ -178,7 +178,7 @@ export const getLeaderboard = async (req, res) => {
             .filter(Boolean);
 
         const users = await User.find({ _id: { $in: ids } })
-            .select('name settings role')
+            .select('name settings role avatar profile')
             .lean();
 
         const userMap = {};
@@ -204,15 +204,18 @@ export const getLeaderboard = async (req, res) => {
                 userId: p.userId,
                 isMe: p.userId === userId,
                 name: u.name || 'Anonymous',
+                avatar: u.avatar || u.profile?.avatar || null,
                 examType: userExamLabel(u),
-                weeklyXP: p.weeklyXP,
-                totalXP: p.xp,
+                weeklyXP: p.weeklyXP || 0,
+                totalXP: p.xp || 0,
                 level: p.level,
                 levelName: p.levelName,
                 badges: (p.badges || []).slice(-3),
                 streak: p.streak,
             });
         }
+
+        rows.sort((a, b) => b.weeklyXP - a.weeklyXP || b.totalXP - a.totalXP);
 
         const leaderboard = rows.map((row, i) => ({
             ...row,
