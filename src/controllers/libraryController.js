@@ -172,7 +172,7 @@ export const uploadMaterial = async (req, res) => {
     if (usedBytes + req.file.size > limitBytes) {
       // Remove uploaded file from Cloudinary since we can't keep it
       if (req.file.filename) {
-        await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'image' });
+        await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' });
       }
       return res.status(403).json({
         success: false,
@@ -271,7 +271,7 @@ export const deleteMaterial = async (req, res) => {
     if (!material) return res.status(404).json({ success: false, error: 'Not found' });
 
     if (material.publicId) {
-      await cloudinary.uploader.destroy(material.publicId, { resource_type: 'image' });
+      await cloudinary.uploader.destroy(material.publicId, { resource_type: 'raw' });
     }
 
     await LibraryMaterial.findByIdAndDelete(material._id);
@@ -587,7 +587,15 @@ export const proxyLibraryPdf = async (req, res) => {
     }).lean();
 
     if (doc) {
-      console.log(`[PDF Proxy] Found in LibraryDocument: ${doc.title}`);
+      console.log('[PDF Proxy] Found in LibraryDocument:', JSON.stringify({
+        id: doc._id,
+        title: doc.title,
+        hasFileUrl: !!doc.fileUrl,
+        fileUrl: doc.fileUrl,
+        userId: doc.userId,
+        requestedId: id,
+        requestedUserId: userIdStr,
+      }));
       fileUrl = doc.fileUrl;
       publicId = doc.publicId;
     } else {
@@ -598,7 +606,15 @@ export const proxyLibraryPdf = async (req, res) => {
       }).lean();
 
       if (legacy) {
-        console.log(`[PDF Proxy] Found in LibraryMaterial: ${legacy.title}`);
+        console.log('[PDF Proxy] Found in LibraryMaterial:', JSON.stringify({
+          id: legacy._id,
+          title: legacy.title,
+          hasFileUrl: !!legacy.fileUrl,
+          fileUrl: legacy.fileUrl,
+          userId: legacy.userId,
+          requestedId: id,
+          requestedUserId: userIdStr,
+        }));
         fileUrl = legacy.fileUrl;
         publicId = legacy.publicId;
       } else if (SharedLibraryItem) {
@@ -609,7 +625,13 @@ export const proxyLibraryPdf = async (req, res) => {
         }).lean();
 
         if (shared) {
-          console.log(`[PDF Proxy] Found in SharedLibraryItem: ${shared.title}`);
+          console.log('[PDF Proxy] Found in SharedLibraryItem:', JSON.stringify({
+            id: shared._id,
+            title: shared.title,
+            hasFileUrl: !!shared.fileUrl,
+            fileUrl: shared.fileUrl,
+            requestedId: id,
+          }));
           fileUrl = shared.fileUrl;
           publicId = shared.publicId || (shared.fileUrl ? shared.fileUrl.split('/').pop().split('.')[0] : null);
         }
