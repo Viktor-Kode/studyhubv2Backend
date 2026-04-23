@@ -11,6 +11,7 @@ const storage = cloudinaryStorage({
     resource_type: 'raw', // store as raw so URLs are stable and work for any file type
     public_id: `${Date.now()}-${(file.originalname || 'doc').replace(/\s+/g, '-')}`,
     access_mode: 'public',
+    access_control: [{ access_type: 'anonymous' }],
   }),
 });
 
