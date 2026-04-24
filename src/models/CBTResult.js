@@ -48,6 +48,11 @@ const cbtResultSchema = new mongoose.Schema({
         explanation: String,
         isCorrect: Boolean
     }],
+    sessionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'QuizSession',
+        required: false
+    },
     takenAt: {
         type: Date,
         default: Date.now

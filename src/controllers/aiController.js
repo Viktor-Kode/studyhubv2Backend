@@ -4,6 +4,7 @@ import Question from '../models/Question.js';
 import QuizSession from '../models/QuizSession.js';
 import DocumentHash from '../models/DocumentHash.js';
 import StudyNote from '../models/StudyNote.js';
+import CBTResult from '../models/CBTResult.js';
 import { AI_PROVIDERS, getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import crypto from 'crypto';
 import { createRequire } from 'module';
@@ -433,7 +434,25 @@ export const getQuizSessions = async (req, res) => {
     const sessions = await QuizSession.find({ userId })
       .populate('questions')
       .sort({ createdAt: -1 });
-    res.json({ success: true, data: sessions });
+    
+    // Fetch latest results for these sessions to show user answers/score in history
+    const sessionIds = sessions.map(s => s._id);
+    const results = await CBTResult.find({ 
+        studentId: userId, 
+        sessionId: { $in: sessionIds } 
+    }).sort({ takenAt: -1 });
+
+    const sessionsWithResults = sessions.map(session => {
+        const sessionObj = session.toObject();
+        // Find the most recent result for this session
+        const latestResult = results.find(r => r.sessionId && r.sessionId.toString() === session._id.toString());
+        if (latestResult) {
+            sessionObj.lastResult = latestResult;
+        }
+        return sessionObj;
+    });
+
+    res.json({ success: true, data: sessionsWithResults });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

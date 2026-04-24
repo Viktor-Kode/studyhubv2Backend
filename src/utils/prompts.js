@@ -10,6 +10,8 @@ export const quizPrompt = (text, amount = 3, typeInstructions = 'multiple-choice
   CRITICAL REQUIREMENT: For EVERY single question, you must provide a "knowledgeDeepDive" field. 
   This field is NOT just the answer, but a 3-4 sentence educational explanation that teaches the underlying concept. If there is a calculation, show the steps.
   
+  IMPORTANT: You must ensure 100% accuracy of the answers. Double-check your logic against the provided text before providing the final JSON. Incorrect answers are unacceptable.
+
   Each question object MUST have:
   1. "question": The clear question text.
   2. "options": Array of 4 strings (only for multiple-choice).
