@@ -14,6 +14,7 @@ import LibraryMaterial from '../models/LibraryMaterial.js';
 import UserProgress from '../models/UserProgress.js';
 import UserDailyActivity from '../models/UserDailyActivity.js';
 import ChatHistory from '../models/ChatHistory.js';
+import PaywallEvent from '../models/PaywallEvent.js';
 import { PLANS } from '../config/plans.js';
 import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
 
@@ -1364,5 +1365,74 @@ export const exportUsersCSV = async (req, res) => {
         res.send(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+};
+export const getPaywallEvents = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+        const skip = (page - 1) * limit;
+
+        const [events, totalCount, dailyStats, hottestLeads] = await Promise.all([
+            // 1. Paginated raw events
+            PaywallEvent.find()
+                .sort({ timestamp: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+
+            // 2. Total count
+            PaywallEvent.countDocuments(),
+
+            // 3. Daily counts (last 30 days)
+            PaywallEvent.aggregate([
+                {
+                    $match: {
+                        timestamp: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+                    }
+                },
+                {
+                    $group: {
+                        _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+                        count: { $sum: 1 }
+                    }
+                },
+                { $sort: { _id: 1 } }
+            ]),
+
+            // 4. Hottest leads (users who hit paywall more than once)
+            PaywallEvent.aggregate([
+                {
+                    $group: {
+                        _id: '$userEmail',
+                        userId: { $first: '$userId' },
+                        hitCount: { $sum: 1 },
+                        lastHit: { $max: '$timestamp' },
+                        actions: { $addToSet: '$action' }
+                    }
+                },
+                { $match: { hitCount: { $gt: 1 } } },
+                { $sort: { hitCount: -1 } },
+                { $limit: 20 }
+            ])
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                events,
+                totalCount,
+                dailyStats,
+                hottestLeads,
+                pagination: {
+                    page,
+                    limit,
+                    totalPages: Math.ceil(totalCount / limit)
+                }
+            }
+        });
+    } catch (error) {
+        console.error('[Admin] getPaywallEvents error:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 };

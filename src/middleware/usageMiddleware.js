@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import AIRequestLog from '../models/AIRequestLog.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
+import { logPaywallEvent } from '../utils/paywallLogger.js';
 
 // Check AI usage — runs before every AI endpoint
 export const checkAIUsage = async (req, res, next) => {
@@ -23,6 +24,16 @@ export const checkAIUsage = async (req, res, next) => {
 
         // Check AI limit
         if (user.aiUsageCount >= user.aiUsageLimit) {
+            await logPaywallEvent({
+                userId: user._id,
+                userEmail: user.email,
+                action: 'AI_LIMIT_REACHED',
+                context: {
+                    used: user.aiUsageCount,
+                    limit: user.aiUsageLimit
+                }
+            });
+
             return res.status(403).json({
                 error: 'AI limit reached',
                 message: user.subscriptionStatus === 'free'
@@ -77,6 +88,16 @@ export const checkFlashcardUsage = async (req, res, next) => {
     user = await expireStaleActiveSubscription(user);
 
     if (user.flashcardUsageCount >= user.flashcardUsageLimit) {
+        await logPaywallEvent({
+            userId: user._id,
+            userEmail: user.email,
+            action: 'FLASHCARD_LIMIT_REACHED',
+            context: {
+                used: user.flashcardUsageCount,
+                limit: user.flashcardUsageLimit
+            }
+        });
+
         return res.status(403).json({
             error: 'Flashcard generation limit reached',
             message: user.subscriptionStatus === 'free'
