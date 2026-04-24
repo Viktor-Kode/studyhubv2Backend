@@ -255,12 +255,6 @@ export const getDashboardSummary = async (req, res) => {
                     lastStudied: streakData?.lastActivityDate || streakData?.lastStudiedDate || null,
                     studiedToday
                 },
-                lastPractice: recentCbtResults[0] ? {
-                    subject: recentCbtResults[0].subject,
-                    examType: recentCbtResults[0].examType,
-                    accuracy: recentCbtResults[0].accuracy,
-                    date: recentCbtResults[0].takenAt || recentCbtResults[0].createdAt
-                } : null,
                 goals,
                 recentActivity: activityFeed
             }
