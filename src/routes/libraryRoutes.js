@@ -18,6 +18,8 @@ import {
   getRecentDocuments,
   getUploadSignature,
   finalizeUpload,
+  proxyLibraryPdf,
+  proxyLibraryFile,
 } from '../controllers/libraryController.js';
 
 const router = express.Router();
@@ -38,6 +40,10 @@ router.delete('/documents/:id', deleteDocument);
 router.get('/progress/:documentId', getProgress);
 router.post('/progress', upsertProgress);
 router.get('/recent', getRecentDocuments);
+
+// PDF/File Proxy Routes (needed for Cloudinary assets that require signatures or have CORS issues)
+router.get('/proxy-pdf/:id', proxyLibraryPdf);
+router.get('/proxy-file/:id', proxyLibraryFile);
 
 // Legacy endpoints kept for compatibility
 router.get('/', getMaterials);
