@@ -265,13 +265,27 @@ export const generateQuiz = async (req, res) => {
           if (typeof correctAnswer === 'string' && options.length > 0) {
             let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
             if (idx === -1) {
-              const trimmed = correctAnswer.trim().toLowerCase();
-              if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
-                idx = parseInt(trimmed);
-              } else if (trimmed.length === 1) {
-                const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
-                if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
-                  idx = letterMap[trimmed];
+              const trimmed = correctAnswer.trim().toUpperCase();
+              // 1. Try match at start like "A. text" or "A)" or just "A"
+              const startMatch = trimmed.match(/^([A-E])([\s\.)-]|$)/);
+              if (startMatch) {
+                const letter = startMatch[1];
+                const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
+                if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
+                  idx = letterMap[letter];
+                }
+              } else {
+                // 2. Try finding "Answer: B" or similar patterns anywhere in the string
+                const patternMatch = trimmed.match(/ANSWER[:\s]+([A-E])\b/) || trimmed.match(/\b([A-E])\b/);
+                if (patternMatch) {
+                  const letter = patternMatch[1];
+                  const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
+                  if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
+                    idx = letterMap[letter];
+                  }
+                } else if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+                   // 3. Try numeric index
+                   idx = parseInt(trimmed);
                 }
               }
             }
@@ -352,15 +366,27 @@ export const generateQuiz = async (req, res) => {
         let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
 
         if (idx === -1) {
-          const trimmed = correctAnswer.trim().toLowerCase();
-          // Try handles "0", "1", etc.
-          if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
-            idx = parseInt(trimmed);
-          } else if (trimmed.length === 1) {
-            // Try handles "A", "B", etc.
-            const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
-            if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
-              idx = letterMap[trimmed];
+          const trimmed = correctAnswer.trim().toUpperCase();
+          // 1. Try match at start like "A. text" or "A)" or just "A"
+          const startMatch = trimmed.match(/^([A-E])([\s\.)-]|$)/);
+          if (startMatch) {
+            const letter = startMatch[1];
+            const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
+            if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
+              idx = letterMap[letter];
+            }
+          } else {
+            // 2. Try finding "Answer: B" or similar patterns anywhere
+            const patternMatch = trimmed.match(/ANSWER[:\s]+([A-E])\b/) || trimmed.match(/\b([A-E])\b/);
+            if (patternMatch) {
+              const letter = patternMatch[1];
+              const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
+              if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
+                idx = letterMap[letter];
+              }
+            } else if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+               // 3. Try numeric index
+               idx = parseInt(trimmed);
             }
           }
         }
@@ -777,13 +803,26 @@ export const generateQuestionsFromPDF = async (req, res) => {
           if (typeof correctAnswer === 'string' && options.length > 0) {
             let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
             if (idx === -1) {
-              const trimmed = correctAnswer.trim().toLowerCase();
-              if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
-                idx = parseInt(trimmed);
-              } else if (trimmed.length === 1) {
-                const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
-                if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
-                  idx = letterMap[trimmed];
+              const trimmed = correctAnswer.trim().toUpperCase();
+              // 1. Try match at start
+              const startMatch = trimmed.match(/^([A-E])([\s\.)-]|$)/);
+              if (startMatch) {
+                const letter = startMatch[1];
+                const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
+                if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
+                  idx = letterMap[letter];
+                }
+              } else {
+                // 2. Try patterns
+                const patternMatch = trimmed.match(/ANSWER[:\s]+([A-E])\b/) || trimmed.match(/\b([A-E])\b/);
+                if (patternMatch) {
+                  const letter = patternMatch[1];
+                  const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
+                  if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
+                    idx = letterMap[letter];
+                  }
+                } else if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
+                  idx = parseInt(trimmed);
                 }
               }
             }
