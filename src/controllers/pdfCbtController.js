@@ -76,6 +76,7 @@ const extractQuestionsHeuristically = (text, requestedCount = 60) => {
     const optionRegex = /^([A-D])[\).:\-\s]+(.+)$/i;
     let j = i + 1;
     let optionHits = 0;
+    let foundAnswer = '';
 
     while (j < lines.length) {
       const nextLine = lines[j];
@@ -86,8 +87,13 @@ const extractQuestionsHeuristically = (text, requestedCount = 60) => {
         const key = opt[1].toUpperCase();
         optionBag[key] = opt[2].trim();
         optionHits += 1;
-      } else if (optionHits === 0 && !/^ans(wer)?[:\s-]/i.test(nextLine)) {
-        questionText = `${questionText} ${nextLine}`.trim();
+      } else {
+        const ansMatch = nextLine.match(/ans(?:wer)?[:\s-]+([A-D])\b/i);
+        if (ansMatch) {
+          foundAnswer = ansMatch[1].toUpperCase();
+        } else if (optionHits === 0 && !/^ans(wer)?[:\s-]/i.test(nextLine)) {
+          questionText = `${questionText} ${nextLine}`.trim();
+        }
       }
 
       j += 1;
@@ -99,14 +105,14 @@ const extractQuestionsHeuristically = (text, requestedCount = 60) => {
           type: 'objective',
           question: questionText,
           options: optionBag,
-          answer: 'A',
+          answer: foundAnswer || 'A',
         });
       } else {
         questions.push({
           type: 'theory',
           question: questionText,
           options: null,
-          answer: 'No model answer provided.',
+          answer: foundAnswer || 'No model answer provided.',
         });
       }
     }
@@ -266,11 +272,34 @@ ${truncated}`;
       .map((q) => {
         const hasObjectiveOptions = q?.options?.A && q?.options?.B && q?.options?.C && q?.options?.D;
         const answerText = String(q.answer || '').trim();
-        const normalizedObjectiveAnswer = answerText.toUpperCase();
-        const safeObjectiveAnswer = ['A', 'B', 'C', 'D'].includes(normalizedObjectiveAnswer)
-          ? normalizedObjectiveAnswer
-          : 'A';
+        
         const isObjective = String(q.type || '').toLowerCase() === 'objective' || hasObjectiveOptions;
+        
+        let safeAnswer = answerText;
+        if (isObjective) {
+          // Robustly extract A, B, C, or D
+          // 1. Try exact match
+          const normalized = answerText.toUpperCase();
+          if (['A', 'B', 'C', 'D'].includes(normalized)) {
+            safeAnswer = normalized;
+          } else {
+            // 2. Try match at start like "A. text" or "A)"
+            const startMatch = answerText.match(/^([A-D])[\s\.)-]/i);
+            if (startMatch) {
+              safeAnswer = startMatch[1].toUpperCase();
+            } else {
+              // 3. Try finding "Answer: B" or similar patterns
+              const patternMatch = answerText.match(/answer[:\s]+([A-D])\b/i) || answerText.match(/\b([A-D])\b/i);
+              if (patternMatch) {
+                safeAnswer = patternMatch[1].toUpperCase();
+              } else {
+                // Fallback to whatever was there if it's short, or default to A
+                safeAnswer = normalized.length === 1 && normalized >= 'A' && normalized <= 'D' ? normalized : 'A';
+              }
+            }
+          }
+        }
+
         return {
           type: isObjective ? 'objective' : 'theory',
           question: String(q.question).trim(),
@@ -282,7 +311,7 @@ ${truncated}`;
                 D: String(q.options?.D || '').trim(),
               }
             : null,
-          answer: isObjective ? safeObjectiveAnswer : answerText || 'No model answer provided.',
+          answer: safeAnswer,
         };
       });
 
