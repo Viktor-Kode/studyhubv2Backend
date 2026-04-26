@@ -12,6 +12,7 @@ import { sendNotification } from '../services/notificationService.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
 import { logUserActivity } from '../services/activityService.js';
+import { logPaywallEvent } from '../utils/paywallLogger.js';
 
 const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 
@@ -450,10 +451,21 @@ export const explainQuestion = async (req, res) => {
         const plan = user.plan || { aiExplanationsUsed: 0, aiExplanationsAllowed: 5 };
 
         if (plan.aiExplanationsUsed >= (plan.aiExplanationsAllowed || 5)) {
+            await logPaywallEvent({
+                userId: studentId,
+                userEmail: user.email,
+                action: 'AI_EXPLANATION_LIMIT_REACHED',
+                context: {
+                    used: plan.aiExplanationsUsed,
+                    limit: plan.aiExplanationsAllowed || 5
+                }
+            });
+
             return res.status(403).json({
                 error: 'AI limit reached',
                 message: 'You have used all your AI explanations for this plan. Upgrade for unlimited access!',
-                showUpgrade: true
+                showUpgrade: true,
+                code: 'AI_LIMIT_REACHED'
             });
         }
 

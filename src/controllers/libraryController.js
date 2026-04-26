@@ -7,6 +7,7 @@ import LibraryDocument from '../models/LibraryDocument.js';
 import ReadingProgress from '../models/ReadingProgress.js';
 import fetch from 'node-fetch';
 import { parsePdfBuffer } from '../utils/parsePdf.js';
+import { logPaywallEvent } from '../utils/paywallLogger.js';
 
 // SharedLibraryItem may not exist yet — import defensively
 let SharedLibraryItem = null;
@@ -56,6 +57,13 @@ export const finalizeUpload = async (req, res) => {
     if (!isPaid) {
       const currentCount = await LibraryDocument.countDocuments({ userId });
       if (currentCount >= FREE_DOCUMENT_LIMIT) {
+        await logPaywallEvent({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'LIBRARY_LIMIT_REACHED',
+          context: { limit: FREE_DOCUMENT_LIMIT, currentCount }
+        });
+
         return res.status(403).json({
           success: false,
           error: `Free users can only keep ${FREE_DOCUMENT_LIMIT} documents.`,
@@ -176,10 +184,19 @@ export const uploadMaterial = async (req, res) => {
       if (req.file.filename) {
         await cloudinary.uploader.destroy(req.file.filename, { resource_type: 'raw' });
       }
+
+      await logPaywallEvent({
+        userId: user._id,
+        userEmail: user.email,
+        action: 'LIBRARY_STORAGE_LIMIT_REACHED',
+        context: { usedBytes, fileSize: req.file.size, limitBytes }
+      });
+
       return res.status(403).json({
         success: false,
         error: `Storage limit reached. ${isPaid ? '500MB' : '50MB'} limit.`,
         showUpgrade: !isPaid,
+        code: 'library_limit',
       });
     }
 
@@ -408,6 +425,13 @@ export const createDocument = async (req, res) => {
     if (!isPaid) {
       const currentCount = await LibraryDocument.countDocuments({ userId });
       if (currentCount >= FREE_DOCUMENT_LIMIT) {
+        await logPaywallEvent({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'LIBRARY_LIMIT_REACHED',
+          context: { limit: FREE_DOCUMENT_LIMIT, currentCount }
+        });
+
         return res.status(403).json({
           success: false,
           error: `Free users can only keep ${FREE_DOCUMENT_LIMIT} documents. Upgrade to store more.`,

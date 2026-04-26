@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import CBTResult from '../models/CBTResult.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
+import { logPaywallEvent } from '../utils/paywallLogger.js';
 
 // CBT access middleware with subscription-aware logic
 export const checkCBTAccess = async (req, res, next) => {
@@ -42,6 +43,13 @@ export const checkCBTAccess = async (req, res, next) => {
 
             // Free users get 1 test per day
             if (todayTests >= 1) {
+                await logPaywallEvent({
+                    userId: user._id,
+                    userEmail: user.email,
+                    action: 'CBT_LIMIT_REACHED',
+                    context: { testsToday: todayTests }
+                });
+
                 return res.status(403).json({
                     error: 'Upgrade Required',
                     message: 'Free users get 1 CBT test per day. Upgrade for unlimited access.',
