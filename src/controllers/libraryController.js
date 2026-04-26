@@ -24,6 +24,7 @@ const FREE_DOCUMENT_LIMIT = 5;
 // GET /api/library/upload-signature
 export const getUploadSignature = async (req, res) => {
   try {
+    const timestamp = Math.round(new Date().getTime() / 1000);
     const accessControl = JSON.stringify([{ access_type: 'anonymous' }]);
     const signature = cloudinary.utils.api_sign_request(
       { timestamp, folder: 'studyhelp/library', access_control: accessControl },
