@@ -11,6 +11,7 @@ import {
   listDocuments,
   createDocument,
   getDocumentById,
+  getDocumentUrl,
   updateDocument,
   deleteDocument,
   getProgress,
@@ -35,13 +36,16 @@ router.post('/finalize-upload', finalizeUpload);
 router.get('/documents', listDocuments);
 router.post('/documents', pdfUpload.single('file'), createDocument);
 router.get('/documents/:id', getDocumentById);
+// Returns just the Cloudinary URL — frontend loads PDF directly, bypassing the proxy
+router.get('/documents/:id/url', getDocumentUrl);
 router.put('/documents/:id', updateDocument);
 router.delete('/documents/:id', deleteDocument);
 router.get('/progress/:documentId', getProgress);
 router.post('/progress', upsertProgress);
 router.get('/recent', getRecentDocuments);
 
-// PDF/File Proxy Routes (needed for Cloudinary assets that require signatures or have CORS issues)
+// Legacy proxy routes — kept for backwards compatibility but no longer called by the frontend.
+// The frontend now loads PDFs directly from Cloudinary via the fileUrl stored on each document.
 router.get('/proxy-pdf/:id', proxyLibraryPdf);
 router.get('/proxy-file/:id', proxyLibraryFile);
 

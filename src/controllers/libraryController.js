@@ -510,6 +510,50 @@ export const getDocumentById = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/library/documents/:id/url
+ *
+ * Returns the direct Cloudinary URL for a document without proxying the file.
+ * For files uploaded with anonymous access_control this is just the stored fileUrl.
+ * If the document has a publicId, a fresh signed URL is generated as a fallback.
+ *
+ * This is the permanent fix for 502 errors caused by Render's free-tier sleeping:
+ * the frontend loads the PDF directly from Cloudinary rather than routing through
+ * the backend proxy.
+ */
+export const getDocumentUrl = async (req, res) => {
+  try {
+    const userId = String(req.user._id);
+    const document = await LibraryDocument.findOne({ _id: req.params.id, userId }).lean();
+
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    if (!document.fileUrl && !document.publicId) {
+      return res.status(404).json({ success: false, error: 'No file URL available for this document' });
+    }
+
+    // Primary: use the stored fileUrl (anonymous-access Cloudinary URL)
+    let url = document.fileUrl;
+
+    // Fallback: generate a signed URL via publicId if the stored URL is missing or private
+    if (!url && document.publicId) {
+      url = cloudinary.url(document.publicId, {
+        resource_type: 'raw',
+        secure: true,
+        sign_url: true,
+      });
+    }
+
+    res.json({ success: true, url });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+
+
 // DELETE /api/library/documents/:id
 export const deleteDocument = async (req, res) => {
   try {
