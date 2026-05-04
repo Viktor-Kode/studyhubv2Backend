@@ -76,8 +76,8 @@ export const deleteResource = async (req, res) => {
 
 export const generateQuestionsFromResource = async (req, res) => {
     try {
-        const resource = await Resource.findById(req.params.id);
-        if (!resource) return res.status(404).json({ success: false, message: 'Resource not found' });
+        const resource = await Resource.findOne({ _id: req.params.id, teacherId: req.user._id });
+        if (!resource) return res.status(404).json({ success: false, message: 'Resource not found or access denied' });
 
         const prompt = `Based on the following text, generate 5 objective questions. 
     Text: ${resource.extractedText.substring(0, 4000)}
@@ -136,8 +136,8 @@ export const generateQuestionsFromResource = async (req, res) => {
 
 export const generateFlashcardsFromResource = async (req, res) => {
     try {
-        const resource = await Resource.findById(req.params.id);
-        if (!resource) return res.status(404).json({ success: false, message: 'Resource not found' });
+        const resource = await Resource.findOne({ _id: req.params.id, teacherId: req.user._id });
+        if (!resource) return res.status(404).json({ success: false, message: 'Resource not found or access denied' });
 
         const prompt = `Generate 10 flashcards (front/back) from this text: 
     ${resource.extractedText.substring(0, 4000)}
@@ -162,8 +162,8 @@ export const generateFlashcardsFromResource = async (req, res) => {
 
 export const generateSummaryFromResource = async (req, res) => {
     try {
-        const resource = await Resource.findById(req.params.id);
-        if (!resource) return res.status(404).json({ success: false, message: 'Resource not found' });
+        const resource = await Resource.findOne({ _id: req.params.id, teacherId: req.user._id });
+        if (!resource) return res.status(404).json({ success: false, message: 'Resource not found or access denied' });
 
         const prompt = `Summarize the following text into key bullet points and a concluding paragraph:
     ${resource.extractedText.substring(0, 4000)}`;
