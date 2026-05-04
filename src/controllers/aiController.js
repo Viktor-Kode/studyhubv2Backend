@@ -246,8 +246,12 @@ export const generateQuiz = async (req, res) => {
         }
       }
 
-      // After stream completes, process and save to DB in background (or just finish stream)
-      // We need to parse fullAiContent to save questions
+      // After stream completes, process and save to DB
+      console.log(`✅ AI Stream complete for quiz. Processing ${fullAiContent.length} chars...`);
+      
+      // Send a small heartbeat to keep connection alive during processing
+      res.write(`data: ${JSON.stringify({ status: 'processing' })}\n\n`);
+
       try {
         const startIdx = fullAiContent.indexOf('[');
         const endIdx = fullAiContent.lastIndexOf(']');
@@ -326,7 +330,7 @@ export const generateQuiz = async (req, res) => {
           });
         }
 
-        await incrementAIUsage(req.user._id);
+        await incrementAIUsage(req.user._id, savedQuestions.length);
         await updateStreak(req.user._id, 'question_generator');
 
         // Send final metadata
@@ -428,7 +432,7 @@ export const generateQuiz = async (req, res) => {
       });
     }
 
-    await incrementAIUsage(req.user._id);
+    await incrementAIUsage(req.user._id, savedQuestions.length);
     const streak = await updateStreak(req.user._id, 'question_generator');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
     const lastDate = streak?.lastActivityDate
@@ -788,6 +792,9 @@ export const generateQuestionsFromPDF = async (req, res) => {
         }
       }
 
+      console.log(`✅ AI Stream complete for PDF quiz. Processing ${fullAiContent.length} chars...`);
+      res.write(`data: ${JSON.stringify({ status: 'processing' })}\n\n`);
+
       try {
         const startIdx = fullAiContent.indexOf('[');
         const endIdx = fullAiContent.lastIndexOf(']');
@@ -847,7 +854,7 @@ export const generateQuestionsFromPDF = async (req, res) => {
         });
 
         const savedQuestions = await Question.insertMany(formattedQuestions);
-        await incrementAIUsage(req.user._id);
+        await incrementAIUsage(req.user._id, savedQuestions.length);
 
         res.write(`data: ${JSON.stringify({ questions: savedQuestions, done: true })}\n\n`);
       } catch (err) {
@@ -922,7 +929,7 @@ export const generateQuestionsFromPDF = async (req, res) => {
     const savedQuestions = await Question.insertMany(formattedQuestions);
 
     // Count this as one AI usage
-    await incrementAIUsage(req.user._id);
+    await incrementAIUsage(req.user._id, savedQuestions.length);
 
     return res.status(201).json({
       success: true,

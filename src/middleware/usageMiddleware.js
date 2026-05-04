@@ -69,12 +69,13 @@ export const checkAIUsage = async (req, res, next) => {
 };
 
 // Call this AFTER successful AI response — increment usage
-export const incrementAIUsage = async (userId) => {
+export const incrementAIUsage = async (userId, count = 1) => {
+    const incAmount = parseInt(count) || 1;
     await User.findByIdAndUpdate(userId, {
-        $inc: { aiUsageCount: 1 }
+        $inc: { aiUsageCount: incAmount }
     });
 
-    // Log request for rate limiting
+    // Log request for rate limiting (we still log 1 entry for the physical request)
     await AIRequestLog.create({ userId, createdAt: new Date() });
 };
 

@@ -155,7 +155,7 @@ export const generateAIQuestions = async (req, res) => {
             };
         });
         const savedQuestions = await Question.insertMany(toInsert);
-        await incrementAIUsage(req.user._id);
+        await incrementAIUsage(req.user._id, savedQuestions.length);
         res.status(200).json({ success: true, questions: savedQuestions });
     } catch (error) {
         res.status(500).json({ success: false, message: 'AI Generation failed: ' + error.message });
