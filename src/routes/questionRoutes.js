@@ -17,6 +17,6 @@ router.get('/', getQuestions);
 router.post('/', createQuestion);
 router.put('/:id', updateQuestion);
 router.delete('/:id', deleteQuestion);
-router.post('/generate-ai', generateAIQuestions);
+router.post('/generate-ai', checkAIUsage, generateAIQuestions);
 
 export default router;
