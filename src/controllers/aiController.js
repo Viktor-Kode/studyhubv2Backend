@@ -180,11 +180,13 @@ export const generateQuiz = async (req, res) => {
     const existingDoc = await DocumentHash.findOne({ hash: textHash, userId });
     let excludeQuestionContents = [];
 
+    const questionCount = Math.min(Math.max(parseInt(amount) || 5, 1), 50);
+
     if (existingDoc && existingDoc.quizSessionIds?.length > 0 && !forceNew) {
       const latestSessionId = existingDoc.quizSessionIds[existingDoc.quizSessionIds.length - 1];
       const existingSession = await QuizSession.findOne({ _id: latestSessionId, userId }).populate('questions');
-
-      if (existingSession) {
+      
+      if (existingSession && existingSession.questions.length >= questionCount) {
         return res.status(200).json({
           success: true,
           message: 'Returning existing questions.',
@@ -207,7 +209,6 @@ export const generateQuiz = async (req, res) => {
       });
     }
 
-    const questionCount = Math.min(Math.max(parseInt(amount) || 5, 1), 50);
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
 
     const textForModel = sampleStudyMaterial(text.trim(), 14000);
@@ -758,10 +759,12 @@ export const generateQuestionsFromPDF = async (req, res) => {
 
     const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
 
+    const questionCount = Math.min(Math.max(parseInt(numberOfQuestions) || 5, 1), 50);
+
     // 3. Generate questions using AI
-    console.log(`📝 Generating ${numberOfQuestions} questions from PDF for user ${userId} (stream=${req.body.stream})`);
+    console.log(`📝 Generating ${questionCount} questions from PDF for user ${userId} (stream=${req.body.stream})`);
     const textForModel = sampleStudyMaterial(text.trim(), 10000);
-    const aiPrompt = quizPrompt(textForModel, numberOfQuestions, typeInstructions);
+    const aiPrompt = quizPrompt(textForModel, questionCount, typeInstructions);
 
     if (req.body.stream === 'true' || req.body.stream === true) {
       res.setHeader('Content-Type', 'text/event-stream');
@@ -771,7 +774,7 @@ export const generateQuestionsFromPDF = async (req, res) => {
       const streamResponse = await aiClient.chatCompletion({
         model: selectedModel.id,
         messages: [{ role: "user", content: aiPrompt }],
-        max_tokens: Math.min(3200, 900 + Number(numberOfQuestions) * 380),
+        max_tokens: Math.min(8192, 1200 + questionCount * 450),
         temperature: 0.7,
         stream: true
       });
@@ -859,7 +862,7 @@ export const generateQuestionsFromPDF = async (req, res) => {
     const aiResponse = await aiClient.chatCompletion({
       model: selectedModel.id,
       messages: [{ role: "user", content: aiPrompt }],
-      max_tokens: Math.min(3200, 900 + Number(numberOfQuestions) * 380),
+      max_tokens: Math.min(8192, 1200 + questionCount * 450),
       temperature: 0.7,
     });
 
