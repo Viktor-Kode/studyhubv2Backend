@@ -231,7 +231,7 @@ export const generateQuiz = async (req, res) => {
       const streamResponse = await aiClient.chatCompletion({
         model: selectedModel.id,
         messages: [{ role: "user", content: aiPrompt }],
-        max_tokens: Math.min(3200, 900 + questionCount * 380),
+        max_tokens: Math.min(8192, 1200 + questionCount * 450),
         temperature: 0.7,
         stream: true
       });
@@ -342,7 +342,7 @@ export const generateQuiz = async (req, res) => {
     const response = await aiClient.chatCompletion({
       model: selectedModel.id,
       messages: [{ role: "user", content: aiPrompt }],
-      max_tokens: Math.min(3200, 900 + questionCount * 380),
+      max_tokens: Math.min(8192, 1200 + questionCount * 450),
       temperature: 0.7,
     });
 
