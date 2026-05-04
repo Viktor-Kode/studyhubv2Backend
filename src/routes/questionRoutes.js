@@ -7,6 +7,7 @@ import {
     generateAIQuestions
 } from '../controllers/questionController.js';
 import { protect, restrictTo } from '../middleware/authMiddleware.js';
+import { checkAIUsage } from '../middleware/usageMiddleware.js';
 
 const router = express.Router();
 
