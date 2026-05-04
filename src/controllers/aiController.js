@@ -13,7 +13,7 @@ import { updateStreak } from '../services/streakService.js';
 import { sampleStudyMaterial } from '../utils/studyMaterialSample.js';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
-import { parsePdfBuffer } from '../utils/parsePdf.js';
+import { parseDocumentBuffer } from '../utils/documentParser.js';
 
 /**
  * Controller to generate study notes.
@@ -735,8 +735,8 @@ export const generateQuestionsFromPDF = async (req, res) => {
 
     const userId = req.user._id;
 
-    // 1. Extract text from PDF
-    const parsed = await parsePdfBuffer(req.file.buffer);
+    // 1. Extract text from document
+    const parsed = await parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
     const text = parsed.text;
 
     if (!text || text.trim().length < 50) {

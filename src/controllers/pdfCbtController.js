@@ -1,4 +1,4 @@
-import { parsePdfBuffer } from '../utils/parsePdf.js';
+import { parseDocumentBuffer } from '../utils/documentParser.js';
 import fetch from 'node-fetch';
 import { getEnv } from '../config/env.js';
 
@@ -158,13 +158,13 @@ export const extractQuestionsFromPDF = async (req, res) => {
 
     if (!rawText && req.file) {
       try {
-        const parsed = await parsePdfBuffer(req.file.buffer);
+        const parsed = await parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
         rawText = parsed.text;
-        console.log(`[PDF CBT] Extracted ${rawText?.length || 0} chars from PDF`);
+        console.log(`[PDF CBT] Extracted ${rawText?.length || 0} chars from ${req.file.originalname}`);
       } catch (parseErr) {
-        console.error('[PDF CBT] parsePdfBuffer failed:', parseErr.message);
+        console.error('[PDF CBT] parseDocumentBuffer failed:', parseErr.message);
         return res.status(400).json({
-          error: `Unable to read this PDF file. ${parseErr.message}. Please try converting to .txt or .docx format instead.`,
+          error: `Unable to read this file. ${parseErr.message}. Please try converting to .txt or .docx format instead.`,
         });
       }
     }
