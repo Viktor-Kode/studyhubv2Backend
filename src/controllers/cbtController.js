@@ -212,6 +212,12 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
         console.log('[ALOC] Sample question raw data:', JSON.stringify(finalData.data[0], null, 2));
     }
 
+    // Mask sensitive info (BOLA & Cheating prevention)
+    const maskQuestions = (qs) => qs.map(q => {
+        const { answer, solution, explanation, correctAnswer, ...rest } = q;
+        return rest;
+    });
+
     const ops = finalData.data.map((q, i) => {
         const opts = q.option ? Object.values(q.option).filter(v => v !== null && v !== undefined) : [];
         const qYear = q.year || year || 'any';
@@ -270,7 +276,17 @@ export const getQuestionsProxy = async (req, res) => {
         if (!result.ok) {
             return res.status(result.httpStatus || 500).json(result.body || { error: 'Unknown error' });
         }
-        return res.status(200).json(result.finalData);
+
+        // Strip answers before sending to frontend
+        const maskedData = {
+            ...result.finalData,
+            data: result.finalData.data.map(q => {
+                const { answer, solution, explanation, ...rest } = q;
+                return rest;
+            })
+        };
+
+        return res.status(200).json(maskedData);
     } catch (error) {
         console.error('[CBT Controller Internal Error]:', error);
         return res.status(500).json({ error: 'Internal server error', message: error.message });
@@ -289,17 +305,71 @@ export const getAvailableSubjects = (req, res) => {
 export const saveCBTResult = async (req, res) => {
     try {
         const studentId = req.user._id;
-        const resultData = { ...req.body, studentId };
+        const { 
+            subject, 
+            examType, 
+            year, 
+            totalQuestions, 
+            answers: clientAnswers,
+            timeTaken,
+            studyGroupId 
+        } = req.body;
 
-        // Ensure accuracy is a number
-        if (resultData.accuracy !== undefined) {
-            resultData.accuracy = Number(resultData.accuracy);
+        let verifiedAnswers = [];
+        let correctCount = 0;
+        let attemptedCount = 0;
+
+        // BOLA & Cheating Prevention: Verify each answer server-side
+        if (clientAnswers && Array.isArray(clientAnswers)) {
+            for (const ans of clientAnswers) {
+                // Find question in DB
+                const question = await CBTQuestion.findOne({
+                    $or: [
+                        { _id: mongoose.Types.ObjectId.isValid(ans.questionId) ? ans.questionId : null },
+                        { questionNumber: ans.questionId }
+                    ]
+                });
+
+                if (question) {
+                    const isCorrect = String(ans.selectedAnswer).toLowerCase() === String(question.correctAnswer).toLowerCase();
+                    if (isCorrect) correctCount++;
+                    if (ans.selectedAnswer && ans.selectedAnswer !== 'Skipped') attemptedCount++;
+
+                    verifiedAnswers.push({
+                        questionId: ans.questionId,
+                        question: question.questionText,
+                        selectedAnswer: ans.selectedAnswer,
+                        correctAnswer: question.correctAnswer,
+                        isCorrect,
+                        explanation: question.explanation
+                    });
+                }
+            }
         }
 
-        console.log(`[CBT] Saving result for user ${studentId}, accuracy: ${resultData.accuracy}%`);
+        const total = totalQuestions || verifiedAnswers.length || 0;
+        const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+
+        const resultData = {
+            studentId,
+            subject,
+            examType,
+            year,
+            totalQuestions: total,
+            correctAnswers: correctCount,
+            wrongAnswers: attemptedCount - correctCount,
+            skipped: total - attemptedCount,
+            accuracy,
+            timeTaken,
+            answers: verifiedAnswers,
+            takenAt: new Date()
+        };
 
         const newResult = new CBTResult(resultData);
         await newResult.save();
+
+        console.log(`[CBT] Saved VERIFIED result for user ${studentId}, accuracy: ${accuracy}%`);
+
         await logUserActivity({
             userId: studentId,
             type: 'cbt_result',
@@ -318,15 +388,12 @@ export const saveCBTResult = async (req, res) => {
 
         const uidStr = String(studentId);
         await awardXP(uidStr, 'cbt_complete');
-        const acc = Number(resultData.accuracy);
-        if (!Number.isNaN(acc) && acc >= 80) {
+        if (accuracy >= 80) {
             await awardXP(uidStr, 'cbt_high_score');
         }
 
-        // Community points system:
-        // - pass (>=80%): +10 cbtPoints
-        // - any CBT completion: +5 cbtPoints
-        const cbtCommunityPoints = Number.isNaN(acc) ? 5 : acc >= 80 ? 10 : 5;
+        // Community points
+        const cbtCommunityPoints = accuracy >= 80 ? 10 : 5;
         const user = await User.findById(studentId);
         if (user) {
             user.cbtPoints = (user.cbtPoints || 0) + cbtCommunityPoints;
@@ -334,7 +401,6 @@ export const saveCBTResult = async (req, res) => {
             await user.save({ validateBeforeSave: false });
         }
 
-        const { studyGroupId } = req.body || {};
         if (studyGroupId && req.user?.firebaseUid) {
           const { awardStudyGroupCbtCompletion } = await import('../services/studyGroupCbtBonus.js');
           await awardStudyGroupCbtCompletion(req.user.firebaseUid, studyGroupId);
@@ -346,16 +412,12 @@ export const saveCBTResult = async (req, res) => {
             ? new Date(streak.lastActivityDate).toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' })
             : null;
 
-        const total = Number(newResult.totalQuestions) || 0;
-        const correct = Number(newResult.correctAnswers) || 0;
-        const pct = Number(newResult.accuracy);
-        const subject = String(newResult.subject || 'CBT');
         if (req.user?.firebaseUid) {
           void sendNotification({
             userId: req.user.firebaseUid,
             type: 'cbt_result',
-            title: `CBT Result: ${correct}/${total} (${Number.isFinite(pct) ? `${pct}%` : '—'})`,
-            body: `You scored ${Number.isFinite(pct) ? `${pct}%` : 'your result'} in ${subject}. ${Number.isFinite(pct) && pct >= 50 ? 'Great job! 🎉' : 'Keep practicing! 💪'}`,
+            title: `CBT Result: ${correctCount}/${total} (${accuracy}%)`,
+            body: `You scored ${accuracy}% in ${subject}. ${accuracy >= 50 ? 'Great job! 🎉' : 'Keep practicing! 💪'}`,
             icon: '📝',
             link: '/dashboard/cbt',
             data: { subject },
@@ -614,11 +676,75 @@ Return ONLY a valid JSON array with no extra text, markdown fences, or backticks
             return res.status(502).json({ error: 'Invalid AI response: expected a JSON array' });
         }
 
+        // Save generated questions to DB for server-side verification
+        const savedQuestions = await Promise.all(questions.map(async (q, i) => {
+            const questionId = `ai_${Date.now()}_${i}`;
+            // We use ExplanationCache or a dedicated AIQuestion model? 
+            // Let's use ExplanationCache to store the answer as well for simplicity
+            await ExplanationCache.create({
+                questionHash: crypto.createHash('sha256').update(q.question).digest('hex'),
+                questionText: q.question,
+                correctAnswer: q.answer,
+                explanation: q.explanation
+            });
+            return {
+                id: questionId,
+                question: q.question,
+                options: q.options,
+                // answer and explanation are STRIPPED here
+            };
+        }));
+
         await incrementAIUsage(req.user._id);
 
-        return res.status(200).json({ questions });
+        return res.status(200).json({ questions: savedQuestions });
     } catch (err) {
         console.error('[Topic Questions]', err);
         return res.status(500).json({ error: err.message || 'Failed to generate questions' });
+    }
+};
+
+// ── NEW: Server-side Answer Verification ─────────────────────────────────────
+export const verifyAnswer = async (req, res) => {
+    try {
+        const { questionId, selectedAnswer, questionText, isAiGenerated } = req.body;
+        
+        let correct = false;
+        let explanation = '';
+        let actualAnswer = '';
+
+        if (isAiGenerated) {
+            const qHash = crypto.createHash('sha256').update(questionText).digest('hex');
+            const cached = await ExplanationCache.findOne({ questionHash: qHash });
+            if (!cached) return res.status(404).json({ error: 'Question data lost. Please regenerate.' });
+            
+            actualAnswer = cached.correctAnswer;
+            correct = String(selectedAnswer).toUpperCase() === String(actualAnswer).toUpperCase();
+            explanation = cached.explanation;
+        } else {
+            // ALOC / Cached DB Question
+            const question = await CBTQuestion.findOne({ 
+                $or: [{ _id: mongoose.Types.ObjectId.isValid(questionId) ? questionId : null }, { questionNumber: questionId }]
+            });
+            
+            if (!question) {
+                // If not in DB, we might need to fetch from ALOC again? 
+                // For now, assume it's in DB because fetchCbtQuestionPack upserts.
+                return res.status(404).json({ error: 'Question not found' });
+            }
+            
+            actualAnswer = question.correctAnswer;
+            correct = String(selectedAnswer).toLowerCase() === String(actualAnswer).toLowerCase();
+            explanation = question.explanation;
+        }
+
+        res.json({
+            success: true,
+            correct,
+            actualAnswer,
+            explanation
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 };
