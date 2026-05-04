@@ -21,14 +21,14 @@ import {
 } from '../controllers/flashCardController.js';
 
 import { protect } from '../middleware/authMiddleware.js';
-import { checkFlashcardUsage } from '../middleware/usageMiddleware.js';
+import { checkFlashcardUsage, checkAIUsage } from '../middleware/usageMiddleware.js';
 
 // Protect all routes
 router.use(protect);
 
 // Flashcard routes
 router.post('/cards', createFlashCard);
-router.post('/generate', checkFlashcardUsage, generateAIFlashCards);
+router.post('/generate', checkAIUsage, checkFlashcardUsage, generateAIFlashCards);
 router.get('/cards/due', getDueCards);
 router.get('/cards', getFlashCards); // All cards
 router.put('/cards/:cardId', updateFlashCard);

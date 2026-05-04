@@ -9,7 +9,16 @@ import mongoose from 'mongoose';
 
 export const getClassAnalytics = async (req, res) => {
     try {
-        const analytics = await Analytics.findOne({ classId: req.params.classId }).sort({ createdAt: -1 });
+        const { classId } = req.params;
+        const teacherId = req.user._id;
+
+        // BOLA Check: Verify teacher owns the class
+        const classObj = await Class.findOne({ _id: classId, teacherId });
+        if (!classObj) {
+            return res.status(403).json({ success: false, message: 'Access denied to this class analytics' });
+        }
+
+        const analytics = await Analytics.findOne({ classId }).sort({ createdAt: -1 });
         res.status(200).json({ success: true, analytics });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -18,7 +27,20 @@ export const getClassAnalytics = async (req, res) => {
 
 export const getStudentPerformance = async (req, res) => {
     try {
-        const submissions = await Submission.find({ studentId: req.params.id })
+        const { id } = req.params;
+        const teacherId = req.user._id;
+
+        // BOLA Check: Verify teacher has access to this student
+        const hasAccess = await Class.exists({
+            teacherId: teacherId,
+            students: id
+        });
+
+        if (!hasAccess && String(teacherId) !== String(id)) {
+            return res.status(403).json({ success: false, message: 'Access denied to this student performance' });
+        }
+
+        const submissions = await Submission.find({ studentId: id })
             .populate('examId', 'title')
             .sort({ createdAt: -1 });
         res.status(200).json({ success: true, submissions });
@@ -29,7 +51,19 @@ export const getStudentPerformance = async (req, res) => {
 
 export const getExamAnalytics = async (req, res) => {
     try {
-        const analytics = await Analytics.findOne({ examId: req.params.examId });
+        const { examId } = req.params;
+        const teacherId = req.user._id;
+
+        // BOLA Check: Verify teacher owns the exam through its class
+        const exam = await Exam.findById(examId);
+        if (!exam) return res.status(404).json({ success: false, message: 'Exam not found' });
+
+        const classObj = await Class.findOne({ _id: exam.classId, teacherId });
+        if (!classObj) {
+            return res.status(403).json({ success: false, message: 'Access denied to this exam analytics' });
+        }
+
+        const analytics = await Analytics.findOne({ examId });
         res.status(200).json({ success: true, analytics });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });

@@ -616,6 +616,12 @@ export const upsertProgress = async (req, res) => {
       return res.status(400).json({ success: false, error: 'documentId is required' });
     }
 
+    // Verify ownership/access (BOLA check)
+    const document = await LibraryDocument.findOne({ _id: documentId, userId });
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found or access denied' });
+    }
+
     const progress = await ReadingProgress.findOneAndUpdate(
       { userId, documentId },
       {

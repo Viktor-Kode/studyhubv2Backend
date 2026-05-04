@@ -5,7 +5,7 @@ import aiClient from '../utils/aiClient.js';
 import { flashCardPrompt } from '../utils/prompts.js';
 import { getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import mongoose from 'mongoose';
-import { incrementFlashcardUsage } from '../middleware/usageMiddleware.js';
+import { incrementFlashcardUsage, incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { updateStreak } from '../services/streakService.js';
 import { logUserActivity } from '../services/activityService.js';
 
@@ -588,6 +588,7 @@ export const generateAIFlashCards = async (req, res) => {
 
         // Count this as one flashcard generation usage
         await incrementFlashcardUsage(userId);
+        await incrementAIUsage(userId);
 
         res.status(201).json({ success: true, count: savedCards.length, flashCards: savedCards });
     } catch (error) {

@@ -4,6 +4,7 @@ import officeparser from 'officeparser';
 import aiClient from '../utils/aiClient.js';
 import Question from '../models/Question.js';
 import { parsePdfBuffer } from '../utils/parsePdf.js';
+import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 
 export const uploadResource = async (req, res) => {
     try {
@@ -126,6 +127,7 @@ export const generateQuestionsFromResource = async (req, res) => {
             })
         );
 
+        await incrementAIUsage(req.user._id);
         res.status(200).json({ success: true, questions: savedQuestions });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -150,6 +152,7 @@ export const generateFlashcardsFromResource = async (req, res) => {
 
         resource.flashcards = flashcards;
         await resource.save();
+        await incrementAIUsage(req.user._id);
 
         res.status(200).json({ success: true, flashcards });
     } catch (error) {
@@ -171,6 +174,7 @@ export const generateSummaryFromResource = async (req, res) => {
 
         resource.summary = summary;
         await resource.save();
+        await incrementAIUsage(req.user._id);
 
         res.status(200).json({ success: true, summary });
     } catch (error) {

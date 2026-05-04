@@ -1,5 +1,6 @@
 import Question from '../models/Question.js';
 import aiClient from '../utils/aiClient.js';
+import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 
 export const getQuestions = async (req, res) => {
     try {
@@ -154,6 +155,7 @@ export const generateAIQuestions = async (req, res) => {
             };
         });
         const savedQuestions = await Question.insertMany(toInsert);
+        await incrementAIUsage(req.user._id);
         res.status(200).json({ success: true, questions: savedQuestions });
     } catch (error) {
         res.status(500).json({ success: false, message: 'AI Generation failed: ' + error.message });

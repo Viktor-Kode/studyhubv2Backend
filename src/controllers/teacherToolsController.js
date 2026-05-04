@@ -4,6 +4,7 @@ import Result from '../models/Result.js';
 import LessonNote from '../models/LessonNote.js';
 import TeacherSavedItem from '../models/TeacherSavedItem.js';
 import { TEACHER_PLANS } from '../config/plans.js';
+import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 
 // ── GET TEACHER USAGE & PLAN ──────────────────────────
 export const getTeacherUsage = async (req, res) => {
@@ -101,6 +102,7 @@ Return ONLY a JSON object:
             classLevel,
             content: note
         });
+        await incrementAIUsage(req.user._id);
 
         res.json({ success: true, note, id: saved._id });
     } catch (err) {
@@ -201,6 +203,7 @@ Return ONLY a JSON array:
         const content = await callAI(prompt, 2000);
         const cleaned = content.replace(/```json|```/g, '').trim();
         const comments = JSON.parse(cleaned);
+        await incrementAIUsage(req.user._id);
 
         res.json({ success: true, comments });
     } catch (err) {
@@ -247,6 +250,7 @@ Return ONLY a JSON array of weeks:
                 : Array.isArray(parsed?.scheme)
                     ? parsed.scheme
                     : [];
+        await incrementAIUsage(req.user._id);
 
         res.json({ success: true, scheme });
     } catch (err) {
@@ -286,6 +290,7 @@ Return ONLY a JSON array:
         const content = await callAI(prompt, 2000);
         const cleaned = content.replace(/```json|```/g, '').trim();
         const scheme = JSON.parse(cleaned);
+        await incrementAIUsage(req.user._id);
 
         res.json({ success: true, scheme });
     } catch (err) {
@@ -329,6 +334,7 @@ Return ONLY JSON:
         const content = await callAI(prompt, 4000);
         const cleaned = content.replace(/```json|```/g, '').trim();
         const sets = JSON.parse(cleaned);
+        await incrementAIUsage(req.user._id);
 
         res.json({ success: true, sets });
     } catch (err) {
@@ -373,6 +379,7 @@ Return ONLY JSON:
         const content = await callAI(prompt, 2500);
         const cleaned = content.replace(/```json|```/g, '').trim();
         const comprehension = JSON.parse(cleaned);
+        await incrementAIUsage(req.user._id);
 
         res.json({ success: true, comprehension });
     } catch (err) {
@@ -406,6 +413,7 @@ No explanation, just the JSON array.`;
         const clean = content.replace(/```json|```/g, '').trim();
         const parsed = JSON.parse(clean);
         const entriesList = Array.isArray(parsed) ? parsed : [];
+        await incrementAIUsage(req.user._id);
 
         res.json({ entries: entriesList });
     } catch (err) {
@@ -430,6 +438,7 @@ The comment should be 2-3 sentences, warm, specific to their performance, and en
 Nigerian school style. No preamble, just the comment.`;
 
         const comment = await callAI(prompt, 120);
+        await incrementAIUsage(req.user._id);
         res.json({ comment: (comment || '').trim() });
     } catch (err) {
         console.error('[ReportComment]', err);

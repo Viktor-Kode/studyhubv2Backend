@@ -187,21 +187,14 @@ export const verifyPayment = async (req, res) => {
             });
         }
 
-        try {
-            await applySubscriptionToUser(claimed.userId, claimed.plan);
-        } catch (applyErr) {
-            console.error('❌ applySubscriptionToUser after verify:', applyErr.message);
-            await Transaction.findOneAndUpdate(
-                { reference },
-                { $set: { processed: false, status: 'pending', processedAt: null } }
-            );
-            throw applyErr;
-        }
+        // Note: Subscription is NOT applied here. It is handled by the webhook for security.
+        // This endpoint just verifies the status for the UI.
 
         res.json({
             success: true,
-            message: `${planConfig.label} activated successfully!`,
-            plan: transaction.plan
+            status: claimed.status,
+            message: 'Payment verification initiated. Your plan will be updated shortly.',
+            plan: claimed.plan
         });
     } catch (err) {
         console.error('❌ Payment verify error:', err.message);

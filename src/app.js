@@ -44,6 +44,7 @@ import Group from './models/Group.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 import { getEnv } from './config/env.js';
 import { unsubscribe } from './controllers/emailCampaignController.js';
+import cookieParser from 'cookie-parser';
 
 
 const app = express();
@@ -123,6 +124,7 @@ app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
+app.use(cookieParser());
 
 // HEALTH CHECK (For Render/uptime monitoring)
 

@@ -378,7 +378,7 @@ export const saveCBTResult = async (req, res) => {
 
 export const getCBTResultsSummary = async (req, res) => {
     try {
-        const studentId = req.query.studentId || req.user._id;
+        const studentId = req.user._id;
         const results = await CBTResult.find({ studentId }).sort({ takenAt: -1 }).limit(50);
 
         if (results.length === 0) {

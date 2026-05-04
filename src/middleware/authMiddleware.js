@@ -1,8 +1,10 @@
+import jwt from 'jsonwebtoken';
 import { adminAuth } from '../config/firebase-admin.js';
 import User from '../models/User.js';
 import UserDailyActivity from '../models/UserDailyActivity.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
+import { getEnv } from '../config/env.js';
 
 const utcDayKey = (d = new Date()) => d.toISOString().slice(0, 10);
 
@@ -10,10 +12,10 @@ export const protect = async (req, res, next) => {
     try {
         // 1) Getting token and check if it's there
         let token;
-        const authHeader = req.headers.authorization;
-
-        if (authHeader && authHeader.startsWith('Bearer')) {
-            token = authHeader.split(' ')[1];
+        if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+            token = req.headers.authorization.split(' ')[1];
+        } else if (req.cookies && req.cookies.jwt) {
+            token = req.cookies.jwt;
         }
 
         if (!token) {
@@ -24,35 +26,55 @@ export const protect = async (req, res, next) => {
             });
         }
 
-        // 2) Verification of Firebase ID token
+        // 2) Verification of token
         let decodedToken;
+        let currentUser;
+
         try {
-            decodedToken = await adminAuth.verifyIdToken(token);
-            console.log(`[AUTH] Token verified for UID: ${decodedToken.uid}`);
-        } catch (verifyErr) {
-            console.error(`[AUTH] 401 - Token verification failed: ${verifyErr.message}`);
-            return res.status(401).json({
-                status: 'fail',
-                message: 'Your token is invalid or expired. Please log in again.',
-                error: verifyErr.code // e.g., 'auth/id-token-expired'
+            // First try verifying as our custom JWT (used for email/password login)
+            const decoded = await new Promise((resolve, reject) => {
+                jwt.verify(token, getEnv('JWT_SECRET'), (err, payload) => {
+                    if (err) reject(err);
+                    else resolve(payload);
+                });
             });
-        }
 
-        // 3) Check if user still exists in MongoDB
-        let currentUser = await User.findOne({ firebaseUid: decodedToken.uid });
-
-        if (!currentUser && decodedToken.email) {
-            currentUser = await User.findOne({ email: decodedToken.email.toLowerCase() });
-
-            // If found by email but no firebaseUid, link them now
-            if (currentUser) {
-                currentUser.firebaseUid = decodedToken.uid;
-                await currentUser.save({ validateBeforeSave: false });
-                console.log(`[AUTH] Linked email user ${decodedToken.email} to Firebase UID ${decodedToken.uid}`);
+            if (decoded && decoded.id) {
+                currentUser = await User.findById(decoded.id);
+                console.log(`[AUTH] Custom JWT verified for User ID: ${decoded.id}`);
+            }
+        } catch (jwtErr) {
+            // If custom JWT fails, try Firebase verification
+            try {
+                decodedToken = await adminAuth.verifyIdToken(token);
+                console.log(`[AUTH] Firebase Token verified for UID: ${decodedToken.uid}`);
+            } catch (verifyErr) {
+                console.error(`[AUTH] 401 - Token verification failed: ${verifyErr.message}`);
+                return res.status(401).json({
+                    status: 'fail',
+                    message: 'Your token is invalid or expired. Please log in again.',
+                    error: verifyErr.code // e.g., 'auth/id-token-expired'
+                });
             }
         }
 
+        // 3) Check if user still exists in MongoDB
         if (!currentUser) {
+            currentUser = await User.findOne({ firebaseUid: decodedToken.uid });
+
+            if (!currentUser && decodedToken.email) {
+                currentUser = await User.findOne({ email: decodedToken.email.toLowerCase() });
+
+                // If found by email but no firebaseUid, link them now
+                if (currentUser) {
+                    currentUser.firebaseUid = decodedToken.uid;
+                    await currentUser.save({ validateBeforeSave: false });
+                    console.log(`[AUTH] Linked email user ${decodedToken.email} to Firebase UID ${decodedToken.uid}`);
+                }
+            }
+        }
+
+        if (!currentUser && decodedToken) {
             // Create user automatically if they exist in Firebase but not in MongoDB
             try {
                 currentUser = await User.create({
@@ -68,8 +90,15 @@ export const protect = async (req, res, next) => {
             }
         }
 
+        if (!currentUser) {
+            return res.status(401).json({
+                status: 'fail',
+                message: 'The user belonging to this token no longer exists.'
+            });
+        }
+
         // Sync Firebase admin claim to MongoDB if present
-        if (decodedToken.admin === true && currentUser.role !== 'admin') {
+        if (decodedToken && decodedToken.admin === true && currentUser.role !== 'admin') {
             currentUser.role = 'admin';
             await currentUser.save({ validateBeforeSave: false });
             console.log(`[AUTH] Synced admin claim to MongoDB for ${currentUser.email}`);

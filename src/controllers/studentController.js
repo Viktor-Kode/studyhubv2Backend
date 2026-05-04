@@ -25,6 +25,18 @@ export const getStudents = async (req, res) => {
 export const getStudentPerformance = async (req, res) => {
     try {
         const { id } = req.params;
+        const teacherId = req.user._id;
+
+        // BOLA Check: Verify teacher has access to this student
+        const hasAccess = await Class.exists({
+            teacherId: teacherId,
+            students: id
+        });
+
+        if (!hasAccess && String(teacherId) !== String(id)) {
+            return res.status(403).json({ success: false, message: 'Access denied to this student performance' });
+        }
+
         const submissions = await Submission.find({ studentId: id })
             .populate('examId', 'title')
             .sort({ createdAt: -1 });

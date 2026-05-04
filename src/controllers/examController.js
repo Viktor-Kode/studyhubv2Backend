@@ -91,7 +91,16 @@ export const closeExam = async (req, res) => {
 
 export const getExamSubmissions = async (req, res) => {
     try {
-        const submissions = await Submission.find({ examId: req.params.id })
+        const { id } = req.params;
+        const teacherId = req.user._id;
+
+        // BOLA Check: Verify teacher owns the exam
+        const exam = await Exam.findOne({ _id: id, teacherId });
+        if (!exam) {
+            return res.status(403).json({ success: false, message: 'Access denied to these submissions' });
+        }
+
+        const submissions = await Submission.find({ examId: id })
             .populate('studentId', 'name email');
         res.status(200).json({ success: true, submissions });
     } catch (error) {
