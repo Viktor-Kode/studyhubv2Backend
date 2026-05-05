@@ -1,4 +1,10 @@
 import { createRequire } from 'module';
+
+// Add this before your pdf parsing code 
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  globalThis.DOMMatrix = class DOMMatrix {};
+}
+
 const require = createRequire(import.meta.url);
 
 export const parsePdfBuffer = async (buffer) => {
