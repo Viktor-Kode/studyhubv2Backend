@@ -1,6 +1,7 @@
-import { createRequire } from 'module';
-
-// Add this before your pdf parsing code 
+/**
+ * Polyfill for DOMMatrix and DOMRect.
+ * Required for pdfjs-dist v5+ in Node.js environments.
+ */
 if (typeof globalThis.DOMMatrix === 'undefined') {
   globalThis.DOMMatrix = class DOMMatrix {
     constructor() {
@@ -20,6 +21,8 @@ if (typeof globalThis.DOMRect === 'undefined') {
     }
   };
 }
+
+import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 
