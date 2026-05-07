@@ -496,7 +496,7 @@ export const explainQuestion = async (req, res) => {
             .update(`${question}|${correctAnswer}|${options.sort().join(',')}`)
             .digest('hex');
 
-        // 1. Check Cache First (Doesn't cost a credit)
+        // 2. Check Cache First (Doesn't cost a credit)
         const cached = await ExplanationCache.findOne({ questionHash: qHash });
         if (cached) {
             if (stream) {
@@ -508,30 +508,7 @@ export const explainQuestion = async (req, res) => {
             return res.status(200).json({ status: 'success', explanation: cached.explanation });
         }
 
-        // 2. Check Plan Limit (Only for new generations)
-        const user = await User.findById(studentId);
-        const plan = user.plan || { aiExplanationsUsed: 0, aiExplanationsAllowed: 5 };
-
-        if (plan.aiExplanationsUsed >= (plan.aiExplanationsAllowed || 5)) {
-            await logPaywallEvent({
-                userId: studentId,
-                userEmail: user.email,
-                action: 'AI_EXPLANATION_LIMIT_REACHED',
-                context: {
-                    used: plan.aiExplanationsUsed,
-                    limit: plan.aiExplanationsAllowed || 5
-                }
-            });
-
-            return res.status(403).json({
-                error: 'AI limit reached',
-                message: 'You have used all your AI explanations for this plan. Upgrade for unlimited access!',
-                showUpgrade: true,
-                code: 'AI_LIMIT_REACHED'
-            });
-        }
-
-        // 3. Generate New Explanation
+        // 3. Generate New Explanation (Limit already checked by middleware)
         const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
 
         const typeDesc = options.length > 0 ? "Multiple Choice" : "Fill-in-the-blank";
@@ -695,7 +672,7 @@ Return ONLY a valid JSON array with no extra text, markdown fences, or backticks
             };
         }));
 
-        await incrementAIUsage(req.user._id);
+        await incrementAIUsage(req.user._id, savedQuestions.length);
 
         return res.status(200).json({ questions: savedQuestions });
     } catch (err) {

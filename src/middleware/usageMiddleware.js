@@ -12,6 +12,9 @@ export const checkAIUsage = async (req, res, next) => {
         }
         user = await expireStaleActiveSubscription(user);
 
+        // Determine how many AI units this request needs
+        const requestedAmount = parseInt(req.body.amount || req.body.numberOfQuestions || req.body.count || 1) || 1;
+
         // Check subscription is active
         if (user.subscriptionStatus === 'expired') {
             return res.status(403).json({
@@ -22,25 +25,31 @@ export const checkAIUsage = async (req, res, next) => {
             });
         }
 
-        // Check AI limit
-        if (user.aiUsageCount >= user.aiUsageLimit) {
+        // Check AI limit - prevents bypassing by requesting large batches
+        if (user.aiUsageCount + requestedAmount > user.aiUsageLimit) {
             await logPaywallEvent({
                 userId: user._id,
                 userEmail: user.email,
                 action: 'AI_LIMIT_REACHED',
                 context: {
                     used: user.aiUsageCount,
+                    requested: requestedAmount,
                     limit: user.aiUsageLimit
                 }
             });
 
+            const remaining = Math.max(0, user.aiUsageLimit - user.aiUsageCount);
+
             return res.status(403).json({
                 error: 'AI limit reached',
                 message: user.subscriptionStatus === 'free'
-                    ? 'Upgrade to a paid plan for more AI messages.'
-                    : 'AI limit reached. Purchase an add-on pack for ₦500.',
+                    ? (remaining > 0 
+                        ? `You only have ${remaining} AI credits left, but this request needs ${requestedAmount}. Upgrade for more.`
+                        : 'You have used up your free AI credits. Upgrade to a paid plan to continue.')
+                    : `AI limit reached. You need ${requestedAmount} units but only have ${remaining} left. Purchase an add-on pack for ₦500.`,
                 showUpgrade: true,
                 used: user.aiUsageCount,
+                requested: requestedAmount,
                 limit: user.aiUsageLimit,
                 code: 'AI_LIMIT_REACHED'
             });

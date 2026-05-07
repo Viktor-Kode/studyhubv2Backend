@@ -3,14 +3,14 @@
 export const PLANS = {
     free: {
         name: 'Free',
-        aiLimit: 10,
-        flashcardLimit: 5,
+        aiLimit: 5,
+        flashcardLimit: 3,
         durationDays: null,
         price: 0,
         amount: 0,
         label: 'Free forever',
         features: [
-            '10 AI-generated questions',
+            '5 AI-generated questions',
             '3 CBT practice tests',
             '5 flashcard reviews',
             'Basic study timer',
