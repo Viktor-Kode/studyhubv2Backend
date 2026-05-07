@@ -13,6 +13,7 @@ import {
     deleteQuestion,
     chatWithTutor,
     generateQuestionsFromPDF,
+    extractTextFromPDF,
     fetchUrlContent
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/authMiddleware.js';
@@ -45,6 +46,9 @@ router.delete('/questions/:id', deleteQuestion);
 
 // Generate questions from PDF (POST)
 router.post('/generate-from-pdf', upload.single('pdf'), checkAIUsage, generateQuestionsFromPDF);
+
+// Step 1 of Question Generation: Extract text from file
+router.post('/extract', upload.single('pdf'), extractTextFromPDF);
 
 // Fetch and extract content from a URL (POST)
 router.post('/fetch-url', fetchUrlContent);

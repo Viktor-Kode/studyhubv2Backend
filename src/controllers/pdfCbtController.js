@@ -154,54 +154,74 @@ ${rawContent}`;
   return data?.choices?.[0]?.message?.content?.trim() || '';
 };
 
-export const extractQuestionsFromPDF = async (req, res) => {
+/**
+ * Step 1: Extract text from PDF/Document.
+ */
+export const extractOnly = async (req, res) => {
   try {
-    const { documentId, text, requestedCount: reqCount } = req.body;
-    let rawText = text;
-    let docTitle = 'PDF CBT Upload';
-
-    if (documentId) {
-      const doc = await LibraryDocument.findOne({ _id: documentId, userId: req.user._id });
-      if (doc) {
-        rawText = doc.extractedText;
-        docTitle = doc.title;
-      }
-    } else if (req.file) {
-      try {
-        const parsed = await parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
-        rawText = parsed.text;
-        docTitle = req.file.originalname.replace(/\.[^/.]+$/i, '');
-        
-        console.log(`[PDF CBT] Extracted ${rawText?.length || 0} chars from ${req.file.originalname}`);
-
-        // Save to library as per user instruction: "immediately extract... and save it in the database"
-        try {
-          const cloudinaryResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
-          await LibraryDocument.create({
-            userId: req.user._id,
-            title: docTitle,
-            fileUrl: cloudinaryResult.url,
-            fileType: req.file.mimetype,
-            fileSize: req.file.size,
-            extractedText: rawText || ''
-          });
-          console.log(`[PDF CBT] Saved new document to library: ${docTitle}`);
-        } catch (saveErr) {
-          console.error('[PDF CBT] Failed to save document to library:', saveErr.message);
-          // Continue even if save fails, to provide the CBT result
-        }
-      } catch (parseErr) {
-        console.error('[PDF CBT] parseDocumentBuffer failed:', parseErr.message);
-        return res.status(400).json({
-          error: `Unable to read this file. ${parseErr.message}. Please try converting to .txt or .docx format instead.`,
-        });
-      }
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    console.log(`[PDF CBT Extract] Processing ${req.file.originalname}`);
+
+    // Extraction with 30s timeout
+    const extractionPromise = parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Extraction timed out after 30 seconds')), 30000)
+    );
+
+    const parsed = await Promise.race([extractionPromise, timeoutPromise]);
+    const rawText = parsed.text;
+    const docTitle = req.file.originalname.replace(/\.[^/.]+$/i, '');
+
     if (!rawText || rawText.trim().length < 50) {
-      return res.status(400).json({
-        error: `Unable to read this PDF file. It appears to be scanned or image-based with no extractable text. Please convert to .txt or .docx format instead.`,
+      return res.status(422).json({
+        error: 'The document does not contain enough readable text (minimum 50 characters required).'
       });
+    }
+
+    // Save to library in background (optional but helpful)
+    void (async () => {
+      try {
+        const cloudinaryResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+        await LibraryDocument.create({
+          userId: req.user._id,
+          title: docTitle,
+          fileUrl: cloudinaryResult.secure_url || cloudinaryResult.url,
+          fileType: req.file.mimetype,
+          fileSize: req.file.size,
+          extractedText: rawText || ''
+        });
+      } catch (e) {
+        console.error('[PDF CBT Background Save] Failed:', e.message);
+      }
+    })();
+
+    return res.status(200).json({
+      success: true,
+      text: rawText,
+      title: docTitle,
+      chars: rawText.length
+    });
+
+  } catch (error) {
+    console.error("❌ PDF CBT extractOnly Error:", error.message);
+    return res.status(error.message.includes('timeout') ? 504 : 500).json({
+      error: error.message || "Failed to extract text from document"
+    });
+  }
+};
+
+/**
+ * Step 2: Generate questions from extracted text.
+ */
+export const generateOnly = async (req, res) => {
+  try {
+    const { text, requestedCount: reqCount } = req.body;
+
+    if (!text || text.trim().length < 50) {
+      return res.status(400).json({ error: 'Text content is too short for question generation.' });
     }
 
     const requestedCountRaw = Number.parseInt(String(reqCount || ''), 10);
@@ -209,7 +229,7 @@ export const extractQuestionsFromPDF = async (req, res) => {
       ? Math.min(Math.max(requestedCountRaw, 1), 100)
       : 60;
 
-    const cleaned = cleanPdfText(rawText);
+    const cleaned = cleanPdfText(text);
     const truncated = smartExtract(cleaned, 14000);
 
     const prompt = `You are an exam question extractor. The text below is from a past question PDF that contains questions AND their answers mixed together.
@@ -250,79 +270,35 @@ Return ONLY this JSON format with no extra text:
 PDF TEXT:
 ${truncated}`;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 100000); // 100s timeout
+    const aiContent = await callAiForQuestions(prompt);
+    const parsedData = parseAiJson(aiContent);
 
-    let response;
-    try {
-      response = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${getEnv('DEEPSEEK_API_KEY')}`,
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 3500,
-          temperature: 0.1,
-        }),
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timeoutId);
+    if (!parsedData || !parsedData.questions) {
+      return res.status(500).json({ error: 'AI failed to generate valid question data. Please try again.' });
     }
 
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content?.trim();
-
-    if (!content) {
-      return res.status(500).json({ error: 'AI failed to process the PDF' });
-    }
-
-    let parsed;
-    try {
-      try {
-        parsed = parseAiJson(content);
-      } catch (_parseError) {
-        const repairedContent = await requestJsonRepair(content);
-        parsed = parseAiJson(repairedContent);
-      }
-    } catch (parseError) {
-      console.error('[PDF CBT] JSON Parsing failed even after repair:', parseError.message);
-      // If AI parsing fails, we continue with empty aiQuestions to trigger heuristic fallback below
-      parsed = { questions: [] };
-    }
-
-    const aiQuestions = Array.isArray(parsed?.questions) ? parsed.questions : [];
-    let questions = aiQuestions
-      .filter((q) => q?.question)
+    // Post-process questions for consistency
+    const questions = parsedData.questions
       .slice(0, requestedCount)
       .map((q) => {
         const hasObjectiveOptions = q?.options?.A && q?.options?.B && q?.options?.C && q?.options?.D;
         const answerText = String(q.answer || '').trim();
-        
         const isObjective = String(q.type || '').toLowerCase() === 'objective' || hasObjectiveOptions;
         
         let safeAnswer = answerText;
         if (isObjective) {
-          // Robustly extract A, B, C, or D
-          // 1. Try exact match
           const normalized = answerText.toUpperCase();
           if (['A', 'B', 'C', 'D'].includes(normalized)) {
             safeAnswer = normalized;
           } else {
-            // 2. Try match at start like "A. text" or "A)"
             const startMatch = answerText.match(/^([A-D])[\s\.)-]/i);
             if (startMatch) {
               safeAnswer = startMatch[1].toUpperCase();
             } else {
-              // 3. Try finding "Answer: B" or similar patterns
               const patternMatch = answerText.match(/answer[:\s]+([A-D])\b/i) || answerText.match(/\b([A-D])\b/i);
               if (patternMatch) {
                 safeAnswer = patternMatch[1].toUpperCase();
               } else {
-                // Fallback to whatever was there if it's short, or default to A
                 safeAnswer = normalized.length === 1 && normalized >= 'A' && normalized <= 'D' ? normalized : 'A';
               }
             }
@@ -344,26 +320,26 @@ ${truncated}`;
         };
       });
 
-    if (!questions.length) {
-      questions = extractQuestionsHeuristically(cleaned, requestedCount);
-    }
-
-    if (!questions.length) {
-      return res.status(400).json({
-        error: 'No valid questions found in this PDF. Try a clearer or text-based PDF.',
-      });
-    }
-
-    res.json({
-      subject: parsed.subject || 'General',
+    return res.status(200).json({
+      subject: parsedData.subject || 'General',
       totalFound: questions.length,
       questions,
     });
-  } catch (err) {
-    console.error('[PDF CBT Extract]', err.message);
-    if (err instanceof SyntaxError) {
-      return res.status(500).json({ error: 'AI returned malformed data. Try a cleaner PDF.' });
-    }
-    return res.status(500).json({ error: err.message || 'Failed to extract questions from PDF.' });
+
+  } catch (error) {
+    console.error("❌ PDF CBT generateOnly Error:", error.message);
+    return res.status(500).json({ error: "Failed to generate questions from text. Please try again." });
+  }
+};
+
+/**
+ * Legacy wrapper for the two-step flow.
+ * DEPRECATED: Frontends should move to extractOnly -> generateOnly.
+ */
+export const extractQuestionsFromPDF = async (req, res) => {
+  try {
+    return res.status(400).json({ error: "Endpoint deprecated. Use /extract and /generate steps." });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
   }
 };

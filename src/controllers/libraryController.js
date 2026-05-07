@@ -9,6 +9,7 @@ import fetch from 'node-fetch';
 import { parsePdfBuffer } from '../utils/parsePdf.js';
 import { logPaywallEvent } from '../utils/paywallLogger.js';
 import { parseDocumentBuffer } from '../utils/documentParser.js';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 // SharedLibraryItem may not exist yet — import defensively
 let SharedLibraryItem = null;
@@ -451,9 +452,12 @@ export const createDocument = async (req, res) => {
       }
     }
 
-    const fileUrl = req.file.path;
-    const isPdf = (req.file.mimetype || '').toLowerCase() === 'application/pdf';
     const originalName = req.file.originalname || '';
+    
+    // 1. Upload to Cloudinary manually since we are using memory storage now
+    const cloudinaryResult = await uploadToCloudinary(req.file.buffer, originalName);
+    const fileUrl = cloudinaryResult.secure_url || cloudinaryResult.url;
+
     const document = await LibraryDocument.create({
       userId,
       title: title || originalName.replace(/\.[^/.]+$/i, ''),
@@ -462,30 +466,25 @@ export const createDocument = async (req, res) => {
       fileSize: req.file.size,
       fileType: req.file.mimetype || 'application/pdf',
       coverColor: coverColor || '#5B4CF5',
-      pages: 0, // initially 0, will be updated in background
-      publicId: req.file.filename,
+      pages: 0,
+      publicId: cloudinaryResult.public_id,
       originalName,
-      extractedText: '', // Will be populated in background
+      extractedText: '', // Background process will fill this
     });
 
+    // 2. Respond immediately
     res.status(201).json({ success: true, document });
 
-    // Background: Page count + Text Extraction
+    // 3. Background: Text Extraction (using the buffer we already have!)
     void (async () => {
       try {
-        const response = await fetch(fileUrl);
-        if (!response.ok) throw new Error(`Failed to fetch file: ${response.statusText}`);
-        const buffer = Buffer.from(await response.arrayBuffer());
-
-        const [parsed] = await Promise.all([
-          parseDocumentBuffer(buffer, originalName || title, req.file.mimetype),
-        ]);
-
+        const parsed = await parseDocumentBuffer(req.file.buffer, originalName || title, req.file.mimetype);
+        
         const updates = { extractedText: parsed.text || '' };
         if (parsed.numpages > 0) updates.pages = parsed.numpages;
 
         await LibraryDocument.findByIdAndUpdate(document._id, updates);
-        console.log(`[Library] Processed document ${document._id}: ${updates.extractedText.length} chars, ${updates.pages} pages`);
+        console.log(`[Library] Background processing complete for ${document._id}`);
       } catch (err) {
         console.error('[Library] Background processing failed:', err.message);
       }

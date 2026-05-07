@@ -553,7 +553,13 @@ export const generateAIFlashCards = async (req, res) => {
     if (documentId) {
         try {
             const doc = await LibraryDocument.findOne({ _id: documentId, userId }).lean();
-            if (doc && doc.extractedText) {
+            if (doc) {
+                if (!doc.extractedText || doc.extractedText.length < 50) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: "Still processing your document, please wait 10 seconds and try again" 
+                    });
+                }
                 contentToUse = doc.extractedText;
             }
         } catch (err) {

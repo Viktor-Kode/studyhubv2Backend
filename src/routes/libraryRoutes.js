@@ -1,6 +1,6 @@
 import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
-import { pdfUpload } from '../config/pdfUpload.js';
+import { pdfMemoryUpload } from '../config/pdfMemoryUpload.js';
 import {
   getMaterials,
   uploadMaterial,
@@ -34,7 +34,7 @@ router.post('/finalize-upload', finalizeUpload);
 
 // Library CRUD routes
 router.get('/documents', listDocuments);
-router.post('/documents', pdfUpload.single('file'), createDocument);
+router.post('/documents', pdfMemoryUpload.single('file'), createDocument);
 router.get('/documents/:id', getDocumentById);
 // Returns just the Cloudinary URL — frontend loads PDF directly, bypassing the proxy
 router.get('/documents/:id/url', getDocumentUrl);

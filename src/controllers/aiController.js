@@ -26,7 +26,13 @@ export const generateNotes = async (req, res) => {
   if (documentId) {
     try {
       const doc = await LibraryDocument.findOne({ _id: documentId, userId: req.user._id }).lean();
-      if (doc && doc.extractedText) {
+      if (doc) {
+        if (!doc.extractedText || doc.extractedText.length < 50) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Still processing your document, please wait 10 seconds and try again" 
+          });
+        }
         contentToUse = doc.extractedText;
       }
     } catch (err) {
@@ -186,7 +192,13 @@ export const generateQuiz = async (req, res) => {
   if (documentId) {
     try {
       const doc = await LibraryDocument.findOne({ _id: documentId, userId }).lean();
-      if (doc && doc.extractedText) {
+      if (doc) {
+        if (!doc.extractedText || doc.extractedText.length < 50) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Still processing your document, please wait 10 seconds and try again" 
+          });
+        }
         contentToUse = doc.extractedText;
       }
     } catch (err) {
@@ -550,7 +562,13 @@ export const chatWithTutor = async (req, res) => {
   if (documentId) {
     try {
       const doc = await LibraryDocument.findOne({ _id: documentId, userId: req.user._id }).lean();
-      if (doc && doc.extractedText) {
+      if (doc) {
+        if (!doc.extractedText || doc.extractedText.length < 50) {
+          return res.status(400).json({ 
+            success: false, 
+            message: "Still processing your document, please wait 10 seconds and try again" 
+          });
+        }
         contextToUse = doc.extractedText;
       }
     } catch (err) {
@@ -759,228 +777,64 @@ export const fetchUrlContent = async (req, res) => {
 };
 
 /**
- * Generate questions from a PDF file.
+ * Step 1: Extract text from PDF/Document without generating questions yet.
  */
-export const generateQuestionsFromPDF = async (req, res) => {
+export const extractTextFromPDF = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No PDF file uploaded' });
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
 
-    const {
-      difficulty = 'medium',
-      questionType = 'multiple-choice',
-      numberOfQuestions = 5,
-      subject = 'General',
-      assessmentType = 'assignment',
-      marksPerQuestion = 1
-    } = req.body;
+    console.log(`[ExtractText] Processing ${req.file.originalname} (${req.file.size} bytes)`);
+    
+    // Set a timeout for extraction
+    const extractionPromise = parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Extraction timed out after 30 seconds')), 30000)
+    );
 
-    const userId = req.user._id;
-
-    // 1. Extract text from document
-    let text = '';
-    const parsed = await parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
-    text = parsed.text;
-
-    if (!text || text.trim().length < 50) {
-      return res.status(400).json({
+    const parsed = await Promise.race([extractionPromise, timeoutPromise]);
+    
+    if (!parsed.text || parsed.text.trim().length < 50) {
+      return res.status(422).json({
         success: false,
-        message: 'The PDF does not contain enough readable text.'
+        error: 'The document does not contain enough readable text (minimum 50 characters required).'
       });
     }
 
-    // 2. Prepare instructions
-    let typeInstructions;
-    switch (questionType) {
-      case 'multiple-choice': typeInstructions = 'multiple-choice questions with 4 options each'; break;
-      case 'theory': typeInstructions = 'open-ended theory questions'; break;
-      case 'fill-in-gap': typeInstructions = 'fill-in-the-gap questions with the blank marked as ___'; break;
-      case 'all': typeInstructions = 'a mix of multiple-choice, theory, and fill-in-the-gap questions'; break;
-      default: typeInstructions = 'multiple-choice questions';
-    }
-
-    const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
-
-    const questionCount = Math.min(Math.max(parseInt(numberOfQuestions) || 5, 1), 50);
-
-    // 3. Generate questions using AI
-    console.log(`📝 Generating ${questionCount} questions from PDF for user ${userId} (stream=${req.body.stream})`);
-    const textForModel = sampleStudyMaterial(text.trim(), 10000);
-    const aiPrompt = quizPrompt(textForModel, questionCount, typeInstructions);
-
-    if (req.body.stream === 'true' || req.body.stream === true) {
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-
-      const streamResponse = await aiClient.chatCompletion({
-        model: selectedModel.id,
-        messages: [{ role: "user", content: aiPrompt }],
-        max_tokens: Math.min(8192, 1200 + questionCount * 450),
-        temperature: 0.7,
-        stream: true
-      });
-
-      let fullAiContent = '';
-      for await (const chunk of streamResponse) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          fullAiContent += content;
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
-        }
-      }
-
-      console.log(`✅ AI Stream complete for PDF quiz. Processing ${fullAiContent.length} chars...`);
-      res.write(`data: ${JSON.stringify({ status: 'processing' })}\n\n`);
-
-      try {
-        const startIdx = fullAiContent.indexOf('[');
-        const endIdx = fullAiContent.lastIndexOf(']');
-        let cleanJsonString = fullAiContent;
-        if (startIdx !== -1 && endIdx !== -1) {
-          cleanJsonString = fullAiContent.substring(startIdx, endIdx + 1);
-        } else {
-          cleanJsonString = fullAiContent.replace(/```json|```/g, "").trim();
-        }
-
-        const parsedQuestions = JSON.parse(cleanJsonString);
-        const formattedQuestions = parsedQuestions.map((q) => {
-          const options = q.options || q.choices || q.answers || [];
-          let correctAnswer = q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : (q.correct_answer !== undefined ? q.correct_answer : (q.modelAnswer !== undefined ? q.modelAnswer : q.model_answer)));
-
-          if (typeof correctAnswer === 'string' && options.length > 0) {
-            let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
-            if (idx === -1) {
-              const trimmed = correctAnswer.trim().toUpperCase();
-              // 1. Try match at start
-              const startMatch = trimmed.match(/^([A-E])([\s\.)-]|$)/);
-              if (startMatch) {
-                const letter = startMatch[1];
-                const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
-                if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
-                  idx = letterMap[letter];
-                }
-              } else {
-                // 2. Try patterns
-                const patternMatch = trimmed.match(/ANSWER[:\s]+([A-E])\b/) || trimmed.match(/\b([A-E])\b/);
-                if (patternMatch) {
-                  const letter = patternMatch[1];
-                  const letterMap = { 'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4 };
-                  if (letterMap[letter] !== undefined && letterMap[letter] < options.length) {
-                    idx = letterMap[letter];
-                  }
-                } else if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
-                  idx = parseInt(trimmed);
-                }
-              }
-            }
-            if (idx !== -1) correctAnswer = idx;
-          }
-
-          return {
-            teacherId: userId,
-            question: q.question || q.content || q.text || q.prompt || q.questionText || "",
-            options: options,
-            correctAnswer: correctAnswer,
-            knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
-            subject: subject || "General Study",
-            difficulty: difficulty,
-            type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-gap' ? 'fill-blank' : questionType))),
-            totalMarks: parseInt(marksPerQuestion) || 1,
-            source: 'AI'
-          };
-        });
-
-        const savedQuestions = await Question.insertMany(formattedQuestions);
-        await incrementAIUsage(req.user._id, savedQuestions.length);
-
-        res.write(`data: ${JSON.stringify({ questions: savedQuestions, done: true })}\n\n`);
-      } catch (err) {
-        console.error("❌ generateQuestionsFromPDF Parsing Error:", err.message);
-        res.write(`data: ${JSON.stringify({ error: "Failed to parse generated questions." })}\n\n`);
-      }
-
-      res.write('data: [DONE]\n\n');
-      return res.end();
-    }
-
-    const aiResponse = await aiClient.chatCompletion({
-      model: selectedModel.id,
-      messages: [{ role: "user", content: aiPrompt }],
-      max_tokens: Math.min(8192, 1200 + questionCount * 450),
-      temperature: 0.7,
-    });
-
-    const aiContent = aiResponse.choices[0].message.content;
-
-    // Clean up JSON
-    const startIdx = aiContent.indexOf('[');
-    const endIdx = aiContent.lastIndexOf(']');
-    let cleanJsonString = aiContent;
-    if (startIdx !== -1 && endIdx !== -1) {
-      cleanJsonString = aiContent.substring(startIdx, endIdx + 1);
-    } else {
-      cleanJsonString = aiContent.replace(/```json|```/g, "").trim();
-    }
-
-    const parsedQuestions = JSON.parse(cleanJsonString);
-
-    // 4. Format and Save to DB
-    const formattedQuestions = parsedQuestions.map((q) => {
-      const options = q.options || q.choices || q.answers || [];
-      let correctAnswer = q.answer !== undefined ? q.answer : (q.correctAnswer !== undefined ? q.correctAnswer : (q.correct_answer !== undefined ? q.correct_answer : (q.modelAnswer !== undefined ? q.modelAnswer : q.model_answer)));
-
-      // Convert text/letter answer to index if options exist
-      if (typeof correctAnswer === 'string' && options.length > 0) {
-        let idx = options.findIndex(opt => opt && opt.toLowerCase().trim() === correctAnswer.toLowerCase().trim());
-
-        if (idx === -1) {
-          const trimmed = correctAnswer.trim().toLowerCase();
-          // Try handles "0", "1", etc.
-          if (!isNaN(parseInt(trimmed)) && parseInt(trimmed) < options.length) {
-            idx = parseInt(trimmed);
-          } else if (trimmed.length === 1) {
-            // Try handles "A", "B", etc.
-            const letterMap = { 'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4 };
-            if (letterMap[trimmed] !== undefined && letterMap[trimmed] < options.length) {
-              idx = letterMap[trimmed];
-            }
-          }
-        }
-        if (idx !== -1) correctAnswer = idx;
-      }
-
-      return {
-        teacherId: userId,
-        question: q.question || q.content || q.text || q.prompt || q.questionText || "",
-        options: options,
-        correctAnswer: correctAnswer,
-        knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
-        subject: subject || "General Study",
-        difficulty: difficulty,
-        type: (q.type || questionType) === 'multiple-choice' ? 'obj' : (q.type || questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-gap' ? 'fill-blank' : questionType))),
-        totalMarks: parseInt(marksPerQuestion) || 1,
-        source: 'AI'
-      };
-    });
-
-    const savedQuestions = await Question.insertMany(formattedQuestions);
-
-    // Count this as one AI usage
-    await incrementAIUsage(req.user._id, savedQuestions.length);
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      questions: savedQuestions,
-      message: `Successfully generated ${savedQuestions.length} questions.`
+      text: parsed.text,
+      title: req.file.originalname.replace(/\.[^/.]+$/i, ''),
+      chars: parsed.text.length,
+      pages: parsed.numpages || 1
     });
 
   } catch (error) {
-    console.error("❌ generateQuestionsFromPDF Error:", error.message);
-    return res.status(500).json({
+    console.error("❌ extractTextFromPDF Error:", error.message);
+    return res.status(error.message.includes('timeout') ? 504 : 500).json({
       success: false,
-      message: error.message || "Failed to generate questions from PDF"
+      error: error.message || "Failed to extract text from document"
     });
   }
 };
+
+/**
+ * Generate questions from a PDF file.
+ * DEPRECATED: Use extractTextFromPDF followed by generateQuiz for better stability.
+ */
+export const generateQuestionsFromPDF = async (req, res) => {
+  // Keeping this for compatibility but redirecting internally or just wrapping
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No PDF file uploaded' });
+    }
+    
+    const parsed = await parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
+    req.body.text = parsed.text;
+    return generateQuiz(req, res);
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};

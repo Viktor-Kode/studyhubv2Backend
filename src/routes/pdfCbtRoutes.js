@@ -1,7 +1,7 @@
 import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
 import { pdfMemoryUpload } from '../config/pdfMemoryUpload.js';
-import { extractQuestionsFromPDF } from '../controllers/pdfCbtController.js';
+import { extractQuestionsFromPDF, extractOnly, generateOnly } from '../controllers/pdfCbtController.js';
 
 const router = express.Router();
 
@@ -18,6 +18,7 @@ router.post('/extract-debug', pdfMemoryUpload.single('pdf'), (req, res) => {
   });
 });
 
-router.post('/extract', protect, pdfMemoryUpload.single('pdf'), extractQuestionsFromPDF);
+router.post('/extract', protect, pdfMemoryUpload.single('pdf'), extractOnly);
+router.post('/generate', protect, generateOnly);
 
 export default router;

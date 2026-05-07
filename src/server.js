@@ -22,6 +22,12 @@ const server = app.listen(PORT, HOST, () => {
   console.log(`🚀 Server started on http://${HOST}:${PORT}`);
 });
 
+// Increase timeouts for large file processing and uploads
+server.timeout = 120000; // 120 seconds
+server.keepAliveTimeout = 120000;
+server.headersTimeout = 125000;
+
+
 // GRACEFUL SHUTDOWN
 process.on('SIGTERM', async () => {
   console.log('👋 SIGTERM received. Shutting down gracefully...');
