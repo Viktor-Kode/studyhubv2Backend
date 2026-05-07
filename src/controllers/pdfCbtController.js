@@ -207,8 +207,10 @@ export const extractOnly = async (req, res) => {
 
   } catch (error) {
     console.error("❌ PDF CBT extractOnly Error:", error.message);
+    console.error('Stack:', error.stack);
     return res.status(error.message.includes('timeout') ? 504 : 500).json({
-      error: error.message || "Failed to extract text from document"
+      error: error.message || "Failed to extract text from document",
+      details: error.stack
     });
   }
 };

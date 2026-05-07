@@ -1,7 +1,7 @@
-import { createRequire } from 'module';
+import pdfParseLib from 'pdf-parse';
 
-const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
+// Handle different export patterns (ESM vs CommonJS)
+const pdfParse = typeof pdfParseLib === 'function' ? pdfParseLib : (pdfParseLib.default || pdfParseLib);
 
 /**
  * Robust PDF text extraction using pdf-parse.
@@ -17,7 +17,7 @@ export const parsePdfBuffer = async (buffer) => {
       throw new Error('File is not a valid PDF (missing %PDF header)');
     }
 
-    // 2. Parse using the direct function (v1 API style)
+    // 2. Parse using the direct function
     const data = await pdfParse(buffer);
     
     return {
