@@ -8,6 +8,7 @@ import mongoose from 'mongoose';
 import { incrementFlashcardUsage, incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { updateStreak } from '../services/streakService.js';
 import { logUserActivity } from '../services/activityService.js';
+import LibraryDocument from '../models/LibraryDocument.js';
 
 // Create a new flashcard
 export const createFlashCard = async (req, res) => {
@@ -546,9 +547,21 @@ export const getFlashCardStats = async (req, res) => {
 // AI & Bulk
 export const generateAIFlashCards = async (req, res) => {
     const userId = req.user._id;
-    const { text, deckId, amount = 10, modelId, category } = req.body;
+    const { text, documentId, deckId, amount = 10, modelId, category } = req.body;
+    let contentToUse = text;
 
-    if (!text || text.trim().length < 50) {
+    if (documentId) {
+        try {
+            const doc = await LibraryDocument.findOne({ _id: documentId, userId }).lean();
+            if (doc && doc.extractedText) {
+                contentToUse = doc.extractedText;
+            }
+        } catch (err) {
+            console.error('[generateAIFlashCards] Failed to fetch document:', err.message);
+        }
+    }
+
+    if (!contentToUse || contentToUse.trim().length < 50) {
         return res.status(400).json({ success: false, message: 'Text too short' });
     }
 
@@ -556,7 +569,7 @@ export const generateAIFlashCards = async (req, res) => {
         const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
         const response = await aiClient.chatCompletion({
             model: selectedModel.id,
-            messages: [{ role: "user", content: flashCardPrompt(text, amount) }],
+            messages: [{ role: "user", content: flashCardPrompt(contentToUse, amount) }],
             max_tokens: 2000,
             temperature: 0.1,
         });

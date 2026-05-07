@@ -1,6 +1,8 @@
 import { parseDocumentBuffer } from '../utils/documentParser.js';
 import fetch from 'node-fetch';
 import { getEnv } from '../config/env.js';
+import LibraryDocument from '../models/LibraryDocument.js';
+import { uploadToCloudinary } from '../utils/cloudinary.js';
 
 const cleanPdfText = (text) => {
   return text
@@ -154,13 +156,40 @@ ${rawContent}`;
 
 export const extractQuestionsFromPDF = async (req, res) => {
   try {
-    let rawText = req.body?.text;
+    const { documentId, text, requestedCount: reqCount } = req.body;
+    let rawText = text;
+    let docTitle = 'PDF CBT Upload';
 
-    if (!rawText && req.file) {
+    if (documentId) {
+      const doc = await LibraryDocument.findOne({ _id: documentId, userId: req.user._id });
+      if (doc) {
+        rawText = doc.extractedText;
+        docTitle = doc.title;
+      }
+    } else if (req.file) {
       try {
         const parsed = await parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
         rawText = parsed.text;
+        docTitle = req.file.originalname.replace(/\.[^/.]+$/i, '');
+        
         console.log(`[PDF CBT] Extracted ${rawText?.length || 0} chars from ${req.file.originalname}`);
+
+        // Save to library as per user instruction: "immediately extract... and save it in the database"
+        try {
+          const cloudinaryResult = await uploadToCloudinary(req.file.buffer, req.file.originalname);
+          await LibraryDocument.create({
+            userId: req.user._id,
+            title: docTitle,
+            fileUrl: cloudinaryResult.url,
+            fileType: req.file.mimetype,
+            fileSize: req.file.size,
+            extractedText: rawText || ''
+          });
+          console.log(`[PDF CBT] Saved new document to library: ${docTitle}`);
+        } catch (saveErr) {
+          console.error('[PDF CBT] Failed to save document to library:', saveErr.message);
+          // Continue even if save fails, to provide the CBT result
+        }
       } catch (parseErr) {
         console.error('[PDF CBT] parseDocumentBuffer failed:', parseErr.message);
         return res.status(400).json({
@@ -175,7 +204,7 @@ export const extractQuestionsFromPDF = async (req, res) => {
       });
     }
 
-    const requestedCountRaw = Number.parseInt(String(req.body?.requestedCount || ''), 10);
+    const requestedCountRaw = Number.parseInt(String(reqCount || ''), 10);
     const requestedCount = Number.isFinite(requestedCountRaw)
       ? Math.min(Math.max(requestedCountRaw, 1), 100)
       : 60;

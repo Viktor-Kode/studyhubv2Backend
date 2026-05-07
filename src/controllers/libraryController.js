@@ -8,6 +8,7 @@ import ReadingProgress from '../models/ReadingProgress.js';
 import fetch from 'node-fetch';
 import { parsePdfBuffer } from '../utils/parsePdf.js';
 import { logPaywallEvent } from '../utils/paywallLogger.js';
+import { parseDocumentBuffer } from '../utils/documentParser.js';
 
 // SharedLibraryItem may not exist yet — import defensively
 let SharedLibraryItem = null;
@@ -84,22 +85,31 @@ export const finalizeUpload = async (req, res) => {
       pages: 0,
       publicId,
       originalName,
+      extractedText: '', // Will be populated in background
     });
 
     res.status(201).json({ success: true, document });
 
-    if ((fileType || '').toLowerCase() === 'application/pdf') {
-      void (async () => {
-        try {
-          const pages = await getPdfPagesFromUrl(fileUrl);
-          if (pages > 0) {
-            await LibraryDocument.findByIdAndUpdate(document._id, { pages });
-          }
-        } catch (err) {
-          console.error('[Library] Background page count failed:', err.message);
-        }
-      })();
-    }
+    // Background: Page count + Text Extraction
+    void (async () => {
+      try {
+        const response = await fetch(fileUrl);
+        if (!response.ok) throw new Error(`Failed to fetch file: ${response.statusText}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        const [parsed] = await Promise.all([
+          parseDocumentBuffer(buffer, originalName || title, fileType),
+        ]);
+
+        const updates = { extractedText: parsed.text || '' };
+        if (parsed.numpages > 0) updates.pages = parsed.numpages;
+
+        await LibraryDocument.findByIdAndUpdate(document._id, updates);
+        console.log(`[Library] Processed document ${document._id}: ${updates.extractedText.length} chars, ${updates.pages} pages`);
+      } catch (err) {
+        console.error('[Library] Background processing failed:', err.message);
+      }
+    })();
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -455,23 +465,31 @@ export const createDocument = async (req, res) => {
       pages: 0, // initially 0, will be updated in background
       publicId: req.file.filename,
       originalName,
+      extractedText: '', // Will be populated in background
     });
 
     res.status(201).json({ success: true, document });
 
-    // Update page count in the background to avoid 504 timeouts
-    if (isPdf) {
-      void (async () => {
-        try {
-          const pages = await getPdfPagesFromUrl(fileUrl);
-          if (pages > 0) {
-            await LibraryDocument.findByIdAndUpdate(document._id, { pages });
-          }
-        } catch (err) {
-          console.error('[Library] Background page count failed:', err.message);
-        }
-      })();
-    }
+    // Background: Page count + Text Extraction
+    void (async () => {
+      try {
+        const response = await fetch(fileUrl);
+        if (!response.ok) throw new Error(`Failed to fetch file: ${response.statusText}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        const [parsed] = await Promise.all([
+          parseDocumentBuffer(buffer, originalName || title, req.file.mimetype),
+        ]);
+
+        const updates = { extractedText: parsed.text || '' };
+        if (parsed.numpages > 0) updates.pages = parsed.numpages;
+
+        await LibraryDocument.findByIdAndUpdate(document._id, updates);
+        console.log(`[Library] Processed document ${document._id}: ${updates.extractedText.length} chars, ${updates.pages} pages`);
+      } catch (err) {
+        console.error('[Library] Background processing failed:', err.message);
+      }
+    })();
   } catch (error) {
     console.error('[Library] Document upload error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -505,6 +523,27 @@ export const getDocumentById = async (req, res) => {
           : { currentPage: 1, percentage: 0, lastReadAt: null },
       },
     });
+
+    // Migration/Background Job: If extractedText is missing, process it now
+    if (!document.extractedText) {
+      void (async () => {
+        try {
+          console.log(`[Library] Migrating document ${document._id}: extracting text...`);
+          const response = await fetch(document.fileUrl);
+          if (!response.ok) return;
+          const buffer = Buffer.from(await response.arrayBuffer());
+          const parsed = await parseDocumentBuffer(buffer, document.originalName || document.title, document.fileType);
+          
+          const updates = { extractedText: parsed.text || '' };
+          if (parsed.numpages > 0 && !document.pages) updates.pages = parsed.numpages;
+
+          await LibraryDocument.findByIdAndUpdate(document._id, updates);
+          console.log(`[Library] Migration complete for ${document._id}`);
+        } catch (err) {
+          console.error('[Library] Migration failed:', err.message);
+        }
+      })();
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

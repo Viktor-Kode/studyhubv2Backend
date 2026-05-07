@@ -14,14 +14,27 @@ import { sampleStudyMaterial } from '../utils/studyMaterialSample.js';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 import { parseDocumentBuffer } from '../utils/documentParser.js';
+import LibraryDocument from '../models/LibraryDocument.js';
 
 /**
  * Controller to generate study notes.
  */
 export const generateNotes = async (req, res) => {
-  const { text, modelId, stream = false } = req.body;
+  const { text, documentId, modelId, stream = false } = req.body;
+  let contentToUse = text;
 
-  if (!text || text.trim().length < 50) {
+  if (documentId) {
+    try {
+      const doc = await LibraryDocument.findOne({ _id: documentId, userId: req.user._id }).lean();
+      if (doc && doc.extractedText) {
+        contentToUse = doc.extractedText;
+      }
+    } catch (err) {
+      console.error('[generateNotes] Failed to fetch document:', err.message);
+    }
+  }
+
+  if (!contentToUse || contentToUse.trim().length < 50) {
     return res.status(400).json({
       success: false,
       message: 'Text is too short. Please provide at least 50 characters.'
@@ -31,9 +44,9 @@ export const generateNotes = async (req, res) => {
   try {
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
 
-    const textForModel = sampleStudyMaterial(text.trim(), 12000);
+    const textForModel = sampleStudyMaterial(contentToUse.trim(), 12000);
 
-    console.log(`📝 Generating Notes for text length: ${text.length} (model input ${textForModel.length}) using model: ${selectedModel.id} (stream=${stream})`);
+    console.log(`📝 Generating Notes for text length: ${contentToUse.length} (model input ${textForModel.length}) using model: ${selectedModel.id} (stream=${stream})`);
 
     if (stream) {
       res.setHeader('Content-Type', 'text/event-stream');
@@ -165,10 +178,23 @@ export const deleteStudyNote = async (req, res) => {
  * Controller to generate quiz questions.
  */
 export const generateQuiz = async (req, res) => {
-  const { text, subject, modelId, amount = 5, questionType = 'multiple-choice', fileName, forceNew = false, stream = false } = req.body;
+  const { text, documentId, subject, modelId, amount = 5, questionType = 'multiple-choice', fileName, forceNew = false, stream = false } = req.body;
   const userId = req.user._id;
 
-  if (!text || text.trim().length < 50) {
+  let contentToUse = text;
+
+  if (documentId) {
+    try {
+      const doc = await LibraryDocument.findOne({ _id: documentId, userId }).lean();
+      if (doc && doc.extractedText) {
+        contentToUse = doc.extractedText;
+      }
+    } catch (err) {
+      console.error('[generateQuiz] Failed to fetch document:', err.message);
+    }
+  }
+
+  if (!contentToUse || contentToUse.trim().length < 50) {
     return res.status(400).json({
       success: false,
       message: 'Text is too short. Please provide at least 50 characters.'
@@ -176,7 +202,7 @@ export const generateQuiz = async (req, res) => {
   }
 
   try {
-    const textHash = crypto.createHash('sha256').update(text.trim().toLowerCase()).digest('hex');
+    const textHash = crypto.createHash('sha256').update(contentToUse.trim().toLowerCase()).digest('hex');
     const existingDoc = await DocumentHash.findOne({ hash: textHash, userId });
     let excludeQuestionContents = [];
 
@@ -211,7 +237,7 @@ export const generateQuiz = async (req, res) => {
 
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
 
-    const textForModel = sampleStudyMaterial(text.trim(), 14000);
+    const textForModel = sampleStudyMaterial(contentToUse.trim(), 14000);
 
     let typeInstructions;
     switch (questionType) {
@@ -518,7 +544,19 @@ export const deleteQuizSession = async (req, res) => {
 };
 
 export const chatWithTutor = async (req, res) => {
-  const { message, context, chatHistory = [], modelId, stream = false } = req.body;
+  const { message, context, documentId, chatHistory = [], modelId, stream = false } = req.body;
+  let contextToUse = context;
+
+  if (documentId) {
+    try {
+      const doc = await LibraryDocument.findOne({ _id: documentId, userId: req.user._id }).lean();
+      if (doc && doc.extractedText) {
+        contextToUse = doc.extractedText;
+      }
+    } catch (err) {
+      console.error('[chatWithTutor] Failed to fetch document:', err.message);
+    }
+  }
 
   if (!message) {
     return res.status(400).json({ success: false, message: 'Message is required' });
@@ -527,8 +565,8 @@ export const chatWithTutor = async (req, res) => {
   try {
     console.log(`💬 chatWithTutor: msg="${message.substring(0, 30)}...", model=${modelId}, stream=${stream}, history=${chatHistory?.length}`);
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
-    const contextForModel = context
-      ? sampleStudyMaterial(String(context), 8000)
+    const contextForModel = contextToUse
+      ? sampleStudyMaterial(String(contextToUse), 8000)
       : 'No specific document provided.';
     const systemPrompt = `You are an expert AI Study Tutor. Your goal is to help students understand their study materials. 
     Context: """${contextForModel}"""
@@ -741,8 +779,9 @@ export const generateQuestionsFromPDF = async (req, res) => {
     const userId = req.user._id;
 
     // 1. Extract text from document
+    let text = '';
     const parsed = await parseDocumentBuffer(req.file.buffer, req.file.originalname, req.file.mimetype);
-    const text = parsed.text;
+    text = parsed.text;
 
     if (!text || text.trim().length < 50) {
       return res.status(400).json({

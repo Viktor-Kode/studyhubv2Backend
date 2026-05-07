@@ -12,6 +12,7 @@ const LibraryDocumentSchema = new mongoose.Schema(
     coverColor: { type: String, default: '#5B4CF5' },
     pages: { type: Number, default: 0 },
     publicId: { type: String, required: true },
+    extractedText: { type: String, default: '' },
   },
   { timestamps: true }
 );
