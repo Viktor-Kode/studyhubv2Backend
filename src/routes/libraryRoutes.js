@@ -51,7 +51,7 @@ router.get('/proxy-file/:id', proxyLibraryFile);
 
 // Legacy endpoints kept for compatibility
 router.get('/', getMaterials);
-router.post('/upload', pdfUpload.single('pdf'), uploadMaterial);
+router.post('/upload', pdfMemoryUpload.single('pdf'), uploadMaterial);
 router.put('/folder', manageFolder);
 router.put('/:id/progress', saveProgress);
 router.put('/:id', updateMaterial);
