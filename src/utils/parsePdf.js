@@ -1,7 +1,9 @@
-import pdfParseLib from 'pdf-parse';
+import { createRequire } from 'module';
 
-// Handle different export patterns (ESM vs CommonJS)
-const pdfParse = typeof pdfParseLib === 'function' ? pdfParseLib : (pdfParseLib.default || pdfParseLib);
+const require = createRequire(import.meta.url);
+// pdf-parse is a CommonJS-only module — must be loaded via require() in an ESM context
+const pdfParseLib = require('pdf-parse');
+const pdfParse = typeof pdfParseLib === 'function' ? pdfParseLib : pdfParseLib.default;
 
 /**
  * Robust PDF text extraction using pdf-parse.
