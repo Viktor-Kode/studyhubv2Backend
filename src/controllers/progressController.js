@@ -166,14 +166,23 @@ export const getLeaderboard = async (req, res) => {
     try {
         const { timeframe = 'today' } = req.query;
         let sortField = 'dailyXP';
-        if (timeframe === 'week') sortField = 'weeklyXP';
-        if (timeframe === 'lifetime') sortField = 'xp';
+        let query = {};
+        let limit = 80;
+
+        if (timeframe === 'today') {
+            sortField = 'dailyXP';
+            limit = 10;
+            const todayStr = new Date().toISOString().split('T')[0];
+            query.dayStart = todayStr;
+        } else if (timeframe === 'lifetime') {
+            sortField = 'xp';
+        }
 
         const userId = String(req.user._id);
 
-        const topProgress = await UserProgress.find()
+        const topProgress = await UserProgress.find(query)
             .sort({ [sortField]: -1 })
-            .limit(80)
+            .limit(limit)
             .lean();
 
         const ids = topProgress
