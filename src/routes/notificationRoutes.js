@@ -20,6 +20,33 @@ router.post('/mark-read', markAllRead);
 router.post('/mark-read/:id', markOneRead);
 router.post('/register-token', registerToken);
 router.post('/register-web-push', registerWebPush);
+router.post('/subscribe', registerWebPush);
+router.post('/test-push', async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id || req.user._id);
+    if (!user || !user.webPushSubscription) {
+      return res.status(400).json({ error: 'No push subscription found for this user.' });
+    }
+
+    const webpush = (await import('web-push')).default;
+    webpush.setVapidDetails(
+      'mailto:support@studyhelp.com',
+      process.env.VAPID_PUBLIC_KEY,
+      process.env.VAPID_PRIVATE_KEY
+    );
+
+    const payload = JSON.stringify({
+      title: '🔔 StudyHelp notifications are working!',
+      body: 'Your study reminders are now active.',
+    });
+
+    await webpush.sendNotification(user.webPushSubscription, payload);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Test push failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 router.post('/disable', disableNotifications);
 
 // GET /api/notifications/test — SMS test (Termii)

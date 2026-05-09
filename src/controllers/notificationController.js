@@ -88,8 +88,8 @@ export const disableNotifications = async (req, res) => {
 
 export const registerWebPush = async (req, res) => {
   try {
-    const { subscription } = req.body || {};
-    if (!subscription) {
+    let subscription = req.body.subscription || req.body;
+    if (!subscription || !subscription.endpoint) {
       return res.status(400).json({ error: 'subscription required' });
     }
     const uid = req.user.firebaseUid || req.user._id || req.user.id;
