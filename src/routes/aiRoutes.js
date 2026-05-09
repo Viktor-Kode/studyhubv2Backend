@@ -6,6 +6,7 @@ import {
     saveStudyNote,
     getStudyNotes,
     deleteStudyNote,
+    updateStudyNote,
     getQuestions,
     getQuizSessions,
     getQuizSession,
@@ -33,6 +34,8 @@ router.post('/notes/save', saveStudyNote);
 router.get('/notes', getStudyNotes);
 // Delete a study note (DELETE)
 router.delete('/notes/:id', deleteStudyNote);
+// Update a study note (PUT)
+router.put('/notes/:id', updateStudyNote);
 
 // Generate a new quiz (POST)
 router.post('/generate', checkAIUsage, generateQuiz);

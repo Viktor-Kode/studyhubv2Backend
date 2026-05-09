@@ -181,6 +181,33 @@ export const deleteStudyNote = async (req, res) => {
 };
 
 /**
+ * Update a study note - only if it belongs to the user.
+ */
+export const updateStudyNote = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { title, content, tags } = req.body;
+    
+    const updates = {};
+    if (title !== undefined) updates.title = title;
+    if (content !== undefined) updates.content = content;
+    if (tags !== undefined) updates.tags = tags;
+
+    const note = await StudyNote.findOneAndUpdate(
+      { _id: req.params.id, userId },
+      { $set: updates },
+      { new: true }
+    );
+
+    if (!note) return res.status(404).json({ success: false, message: 'Note not found or not authorized' });
+    return res.status(200).json({ success: true, note });
+  } catch (error) {
+    console.error("❌ updateStudyNote Error:", error.message);
+    return res.status(500).json({ success: false, message: "Failed to update study note" });
+  }
+};
+
+/**
  * Controller to generate quiz questions.
  */
 export const generateQuiz = async (req, res) => {
