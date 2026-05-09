@@ -25,7 +25,7 @@ router.post('/test-push', async (req, res) => {
   try {
     const user = await User.findById(req.user.id || req.user._id);
     if (!user || !user.webPushSubscription) {
-      return res.status(400).json({ error: 'No push subscription found for this user.' });
+      return res.status(400).json({ error: 'No push subscription found. Please enable notifications first.' });
     }
 
     const webpush = (await import('web-push')).default;
