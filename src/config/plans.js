@@ -113,16 +113,16 @@ export const PLANS = {
     },
     addon: {
         name: 'AI Add-on',
-        aiLimit: 100,
+        aiLimit: 60,
         flashcardLimit: 0,
-        durationDays: 0,
+        durationDays: 5,
         price: 50000, // kobo — ₦500
         amount: 500, // naira
         label: '₦500 one-time',
         features: [
-            '100 extra AI-generated questions',
+            '60 extra AI-generated questions',
             'Added to your current plan',
-            'Never expires'
+            'Expires in 5 days'
         ]
     }
 };
