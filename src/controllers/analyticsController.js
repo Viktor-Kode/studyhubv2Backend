@@ -115,7 +115,11 @@ export const getFullAnalytics = async (req, res) => {
             last7Days.push(d);
         }
 
-        const [studyStats, flashStats, cbtStats] = await Promise.all([
+        // Additional imports needed for new stats
+        const UserStats = (await import('../models/UserStats.js')).default;
+        const Question = (await import('../models/Question.js')).default;
+
+        const [studyStats, flashStats, cbtStats, userStats, recentSessions, allCbtResults] = await Promise.all([
             // 7-day Study Sessions
             StudySession.aggregate([
                 {
@@ -154,8 +158,41 @@ export const getFullAnalytics = async (req, res) => {
                         count: { $sum: 1 }
                     }
                 }
-            ])
+            ]),
+
+            // User Stats (Streak, etc)
+            UserStats.findOne({ userId: studentId }),
+
+            // Recent Sessions
+            CBTResult.find({ studentId })
+                .sort({ takenAt: -1 })
+                .limit(10)
+                .select('subject accuracy takenAt totalQuestions')
+                .lean(),
+            
+            // All CBT Results for Trend and Questions count
+            CBTResult.find({ studentId })
+                .sort({ takenAt: 1 })
+                .select('accuracy takenAt totalQuestions')
+                .lean()
         ]);
+
+        // Calculate analytics from allCbtResults
+        let overallAccuracy = 0;
+        let questionCount = 0;
+        let totalSessions = allCbtResults.length;
+        
+        if (allCbtResults.length > 0) {
+            overallAccuracy = allCbtResults.reduce((acc, curr) => acc + (curr.accuracy || 0), 0) / allCbtResults.length;
+            questionCount = allCbtResults.reduce((acc, curr) => acc + (curr.totalQuestions || 0), 0);
+        }
+
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        const trendData = allCbtResults
+            .filter(r => new Date(r.takenAt) >= thirtyDaysAgo)
+            .map(r => ({ date: r.takenAt, score: r.accuracy }));
 
         // Format study data to ensure all 7 days are present
         const studyData = last7Days.map(date => {
@@ -172,7 +209,14 @@ export const getFullAnalytics = async (req, res) => {
             data: {
                 studyChart: studyData,
                 flashStats,
-                cbtStats
+                cbtStats,
+                // New Fields
+                studyStreak: userStats ? userStats.studyStreak : 0,
+                totalSessions,
+                questionCount,
+                overallAccuracy,
+                recentSessions,
+                trendData
             }
         });
 
