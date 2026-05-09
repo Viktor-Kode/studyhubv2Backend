@@ -3,6 +3,17 @@ import PushNotification from '../models/PushNotification.js';
 import User from '../models/User.js';
 import { sendEmail } from './emailService.js';
 import { getEnv } from '../config/env.js';
+import webpush from 'web-push';
+
+try {
+  webpush.setVapidDetails(
+    'mailto:support@studyhelp.com',
+    getEnv('VAPID_PUBLIC_KEY') || 'BDwY_XTd827IvdnV3MbcuUosDltKcM4WSea2jxhVubX3xA8nnd8H4clSyRCFEZ5rXKVvSSxIFIdA7AKB7zaU9hE',
+    getEnv('VAPID_PRIVATE_KEY') || 'm3tu1aef4R9Q8Q73m_zoI4iQ2so7wg2_fmwmDhfrROU'
+  );
+} catch (e) {
+  console.error('[WebPush] Failed to set vapid details:', e.message);
+}
 
 const EMAIL_TYPES = ['payment_confirmed', 'plan_expiring', 'streak_ending', 'admin_announcement'];
 
@@ -98,6 +109,25 @@ export const sendNotification = async ({
           await User.findOneAndUpdate({ firebaseUid: userId }, { fcmToken: null });
         }
         console.error('[FCM]', fcmErr.message);
+      }
+    }
+
+    if (user.webPushSubscription && user.notificationsEnabled) {
+      try {
+        const linkPath = link.startsWith('/') ? link : `/${link}`;
+        const fullUrl = `${frontendBase()}${linkPath}`;
+        const payload = JSON.stringify({
+          title,
+          body,
+          icon: '/android-chrome-192x192.png',
+          data: { url: fullUrl }
+        });
+        await webpush.sendNotification(user.webPushSubscription, payload);
+      } catch (wpErr) {
+        if (wpErr.statusCode === 404 || wpErr.statusCode === 410) {
+          await User.findOneAndUpdate({ _id: user._id }, { webPushSubscription: null });
+        }
+        console.error('[WebPush]', wpErr.message);
       }
     }
 

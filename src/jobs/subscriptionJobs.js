@@ -7,6 +7,8 @@ cron.schedule('0 0 * * *', async () => {
     console.log('🔄 Running subscription expiry check...');
     try {
         const now = new Date();
+        const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const { sendNotification } = await import('../services/notificationService.js');
 
         // Find all expired active subscriptions
         const expired = await User.find({
@@ -35,6 +37,35 @@ cron.schedule('0 0 * * *', async () => {
                 await sendPlanExpiryWarning(user.phoneNumber, {
                     planName: planNameForNotify,
                     daysLeft: 0
+                });
+            }
+
+            if (user.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+                await sendNotification({
+                    userId: user.firebaseUid,
+                    type: 'plan_expired',
+                    title: `Your ${planNameForNotify} plan has expired`,
+                    body: `Hey ${user.name}, renew now to keep your premium access!`,
+                    link: '/dashboard/upgrade'
+                });
+            }
+        }
+
+        // Find subscriptions expiring tomorrow
+        const expiringSoon = await User.find({
+            subscriptionStatus: 'active',
+            subscriptionEnd: { $gte: now, $lt: tomorrow }
+        });
+
+        for (const user of expiringSoon) {
+            const planNameForNotify = user.subscriptionPlan || 'subscription';
+            if (user.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+                await sendNotification({
+                    userId: user.firebaseUid,
+                    type: 'plan_expiring',
+                    title: `Your ${planNameForNotify} plan expires tomorrow`,
+                    body: `Hey ${user.name}, don't lose your premium features!`,
+                    link: '/dashboard/upgrade'
                 });
             }
         }

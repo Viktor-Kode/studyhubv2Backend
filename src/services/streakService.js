@@ -1,4 +1,5 @@
 import Streak from '../models/Streak.js';
+import User from '../models/User.js';
 import mongoose from 'mongoose';
 
 const VALID_ACTIVITIES = ['timer', 'cbt', 'flashcard', 'question_generator'];
@@ -67,6 +68,20 @@ export const updateStreak = async (studentId, activityType) => {
             streak.streakHistory.push({ date: today, activities: [activityType], count: 1 });
 
             console.log(`[Streak] Streak extended to ${streak.currentStreak} for ${studentId}`);
+            
+            if ([3, 7, 14, 30].includes(streak.currentStreak)) {
+                const user = await User.findById(id).select('firebaseUid');
+                if (user?.firebaseUid) {
+                    const { sendNotification } = await import('./notificationService.js');
+                    await sendNotification({
+                        userId: user.firebaseUid,
+                        type: 'streak_milestone',
+                        title: `You're on a ${streak.currentStreak} day streak!`,
+                        body: 'Keep going 💪',
+                        link: '/dashboard/student'
+                    });
+                }
+            }
         } else {
             console.log(`[Streak] Streak broken for ${studentId}. Was ${streak.currentStreak}, resetting to 1`);
             streak.currentStreak = 1;

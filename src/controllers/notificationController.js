@@ -86,6 +86,24 @@ export const disableNotifications = async (req, res) => {
   }
 };
 
+export const registerWebPush = async (req, res) => {
+  try {
+    const { subscription } = req.body || {};
+    if (!subscription) {
+      return res.status(400).json({ error: 'subscription required' });
+    }
+    const uid = req.user.firebaseUid || req.user._id || req.user.id;
+    if (!uid) {
+      return res.status(400).json({ error: 'Missing User ID' });
+    }
+    const filter = req.user.firebaseUid ? { firebaseUid: uid } : { _id: uid };
+    await User.findOneAndUpdate(filter, { webPushSubscription: subscription, notificationsEnabled: true });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const adminNotifyAll = async (req, res) => {
   try {
     const { title, body, link } = req.body || {};

@@ -3,6 +3,7 @@ import Reminder from '../models/Reminder.js';
 import User from '../models/User.js';
 import { sendEmail, reminderEmailTemplate } from '../services/emailService.js';
 import { parseReminderWallClockToUtc } from '../utils/reminderTime.js';
+import { sendNotification } from '../services/notificationService.js';
 
 // Run every minute to check due reminders and send Email messages
 cron.schedule(
@@ -14,7 +15,6 @@ cron.schedule(
       // Fetch reminders that can send Email
       const reminders = await Reminder.find({
         completed: false,
-        emailEnabled: true,
       }).lean();
 
       if (!reminders.length) return;
@@ -36,10 +36,8 @@ cron.schedule(
           }
 
           // Determine destination Email address
-          const user = await User.findById(reminder.userId).select('email').lean();
+          const user = await User.findById(reminder.userId).select('email firebaseUid name webPushSubscription notificationsEnabled fcmToken').lean();
           const to = user?.email;
-
-          if (!to) continue;
 
           // 1) Send BEFORE reminder time (notifyBefore minutes)
           if (!reminder.emailBeforeNotifiedAt && now >= notifyTime && now < eventTime) {
@@ -49,7 +47,12 @@ cron.schedule(
             });
 
             const subject = `Reminder: ${reminder.title || 'Upcoming task'}`;
-            const result = await sendEmail({ to, subject, html });
+            let result = { success: false, error: 'No email address' };
+            if (to) {
+              result = await sendEmail({ to, subject, html });
+            } else {
+              result = { success: true }; // bypass error if no email
+            }
 
             if (!result.success) {
               console.error(
@@ -62,6 +65,16 @@ cron.schedule(
                 { $set: { emailBeforeNotifiedAt: new Date() } },
               );
             }
+
+            if (user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+              await sendNotification({
+                userId: user.firebaseUid,
+                type: 'timetable_reminder',
+                title: `Upcoming: ${reminder.title || 'Task'}`,
+                body: `Starts in ${notifyMinutes} minutes!`,
+                link: '/dashboard/timetable'
+              });
+            }
           }
 
           // 2) Send AT the reminder time
@@ -72,7 +85,12 @@ cron.schedule(
             });
 
             const subject = `StudyHelp Reminder: ${reminder.title || 'Task starting now'}`;
-            const result = await sendEmail({ to, subject, html });
+            let result = { success: false, error: 'No email address' };
+            if (to) {
+              result = await sendEmail({ to, subject, html });
+            } else {
+              result = { success: true };
+            }
 
             if (!result.success) {
               console.error(
@@ -84,6 +102,16 @@ cron.schedule(
                 { _id: reminder._id },
                 { $set: { emailAtTimeNotifiedAt: new Date() } },
               );
+            }
+
+            if (user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+              await sendNotification({
+                userId: user.firebaseUid,
+                type: 'timetable_reminder',
+                title: `Time to study: ${reminder.title || 'Task'}`,
+                body: `It's time! Let's get to work 💪`,
+                link: '/dashboard/timetable'
+              });
             }
           }
         } catch (err) {

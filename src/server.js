@@ -7,6 +7,7 @@ import { registerPushNotificationCrons } from './jobs/pushNotificationCron.js';
 import './jobs/subscriptionJobs.js';
 import './jobs/streakJobs.js';
 import './jobs/reminderJobs.js';
+import './jobs/leaderboardJobs.js';
 
 // Connect to Database
 connectDB().then(() => {

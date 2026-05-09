@@ -8,6 +8,7 @@ import {
   markOneRead,
   registerToken,
   disableNotifications,
+  registerWebPush,
 } from '../controllers/notificationController.js';
 
 const router = express.Router();
@@ -18,6 +19,7 @@ router.get('/', getNotifications);
 router.post('/mark-read', markAllRead);
 router.post('/mark-read/:id', markOneRead);
 router.post('/register-token', registerToken);
+router.post('/register-web-push', registerWebPush);
 router.post('/disable', disableNotifications);
 
 // GET /api/notifications/test — SMS test (Termii)
