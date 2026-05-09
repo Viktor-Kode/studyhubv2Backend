@@ -156,11 +156,25 @@ ${rawContent}`;
 
 /**
  * Step 1: Extract text from PDF/Document.
+ * If the caller has already extracted text client-side, they can POST { text } directly
+ * to skip server-side parsing entirely.
  */
 export const extractOnly = async (req, res) => {
   try {
+    // ── Fast-path: caller pre-extracted the text (browser-side PDF parsing) ──
+    if (req.body?.text && String(req.body.text).trim().length >= 50) {
+      const rawText = String(req.body.text).trim();
+      const docTitle = req.body.title || 'Document';
+      return res.status(200).json({
+        success: true,
+        text: rawText,
+        title: docTitle,
+        chars: rawText.length,
+      });
+    }
+
     if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+      return res.status(400).json({ error: 'No file uploaded and no text provided' });
     }
 
     console.log(`[PDF CBT Extract] Processing ${req.file.originalname}`);

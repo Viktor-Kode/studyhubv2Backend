@@ -778,11 +778,24 @@ export const fetchUrlContent = async (req, res) => {
 
 /**
  * Step 1: Extract text from PDF/Document without generating questions yet.
+ * If the caller already has extracted text (browser-side), POST { text } to skip parsing.
  */
 export const extractTextFromPDF = async (req, res) => {
   try {
+    // ── Fast-path: caller pre-extracted the text ──
+    if (req.body?.text && String(req.body.text).trim().length >= 50) {
+      const rawText = String(req.body.text).trim();
+      return res.status(200).json({
+        success: true,
+        text: rawText,
+        title: req.body.title || 'Document',
+        chars: rawText.length,
+        pages: 0,
+      });
+    }
+
     if (!req.file) {
-      return res.status(400).json({ success: false, error: 'No file uploaded' });
+      return res.status(400).json({ success: false, error: 'No file uploaded and no text provided' });
     }
 
     console.log(`[ExtractText] Processing ${req.file.originalname} (${req.file.size} bytes)`);
