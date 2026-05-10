@@ -235,7 +235,7 @@ export const extractOnly = async (req, res) => {
  */
 export const generateOnly = async (req, res) => {
   try {
-    const { text, requestedCount: reqCount } = req.body;
+    const { text, requestedCount: reqCount, questionType } = req.body;
 
     if (!text || text.trim().length < 50) {
       return res.status(400).json({ error: 'Text content is too short for question generation.' });
@@ -246,13 +246,19 @@ export const generateOnly = async (req, res) => {
       ? Math.min(Math.max(requestedCountRaw, 1), 100)
       : 60;
 
+    const typePrompt = questionType === 'objective' 
+      ? 'ONLY extract objective/multiple-choice questions.' 
+      : questionType === 'theory' 
+        ? 'ONLY extract theory/essay/short-answer questions.' 
+        : 'Extract a mix of both objective and theory questions.';
+
     const cleaned = cleanPdfText(text);
     const truncated = smartExtract(cleaned, 14000);
 
     const prompt = `You are an exam question extractor. The text below is from a past question PDF that contains questions AND their answers mixed together.
 
 Your job:
-1. Extract ALL valid questions (both objective and theory/essay/short-answer)
+1. ${typePrompt}
 2. Identify the best answer for each question from nearby answer keys or marking guides
 3. Strip long answer explanations, keeping only concise final answers
 4. Return them in structured JSON
