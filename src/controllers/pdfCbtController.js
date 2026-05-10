@@ -3,6 +3,7 @@ import fetch from 'node-fetch';
 import { getEnv } from '../config/env.js';
 import LibraryDocument from '../models/LibraryDocument.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
+import { callAI } from '../utils/aiClient.js';
 
 const cleanPdfText = (text) => {
   return text
@@ -286,7 +287,7 @@ Return ONLY this JSON format with no extra text:
 PDF TEXT:
 ${truncated}`;
 
-    const aiContent = await callAiForQuestions(prompt);
+    const aiContent = await callAI(prompt);
     const parsedData = parseAiJson(aiContent);
 
     if (!parsedData || !parsedData.questions) {
