@@ -15,6 +15,7 @@ import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 import { parseDocumentBuffer } from '../utils/documentParser.js';
 import LibraryDocument from '../models/LibraryDocument.js';
+import { awardXP } from './progressController.js';
 
 /**
  * Controller to generate study notes.
@@ -78,6 +79,7 @@ export const generateNotes = async (req, res) => {
 
       // After generation, increment usage and update streak
       await incrementAIUsage(req.user._id);
+      await awardXP(req.user._id, 'ai_generate_notes');
       await updateStreak(req.user._id, 'question_generator');
 
       res.write('data: [DONE]\n\n');
@@ -95,6 +97,7 @@ export const generateNotes = async (req, res) => {
     const notes = response.choices[0].message.content;
 
     await incrementAIUsage(req.user._id);
+    await awardXP(req.user._id, 'ai_generate_notes');
     const streak = await updateStreak(req.user._id, 'question_generator');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
     const lastDate = streak?.lastActivityDate
@@ -396,6 +399,7 @@ export const generateQuiz = async (req, res) => {
         }
 
         await incrementAIUsage(req.user._id, savedQuestions.length);
+        await awardXP(req.user._id, 'ai_generate_quiz');
         await updateStreak(req.user._id, 'question_generator');
 
         // Send final metadata
@@ -498,6 +502,7 @@ export const generateQuiz = async (req, res) => {
     }
 
     await incrementAIUsage(req.user._id, savedQuestions.length);
+    await awardXP(req.user._id, 'ai_generate_quiz');
     const streak = await updateStreak(req.user._id, 'question_generator');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
     const lastDate = streak?.lastActivityDate
@@ -650,6 +655,7 @@ Do not number them or add any text before the [[ brackets.`;
       }
 
       await incrementAIUsage(req.user._id);
+      await awardXP(req.user._id, 'ai_tutor_chat');
       await updateStreak(req.user._id, 'question_generator');
 
       res.write('data: [DONE]\n\n');
@@ -665,6 +671,7 @@ Do not number them or add any text before the [[ brackets.`;
     const reply = response.choices[0].message.content;
 
     await incrementAIUsage(req.user._id);
+    await awardXP(req.user._id, 'ai_tutor_chat');
     const streak = await updateStreak(req.user._id, 'question_generator');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });
     const lastDate = streak?.lastActivityDate

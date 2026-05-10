@@ -12,6 +12,9 @@ export const XP_REWARDS = {
     group_cbt_top3: 20,
     pomodoro_complete: 5,
     pomodoro_streak_daily: 20,
+    ai_tutor_chat: 3,
+    ai_generate_notes: 15,
+    ai_generate_quiz: 20,
 };
 
 export const LEVELS = [
