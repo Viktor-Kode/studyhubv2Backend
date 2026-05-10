@@ -316,6 +316,18 @@ export const saveCBTResult = async (req, res) => {
             studyGroupId 
         } = req.body;
 
+        const subjectSlug = resolveSubjectSlug(subject);
+        const typesToTry = (t) => {
+            if (!t) return ['utme', 'wassce'];
+            const lower = t.toLowerCase();
+            if (lower === 'jamb' || lower === 'utme') return ['utme'];
+            if (lower === 'waec' || lower === 'wassce') return ['wassce'];
+            if (lower === 'neco') return ['wassce', 'neco'];
+            if (lower === 'bece') return ['wassce', 'bece'];
+            return [lower];
+        };
+        const activeExamTypes = typesToTry(examType);
+
         let verifiedAnswers = [];
         let correctCount = 0;
         let attemptedCount = 0;
@@ -323,8 +335,11 @@ export const saveCBTResult = async (req, res) => {
         // BOLA & Cheating Prevention: Verify each answer server-side
         if (clientAnswers && Array.isArray(clientAnswers)) {
             for (const ans of clientAnswers) {
-                // Find question in DB
+                // Find question in DB with full context to avoid ID collisions
                 const question = await CBTQuestion.findOne({
+                    subject: subjectSlug,
+                    examType: { $in: activeExamTypes },
+                    year: year,
                     $or: [
                         { _id: mongoose.Types.ObjectId.isValid(ans.questionId) ? ans.questionId : null },
                         { questionNumber: ans.questionId }
@@ -714,14 +729,17 @@ export const verifyAnswer = async (req, res) => {
             explanation = cached.explanation;
         } else {
             // ALOC / Cached DB Question
+            const { subject, year, examType } = req.body;
+            const subjectSlug = resolveSubjectSlug(subject);
+            
             const question = await CBTQuestion.findOne({ 
+                subject: subjectSlug,
+                year: year,
                 $or: [{ _id: mongoose.Types.ObjectId.isValid(questionId) ? questionId : null }, { questionNumber: questionId }]
             });
             
             if (!question) {
-                // If not in DB, we might need to fetch from ALOC again? 
-                // For now, assume it's in DB because fetchCbtQuestionPack upserts.
-                return res.status(404).json({ error: 'Question not found' });
+                return res.status(404).json({ error: 'Question not found in database. Please ensure you are taking a valid exam.' });
             }
             
             actualAnswer = question.correctAnswer;
