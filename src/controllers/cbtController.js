@@ -1,4 +1,5 @@
 import axios from 'axios';
+import mongoose from 'mongoose';
 import { getEnv } from '../config/env.js';
 import CBTQuestion from '../models/CBTQuestion.js';
 import User from '../models/User.js';
@@ -331,15 +332,28 @@ export const saveCBTResult = async (req, res) => {
                 });
 
                 if (question) {
-                    const isCorrect = String(ans.selectedAnswer).toLowerCase() === String(question.correctAnswer).toLowerCase();
+                    const optionKeys = ['a', 'b', 'c', 'd', 'e'];
+                    let correctText = '';
+                    
+                    if (typeof question.correctAnswer === 'string' && optionKeys.includes(question.correctAnswer.toLowerCase())) {
+                        const idx = optionKeys.indexOf(question.correctAnswer.toLowerCase());
+                        correctText = question.options[idx] || '';
+                    } else if (!isNaN(parseInt(question.correctAnswer))) {
+                        correctText = question.options[parseInt(question.correctAnswer)] || '';
+                    } else {
+                        correctText = question.correctAnswer;
+                    }
+
+                    const isCorrect = String(ans.selectedAnswer).toLowerCase() === String(correctText).toLowerCase();
                     if (isCorrect) correctCount++;
                     if (ans.selectedAnswer && ans.selectedAnswer !== 'Skipped') attemptedCount++;
 
                     verifiedAnswers.push({
                         questionId: ans.questionId,
                         question: question.questionText,
+                        options: question.options,
                         selectedAnswer: ans.selectedAnswer,
-                        correctAnswer: question.correctAnswer,
+                        correctAnswer: correctText,
                         isCorrect,
                         explanation: question.explanation
                     });
@@ -711,7 +725,26 @@ export const verifyAnswer = async (req, res) => {
             }
             
             actualAnswer = question.correctAnswer;
-            correct = String(selectedAnswer).toLowerCase() === String(actualAnswer).toLowerCase();
+            
+            const optionKeys = ['a', 'b', 'c', 'd', 'e'];
+            let correctText = '';
+            if (typeof actualAnswer === 'string' && optionKeys.includes(actualAnswer.toLowerCase())) {
+                const idx = optionKeys.indexOf(actualAnswer.toLowerCase());
+                correctText = question.options[idx] || '';
+            } else if (!isNaN(parseInt(actualAnswer))) {
+                correctText = question.options[parseInt(actualAnswer)] || '';
+            } else {
+                correctText = actualAnswer;
+            }
+
+            // In Study Mode, the frontend might send the letter (A, B, C, D) or the text
+            // If the selectedAnswer is a single letter, compare with actualAnswer (the letter)
+            if (String(selectedAnswer).length === 1 && optionKeys.includes(String(selectedAnswer).toLowerCase())) {
+                correct = String(selectedAnswer).toLowerCase() === String(actualAnswer).toLowerCase();
+            } else {
+                // Otherwise compare with the text
+                correct = String(selectedAnswer).toLowerCase() === String(correctText).toLowerCase();
+            }
             explanation = question.explanation;
         }
 
