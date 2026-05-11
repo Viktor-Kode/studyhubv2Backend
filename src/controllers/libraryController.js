@@ -22,7 +22,7 @@ try {
 
 const FREE_LIMIT_MB = 50;
 const PAID_LIMIT_MB = 500;
-const FREE_DOCUMENT_LIMIT = 5;
+const FREE_DOCUMENT_LIMIT = 2;
 
 // GET /api/library/upload-signature
 export const getUploadSignature = async (req, res) => {
