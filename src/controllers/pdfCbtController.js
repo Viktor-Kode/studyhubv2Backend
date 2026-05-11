@@ -4,6 +4,9 @@ import { getEnv } from '../config/env.js';
 import LibraryDocument from '../models/LibraryDocument.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
 import { callAI } from '../utils/aiClient.js';
+import { incrementAIUsage } from '../middleware/usageMiddleware.js';
+import { awardXP } from './progressController.js';
+import { updateStreak } from '../services/streakService.js';
 
 const cleanPdfText = (text) => {
   return text
@@ -342,6 +345,13 @@ ${truncated}`;
           answer: safeAnswer,
         };
       });
+
+    // Increment AI Usage: 1 per question generated
+    if (questions.length > 0) {
+      await incrementAIUsage(req.user._id, questions.length);
+      await awardXP(req.user._id, 'ai_generate_quiz');
+      await updateStreak(req.user._id, 'question_generator');
+    }
 
     return res.status(200).json({
       subject: parsedData.subject || 'General',

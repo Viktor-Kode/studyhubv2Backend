@@ -13,7 +13,7 @@ export const checkAIUsage = async (req, res, next) => {
         user = await expireStaleActiveSubscription(user);
 
         // Determine how many AI units this request needs
-        const requestedAmount = parseInt(req.body.amount || req.body.numberOfQuestions || req.body.count || 1) || 1;
+        const requestedAmount = parseInt(req.body.amount || req.body.numberOfQuestions || req.body.requestedCount || req.body.count || 1) || 1;
 
         // Check subscription is active
         if (user.subscriptionStatus === 'expired') {
