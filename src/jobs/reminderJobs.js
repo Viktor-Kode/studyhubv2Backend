@@ -40,33 +40,29 @@ cron.schedule(
           const to = user?.email;
 
           // 1) Send BEFORE reminder time (notifyBefore minutes)
-          if (!reminder.emailBeforeNotifiedAt && now >= notifyTime && now < eventTime) {
-            const html = reminderEmailTemplate({
-              ...reminder,
-              isNow: false
-            });
+          if (now >= notifyTime && now < eventTime) {
+            // A) EMAIL BEFORE (Via Resend)
+            if (reminder.emailEnabled && !reminder.emailBeforeNotifiedAt) {
+              const html = reminderEmailTemplate({ ...reminder, isNow: false });
+              const subject = `Reminder: ${reminder.title || 'Upcoming task'}`;
+              
+              let result = { success: false, error: 'No email address' };
+              if (to) {
+                result = await sendEmail({ to, subject, html });
+              } else {
+                result = { success: true }; 
+              }
 
-            const subject = `Reminder: ${reminder.title || 'Upcoming task'}`;
-            let result = { success: false, error: 'No email address' };
-            if (to) {
-              result = await sendEmail({ to, subject, html });
-            } else {
-              result = { success: true }; // bypass error if no email
+              if (result.success) {
+                await Reminder.updateOne(
+                  { _id: reminder._id },
+                  { $set: { emailBeforeNotifiedAt: new Date() } },
+                );
+              }
             }
 
-            if (!result.success) {
-              console.error(
-                `[ReminderJobs] Failed to send BEFORE Email for reminder ${reminder._id}:`,
-                result.error,
-              );
-            } else {
-              await Reminder.updateOne(
-                { _id: reminder._id },
-                { $set: { emailBeforeNotifiedAt: new Date() } },
-              );
-            }
-
-            if (user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+            // B) PUSH BEFORE (Phone Notification)
+            if (!reminder.pushBeforeNotifiedAt && user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
               await sendNotification({
                 userId: user.firebaseUid,
                 type: 'timetable_reminder',
@@ -74,37 +70,38 @@ cron.schedule(
                 body: `Starts in ${notifyMinutes} minutes!`,
                 link: '/dashboard/timetable'
               });
+
+              await Reminder.updateOne(
+                { _id: reminder._id },
+                { $set: { pushBeforeNotifiedAt: new Date() } },
+              );
             }
           }
 
           // 2) Send AT the reminder time
-          if (!reminder.emailAtTimeNotifiedAt && now >= eventTime) {
-            const html = reminderEmailTemplate({
-              ...reminder,
-              isNow: true
-            });
+          if (now >= eventTime) {
+            // A) EMAIL AT TIME (Via Resend)
+            if (reminder.emailEnabled && !reminder.emailAtTimeNotifiedAt) {
+              const html = reminderEmailTemplate({ ...reminder, isNow: true });
+              const subject = `StudyHelp Reminder: ${reminder.title || 'Task starting now'}`;
+              
+              let result = { success: false, error: 'No email address' };
+              if (to) {
+                result = await sendEmail({ to, subject, html });
+              } else {
+                result = { success: true };
+              }
 
-            const subject = `StudyHelp Reminder: ${reminder.title || 'Task starting now'}`;
-            let result = { success: false, error: 'No email address' };
-            if (to) {
-              result = await sendEmail({ to, subject, html });
-            } else {
-              result = { success: true };
+              if (result.success) {
+                await Reminder.updateOne(
+                  { _id: reminder._id },
+                  { $set: { emailAtTimeNotifiedAt: new Date() } },
+                );
+              }
             }
 
-            if (!result.success) {
-              console.error(
-                `[ReminderJobs] Failed to send AT-TIME Email for reminder ${reminder._id}:`,
-                result.error,
-              );
-            } else {
-              await Reminder.updateOne(
-                { _id: reminder._id },
-                { $set: { emailAtTimeNotifiedAt: new Date() } },
-              );
-            }
-
-            if (user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+            // B) PUSH AT TIME (Phone Notification)
+            if (!reminder.pushAtTimeNotifiedAt && user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
               await sendNotification({
                 userId: user.firebaseUid,
                 type: 'timetable_reminder',
@@ -112,6 +109,11 @@ cron.schedule(
                 body: `It's time! Let's get to work 💪`,
                 link: '/dashboard/timetable'
               });
+
+              await Reminder.updateOne(
+                { _id: reminder._id },
+                { $set: { pushAtTimeNotifiedAt: new Date() } },
+              );
             }
           }
         } catch (err) {

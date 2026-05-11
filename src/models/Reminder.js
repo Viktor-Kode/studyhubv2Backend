@@ -52,7 +52,9 @@ const reminderSchema = new mongoose.Schema(
         },
         recurringDays: [Number],
         emailBeforeNotifiedAt: Date,
-        emailAtTimeNotifiedAt: Date
+        emailAtTimeNotifiedAt: Date,
+        pushBeforeNotifiedAt: Date,
+        pushAtTimeNotifiedAt: Date
     },
     { timestamps: true }
 );
