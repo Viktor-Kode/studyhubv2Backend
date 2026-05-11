@@ -334,8 +334,28 @@ export const saveCBTResult = async (req, res) => {
 
         // BOLA & Cheating Prevention: Verify each answer server-side
         if (clientAnswers && Array.isArray(clientAnswers)) {
+            const isPdfCbt = examType === 'PDF_CBT';
+
             for (const ans of clientAnswers) {
-                // Find question in DB with full context to avoid ID collisions
+                if (isPdfCbt) {
+                    // For AI-generated PDF CBT, we trust the client-side answers 
+                    // because these questions aren't stored in the main question bank
+                    const isCorrect = ans.isCorrect === true;
+                    if (isCorrect) correctCount++;
+                    if (ans.selectedAnswer && ans.selectedAnswer !== 'Skipped') attemptedCount++;
+
+                    verifiedAnswers.push({
+                        questionId: ans.questionId,
+                        question: ans.question,
+                        selectedAnswer: ans.selectedAnswer,
+                        correctAnswer: ans.correctAnswer,
+                        isCorrect,
+                        explanation: ans.explanation || ''
+                    });
+                    continue;
+                }
+
+                // Standard Question Bank verification
                 const question = await CBTQuestion.findOne({
                     subject: subjectSlug,
                     examType: { $in: activeExamTypes },
@@ -376,8 +396,9 @@ export const saveCBTResult = async (req, res) => {
             }
         }
 
+        const totalGradable = verifiedAnswers.filter(a => typeof a.isCorrect === 'boolean').length;
         const total = totalQuestions || verifiedAnswers.length || 0;
-        const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+        const accuracy = totalGradable > 0 ? Math.round((correctCount / totalGradable) * 100) : 0;
 
         const resultData = {
             studentId,
