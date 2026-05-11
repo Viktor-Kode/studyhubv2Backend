@@ -1030,6 +1030,7 @@ export const getFullDashboardStats = async (req, res) => {
             monthUsers,
             paidUsers,
             teacherUsers,
+            pwaUsers,
             totalRevenue,
             weekRevenue,
             monthRevenue,
@@ -1051,6 +1052,7 @@ export const getFullDashboardStats = async (req, res) => {
             User.countDocuments({ createdAt: { $gte: monthStartD } }),
             User.countDocuments({ subscriptionStatus: 'active' }),
             User.countDocuments({ role: 'teacher' }),
+            User.countDocuments({ isPWA: true }),
             Transaction.aggregate([
                 { $match: txSuccess },
                 { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -1158,7 +1160,8 @@ export const getFullDashboardStats = async (req, res) => {
                 month: monthUsers,
                 paid: paidUsers,
                 free: freeUsers,
-                teachers: teacherUsers
+                teachers: teacherUsers,
+                pwa: pwaUsers
             },
             revenue: {
                 total: totalRevenue[0]?.total || 0,

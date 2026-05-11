@@ -338,3 +338,23 @@ export const updateUserPreferences = async (req, res, next) => {
         next(err);
     }
 };
+
+/**
+ * Mark user as PWA user
+ */
+export const trackPwaUsage = async (req, res, next) => {
+    try {
+        const user = await User.findByIdAndUpdate(
+            req.user._id,
+            { $set: { isPWA: true } },
+            { new: true }
+        );
+
+        res.status(200).json({
+            status: 'success',
+            data: { isPWA: user?.isPWA }
+        });
+    } catch (err) {
+        next(err);
+    }
+};

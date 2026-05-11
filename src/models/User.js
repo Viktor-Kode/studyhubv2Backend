@@ -120,6 +120,7 @@ const userSchema = new mongoose.Schema({
     fcmToken: { type: String, default: null },
     notificationsEnabled: { type: Boolean, default: false },
     webPushSubscription: { type: Object, default: null },
+    isPWA: { type: Boolean, default: false },
     following: [{ type: String }],
 
 }, { timestamps: true });

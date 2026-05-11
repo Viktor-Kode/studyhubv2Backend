@@ -8,6 +8,7 @@ import {
     updatePassword,
     updateMe,
     updateUserPreferences,
+    trackPwaUsage,
 } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -24,5 +25,6 @@ router.get('/me', protect, getMe);
 router.patch('/preferences', protect, updateUserPreferences);
 router.patch('/update-me', protect, updateMe);
 router.post('/update-password', protect, updatePassword);
+router.post('/pwa-usage', protect, trackPwaUsage);
 
 export default router;
