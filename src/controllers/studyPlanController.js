@@ -77,22 +77,24 @@ const generateTasks = (planType, details, challenges, startDate, days = 14) => {
         currentDate.setDate(currentDate.getDate() + i);
         currentDate.setHours(0, 0, 0, 0);
 
-        let dailyTasksCount = 4 + Math.floor(Math.random() * 2);
-        if (challenges.includes('no_time')) dailyTasksCount = 2 + Math.floor(Math.random() * 2);
-        else if (challenges.includes('distraction')) dailyTasksCount = 3;
+        // Build a daily pool that guarantees one task of each type — no duplicates
+        // Base pool: always one of each type
+        let dailyPool = [...TASK_TYPES]; // ['cbt', 'note', 'timer']
 
-        let lastType = null;
-        for (let j = 0; j < dailyTasksCount; j++) {
-            let type;
-            const rand = Math.random();
+        // no_time: only 2 tasks — pick the 2 highest-priority ones
+        if (challenges.includes('no_time')) {
+            dailyPool = challenges.includes('exam_anxiety')
+                ? ['cbt', 'note']
+                : ['timer', 'note'];
+        }
 
-            if (challenges.includes('exam_anxiety') && rand < 0.5) type = 'cbt';
-            else if ((challenges.includes('distraction') || challenges.includes('procrastination')) && rand < 0.4) type = 'timer';
-            else {
-                do { type = TASK_TYPES[Math.floor(Math.random() * TASK_TYPES.length)]; } while (type === lastType);
-            }
-            lastType = type;
+        // Shuffle the pool so order varies each day
+        for (let k = dailyPool.length - 1; k > 0; k--) {
+            const swap = Math.floor(Math.random() * (k + 1));
+            [dailyPool[k], dailyPool[swap]] = [dailyPool[swap], dailyPool[k]];
+        }
 
+        for (const type of dailyPool) {
             const subject = getWeightedRandomSubject();
             const details = getTaskDetails(type, subject, challenges);
 
