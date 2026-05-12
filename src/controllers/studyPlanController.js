@@ -188,6 +188,51 @@ export const updateTaskStatus = async (req, res) => {
     }
 };
 
+export const autoCompleteTask = async (req, res) => {
+    try {
+        const { type } = req.body;
+        const userId = req.user.firebaseUid || req.user._id;
+
+        const plan = await StudyPlan.findOne({ userId, isActive: true });
+        if (!plan) return res.status(200).json({ success: true, message: 'No active plan' });
+
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Find the first incomplete task of this type for today
+        const taskIndex = plan.tasks.findIndex(t => {
+            const taskDate = new Date(t.date).toISOString().split('T')[0];
+            return taskDate === today && t.type === type && !t.completed;
+        });
+
+        if (taskIndex === -1) {
+            return res.status(200).json({ success: true, message: 'No pending task of this type for today' });
+        }
+
+        plan.tasks[taskIndex].completed = true;
+        plan.tasks[taskIndex].completedAt = new Date();
+
+        // Update streak logic (reusing same logic as manual update)
+        const lastActive = plan.lastActiveDate ? plan.lastActiveDate.toISOString().split('T')[0] : null;
+        if (lastActive !== today) {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+            if (lastActive === yesterdayStr) {
+                plan.streak += 1;
+            } else {
+                plan.streak = 1;
+            }
+            plan.lastActiveDate = new Date();
+        }
+
+        await plan.save();
+        res.status(200).json({ success: true, plan });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
 export const resetPlan = async (req, res) => {
     try {
         const userId = req.user.firebaseUid || req.user._id;
