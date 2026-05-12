@@ -3,7 +3,7 @@ import User from '../models/User.js';
 
 const TASK_TYPES = ['cbt', 'note', 'timer', 'flashcard'];
 
-const generateTasks = (planType, details, startDate, days = 14) => {
+const generateTasks = (planType, details, challenge, startDate, days = 14) => {
     const tasks = [];
     const subjects = planType === 'exam' ? details.subjects : [details.subject];
     const weakSubjects = details.weakSubjects || [];
@@ -16,6 +16,7 @@ const generateTasks = (planType, details, startDate, days = 14) => {
     });
 
     const getWeightedRandomSubject = () => {
+        if (subjects.length === 0) return 'Subject';
         const totalWeight = weightedSubjects.reduce((sum, s) => sum + s.weight, 0);
         let random = Math.random() * totalWeight;
         for (const s of weightedSubjects) {
@@ -30,14 +31,30 @@ const generateTasks = (planType, details, startDate, days = 14) => {
         currentDate.setDate(currentDate.getDate() + i);
         currentDate.setHours(0, 0, 0, 0);
 
-        const dailyTasksCount = 4 + Math.floor(Math.random() * 2); // 4-5 tasks
-        let lastType = null;
+        let dailyTasksCount = 4 + Math.floor(Math.random() * 2); // default 4-5
+        
+        // Challenge-based adjustments
+        if (challenge === 'no_time') {
+            dailyTasksCount = 2 + Math.floor(Math.random() * 2); // 2-3 tasks
+        } else if (challenge === 'distraction') {
+            dailyTasksCount = 3 + Math.floor(Math.random() * 2); // 3-4 tasks
+        }
 
+        let lastType = null;
         for (let j = 0; j < dailyTasksCount; j++) {
             let type;
-            do {
-                type = TASK_TYPES[Math.floor(Math.random() * TASK_TYPES.length)];
-            } while (type === lastType);
+            const rand = Math.random();
+
+            // Weighted types based on challenge
+            if (challenge === 'exam_anxiety') {
+                type = rand < 0.6 ? 'cbt' : TASK_TYPES[Math.floor(Math.random() * TASK_TYPES.length)];
+            } else if (challenge === 'distraction' || challenge === 'procrastination') {
+                type = rand < 0.5 ? 'timer' : TASK_TYPES[Math.floor(Math.random() * TASK_TYPES.length)];
+            } else {
+                do {
+                    type = TASK_TYPES[Math.floor(Math.random() * TASK_TYPES.length)];
+                } while (type === lastType);
+            }
             lastType = type;
 
             const subject = getWeightedRandomSubject();
@@ -54,7 +71,8 @@ const generateTasks = (planType, details, startDate, days = 14) => {
                     link = '/dashboard/question-bank?tab=notes';
                     break;
                 case 'timer':
-                    title = `30 min focus session`;
+                    const duration = challenge === 'procrastination' ? '20 min' : '30 min';
+                    title = `${duration} focus session on ${subject}`;
                     link = '/dashboard/study-timer';
                     break;
                 case 'flashcard':
@@ -77,17 +95,23 @@ const generateTasks = (planType, details, startDate, days = 14) => {
 
 export const createStudyPlan = async (req, res) => {
     try {
-        const { planType, examDetails, generalDetails } = req.body;
+        const { planType, examDetails, generalDetails, studyChallenge } = req.body;
         const userId = req.user.firebaseUid || req.user._id;
 
         // Deactivate old plans
         await StudyPlan.updateMany({ userId, isActive: true }, { isActive: false });
 
-        const tasks = generateTasks(planType, planType === 'exam' ? examDetails : generalDetails, new Date());
+        const tasks = generateTasks(
+            planType, 
+            planType === 'exam' ? examDetails : generalDetails, 
+            studyChallenge,
+            new Date()
+        );
 
         const newPlan = await StudyPlan.create({
             userId,
             planType,
+            studyChallenge,
             examDetails,
             generalDetails,
             tasks,
