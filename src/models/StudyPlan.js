@@ -11,11 +11,10 @@ const studyPlanSchema = new mongoose.Schema({
         enum: ['exam', 'general'],
         required: true
     },
-    studyChallenge: {
+    studyChallenges: [{
         type: String,
-        enum: ['procrastination', 'distraction', 'no_plan', 'no_time', 'exam_anxiety'],
-        required: true
-    },
+        enum: ['procrastination', 'distraction', 'no_plan', 'no_time', 'exam_anxiety']
+    }],
     examDetails: {
         examName: String,
         examDate: Date,
