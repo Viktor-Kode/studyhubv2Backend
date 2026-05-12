@@ -4,6 +4,7 @@ import connectDB from './config/db.js';
 import mongoose from 'mongoose';
 import { registerNotificationJobs } from './jobs/notificationJobs.js';
 import { registerPushNotificationCrons } from './jobs/pushNotificationCron.js';
+import { registerStudyPlanJobs } from './jobs/studyPlanJobs.js';
 import './jobs/subscriptionJobs.js';
 import './jobs/streakJobs.js';
 import './jobs/reminderJobs.js';
@@ -13,6 +14,7 @@ import './jobs/leaderboardJobs.js';
 connectDB().then(() => {
   registerNotificationJobs();
   registerPushNotificationCrons();
+  registerStudyPlanJobs();
 });
 
 const PORT = Number(getEnv('PORT', 5000));

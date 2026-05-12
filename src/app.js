@@ -38,6 +38,7 @@ import communityRoutes from './routes/communityRoutes.js';
 import groupsRoutes from './routes/groupsRoutes.js';
 import studyGroupRoutes from './routes/studyGroupRoutes.js';
 import pdfCbtRoutes from './routes/pdfCbtRoutes.js';
+import studyPlanRoutes from './routes/studyPlanRoutes.js';
 import SharedNote from './models/SharedNote.js';
 import SharedLibraryItem from './models/SharedLibraryItem.js';
 import Group from './models/Group.js';
@@ -275,6 +276,7 @@ app.use('/api/groups', groupsRoutes);
 // Study groups (community tab) — separate from legacy /api/groups collaboration feature
 app.use('/api/study-groups', studyGroupRoutes);
 app.use('/api/pdf-cbt', cbtAILimiter, pdfCbtRoutes);
+app.use('/api/study-plan', studyPlanRoutes);
 
 app.get('/', (req, res) => {
   res.send('StudyHelp API is running...');
