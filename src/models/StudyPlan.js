@@ -33,7 +33,9 @@ const studyPlanSchema = new mongoose.Schema({
         type: { type: String, enum: ['cbt', 'note', 'timer', 'flashcard'], required: true },
         link: { type: String, required: true },
         completed: { type: Boolean, default: false },
-        completedAt: { type: Date }
+        completedAt: { type: Date },
+        label: { type: String },
+        tip: { type: String }
     }],
     streak: { type: Number, default: 0 },
     lastActiveDate: { type: Date },

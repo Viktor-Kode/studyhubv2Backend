@@ -8,22 +8,62 @@ const generateTasks = (planType, details, challenges, startDate, days = 14) => {
     const subjects = planType === 'exam' ? details.subjects : [details.subject];
     const weakSubjects = details.weakSubjects || [];
     
-    // Weight subjects: normal = 1, weak = 1.4
-    const weightedSubjects = [];
-    subjects.forEach(sub => {
-        const weight = weakSubjects.includes(sub) ? 1.4 : 1.0;
-        weightedSubjects.push({ name: sub, weight });
-    });
-
     const getWeightedRandomSubject = () => {
         if (subjects.length === 0) return 'Subject';
-        const totalWeight = weightedSubjects.reduce((sum, s) => sum + s.weight, 0);
-        let random = Math.random() * totalWeight;
-        for (const s of weightedSubjects) {
-            if (random < s.weight) return s.name;
-            random -= s.weight;
+        const weighted = subjects.map(s => ({ name: s, w: weakSubjects.includes(s) ? 1.4 : 1.0 }));
+        const total = weighted.reduce((sum, s) => sum + s.w, 0);
+        let r = Math.random() * total;
+        for (const s of weighted) {
+            if (r < s.w) return s.name;
+            r -= s.w;
         }
         return subjects[0];
+    };
+
+    const getTaskDetails = (type, subject, challenges) => {
+        let title = '';
+        let label = 'General Study';
+        let tip = '';
+        let link = '';
+
+        if (challenges.includes('procrastination')) {
+            label = '🔥 Procrastination Buster';
+            tip = 'Starting is the hardest part. Just commit to the first 5 minutes!';
+        } else if (challenges.includes('distraction')) {
+            label = '📵 Deep Focus';
+            tip = 'Put your phone in another room for this session.';
+        } else if (challenges.includes('exam_anxiety')) {
+            label = '🎯 Confidence Builder';
+            tip = 'Don\'t worry about the score yet, focus on learning one new thing.';
+        } else if (challenges.includes('no_time')) {
+            label = '⚡ High Impact';
+            tip = 'Short on time? Focus on the most difficult concepts first.';
+        }
+
+        switch (type) {
+            case 'cbt':
+                const count = challenges.includes('procrastination') ? 10 : 20;
+                title = `${subject}: Quick ${count}-Question Sprint`;
+                link = '/dashboard/cbt';
+                if (challenges.includes('exam_anxiety')) title = `${subject}: Mock Exam Simulation`;
+                break;
+            case 'note':
+                title = `${subject}: Generate Summary Notes`;
+                link = '/dashboard/question-bank?tab=notes';
+                if (challenges.includes('no_plan')) tip = 'Use these notes to build a mental map of the subject.';
+                break;
+            case 'timer':
+                const mins = challenges.includes('procrastination') ? 15 : 45;
+                title = `${subject}: ${mins}-Min Deep Work Session`;
+                link = '/dashboard/study-timer';
+                break;
+            case 'flashcard':
+                title = `${subject}: Flashcard Rapid Review`;
+                link = '/dashboard/library';
+                break;
+        }
+
+        return { title, label, tip, link };
     };
 
     for (let i = 0; i < days; i++) {
@@ -31,61 +71,29 @@ const generateTasks = (planType, details, challenges, startDate, days = 14) => {
         currentDate.setDate(currentDate.getDate() + i);
         currentDate.setHours(0, 0, 0, 0);
 
-        let dailyTasksCount = 4 + Math.floor(Math.random() * 2); // default 4-5
-        
-        // Challenge-based adjustments
-        if (challenges.includes('no_time')) {
-            dailyTasksCount = 2 + Math.floor(Math.random() * 2); // 2-3 tasks
-        } else if (challenges.includes('distraction')) {
-            dailyTasksCount = 3 + Math.floor(Math.random() * 2); // 3-4 tasks
-        }
+        let dailyTasksCount = 4 + Math.floor(Math.random() * 2);
+        if (challenges.includes('no_time')) dailyTasksCount = 2 + Math.floor(Math.random() * 2);
+        else if (challenges.includes('distraction')) dailyTasksCount = 3;
 
         let lastType = null;
         for (let j = 0; j < dailyTasksCount; j++) {
             let type;
             const rand = Math.random();
 
-            // Weighted types based on challenges
-            if (challenges.includes('exam_anxiety') && rand < 0.5) {
-                type = 'cbt';
-            } else if ((challenges.includes('distraction') || challenges.includes('procrastination')) && rand < 0.4) {
-                type = 'timer';
-            } else {
-                do {
-                    type = TASK_TYPES[Math.floor(Math.random() * TASK_TYPES.length)];
-                } while (type === lastType);
+            if (challenges.includes('exam_anxiety') && rand < 0.5) type = 'cbt';
+            else if ((challenges.includes('distraction') || challenges.includes('procrastination')) && rand < 0.4) type = 'timer';
+            else {
+                do { type = TASK_TYPES[Math.floor(Math.random() * TASK_TYPES.length)]; } while (type === lastType);
             }
             lastType = type;
 
             const subject = getWeightedRandomSubject();
-            let title = '';
-            let link = '';
-
-            switch (type) {
-                case 'cbt':
-                    title = `Practice 20 ${subject} questions`;
-                    link = '/dashboard/cbt';
-                    break;
-                case 'note':
-                    title = `Generate notes from ${subject}`;
-                    link = '/dashboard/question-bank?tab=notes';
-                    break;
-                case 'timer':
-                    const duration = challenges.includes('procrastination') ? '20 min' : '30 min';
-                    title = `${duration} focus session on ${subject}`;
-                    link = '/dashboard/study-timer';
-                    break;
-                case 'flashcard':
-                    title = `Review ${subject} flashcards`;
-                    link = '/dashboard/library';
-                    break;
-            }
+            const details = getTaskDetails(type, subject, challenges);
 
             tasks.push({
                 date: currentDate,
-                title,
+                ...details,
                 type,
-                link,
                 completed: false
             });
         }
