@@ -1,7 +1,7 @@
 import StudyPlan from '../models/StudyPlan.js';
 import User from '../models/User.js';
 
-const TASK_TYPES = ['cbt', 'note', 'timer', 'flashcard'];
+const TASK_TYPES = ['cbt', 'note', 'timer'];
 
 const generateTasks = (planType, details, challenges, startDate, days = 14) => {
     const tasks = [];
@@ -20,6 +20,8 @@ const generateTasks = (planType, details, challenges, startDate, days = 14) => {
         return subjects[0];
     };
 
+    const isUniversityOrGeneral = planType === 'general' || details.examName === 'University Exam';
+
     const getTaskDetails = (type, subject, challenges) => {
         let title = '';
         let label = '';
@@ -28,30 +30,24 @@ const generateTasks = (planType, details, challenges, startDate, days = 14) => {
 
         const getTaskTip = (type, challenges) => {
             if (type === 'timer') {
-                if (challenges.includes('procrastination')) return 'Starting is the hardest part. Just commit to the first 5 minutes!';
-                if (challenges.includes('distraction')) return 'Put your phone in another room and use your generated notes to study.';
-                return 'Focus purely on understanding. Use your AI-generated notes to guide this session.';
+                if (challenges.includes('procrastination')) return 'Just start for 5 minutes. Use your AI notes to stay focused.';
+                return 'Read your notes and explain concepts out loud to yourself.';
             }
             if (type === 'cbt') {
-                if (challenges.includes('exam_anxiety')) return 'Don\'t worry about the score yet. Review the explanations for every wrong answer.';
-                return 'Focus on speed and accuracy. Try to beat your previous time!';
+                return 'Practice makes perfect. Review your mistakes after you finish.';
             }
             if (type === 'note') {
-                if (challenges.includes('no_plan')) return 'Once generated, read through and highlight the most important definitions.';
-                return 'Use these notes as your primary study guide for your next Deep Work session.';
+                return 'Generate a summary and highlight the most important parts.';
             }
-            if (type === 'flashcard') {
-                return 'Say the answers out loud before flipping. It helps with memory retention!';
-            }
-            return 'Stay consistent and focus on one concept at a time.';
+            return 'Stay consistent!';
         };
 
         const getTaskLabel = (type, challenges) => {
-            if (challenges.includes('procrastination')) return '🔥 Procrastination Buster';
-            if (challenges.includes('distraction')) return '📵 Deep Focus';
-            if (challenges.includes('exam_anxiety')) return '🎯 Confidence Builder';
-            if (challenges.includes('no_time')) return '⚡ High Impact';
-            return '📚 General Study';
+            if (challenges.includes('procrastination')) return '🔥 Stop Procrastinating';
+            if (challenges.includes('distraction')) return '📵 Stay Focused';
+            if (challenges.includes('exam_anxiety')) return '🎯 Build Confidence';
+            if (challenges.includes('no_time')) return '⚡ Quick Session';
+            return '📚 Daily Study';
         };
 
         label = getTaskLabel(type, challenges);
@@ -59,23 +55,17 @@ const generateTasks = (planType, details, challenges, startDate, days = 14) => {
 
         switch (type) {
             case 'cbt':
-                const count = challenges.includes('procrastination') ? 10 : 20;
-                title = `${subject}: Quick ${count}-Question Sprint`;
-                link = '/dashboard/cbt';
-                if (challenges.includes('exam_anxiety')) title = `${subject}: Mock Exam Simulation`;
+                title = `Take a Quiz on ${subject}`;
+                link = isUniversityOrGeneral ? '/dashboard/question-bank?tab=quiz' : '/dashboard/cbt';
                 break;
             case 'note':
-                title = `${subject}: Generate Summary Notes`;
+                title = `Make Study Notes for ${subject}`;
                 link = '/dashboard/question-bank?tab=notes';
                 break;
             case 'timer':
                 const mins = challenges.includes('procrastination') ? 15 : 45;
-                title = `${subject}: ${mins}-Min Deep Work Session`;
+                title = `Focus Session: ${subject} (${mins} mins)`;
                 link = '/dashboard/study-timer';
-                break;
-            case 'flashcard':
-                title = `${subject}: Flashcard Rapid Review`;
-                link = '/dashboard/library';
                 break;
         }
 
