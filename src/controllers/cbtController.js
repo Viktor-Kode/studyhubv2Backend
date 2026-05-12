@@ -334,7 +334,9 @@ export const saveCBTResult = async (req, res) => {
 
         // BOLA & Cheating Prevention: Verify each answer server-side
         if (clientAnswers && Array.isArray(clientAnswers)) {
-            const isPdfCbt = examType === 'PDF_CBT';
+            // PDF_CBT and AI_STUDY questions are not stored in CBTQuestion (ALOC DB),
+            // so server-side DB lookup would always return empty — trust client isCorrect for these.
+            const isPdfCbt = examType === 'PDF_CBT' || examType === 'AI_STUDY';
 
             for (const ans of clientAnswers) {
                 if (isPdfCbt) {
