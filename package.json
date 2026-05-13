@@ -42,7 +42,8 @@
     "textract": "^2.5.0",
     "twilio": "^5.12.1",
     "uuid": "^13.0.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "zod": "^3.25.76"
   },
   "overrides": {
     "axios": "^1.15.0"

@@ -19,6 +19,14 @@ import {
 } from '../controllers/aiController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { checkAIUsage } from '../middleware/usageMiddleware.js';
+import { validate } from '../middleware/validate.js';
+import {
+    generateNotesSchema,
+    generateQuizSchema,
+    chatWithTutorSchema,
+    saveStudyNoteSchema,
+    fetchUrlSchema,
+} from '../validators/aiValidators.js';
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -27,9 +35,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.use(protect);
 
 // Generate study notes (POST) - counts as AI usage
-router.post('/notes', checkAIUsage, generateNotes);
+router.post('/notes', checkAIUsage, validate(generateNotesSchema), generateNotes);
 // Save a study note (POST)
-router.post('/notes/save', saveStudyNote);
+router.post('/notes/save', validate(saveStudyNoteSchema), saveStudyNote);
 // Get all study notes (GET)
 router.get('/notes', getStudyNotes);
 // Delete a study note (DELETE)
@@ -38,9 +46,9 @@ router.delete('/notes/:id', deleteStudyNote);
 router.put('/notes/:id', updateStudyNote);
 
 // Generate a new quiz (POST)
-router.post('/generate', checkAIUsage, generateQuiz);
+router.post('/generate', checkAIUsage, validate(generateQuizSchema), generateQuiz);
 // AI Tutor Chat (POST)
-router.post('/chat', checkAIUsage, chatWithTutor);
+router.post('/chat', checkAIUsage, validate(chatWithTutorSchema), chatWithTutor);
 
 // Fetch all individual questions (GET)
 router.get('/questions', getQuestions);
@@ -54,7 +62,7 @@ router.post('/generate-from-pdf', upload.single('pdf'), checkAIUsage, generateQu
 router.post('/extract', upload.single('pdf'), extractTextFromPDF);
 
 // Fetch and extract content from a URL (POST)
-router.post('/fetch-url', fetchUrlContent);
+router.post('/fetch-url', validate(fetchUrlSchema), fetchUrlContent);
 
 // Quiz Sessions (History grouped by quiz)
 router.get('/sessions', getQuizSessions);

@@ -13,6 +13,14 @@ import {
 import { protect } from '../middleware/authMiddleware.js';
 import { checkCBTAccess } from '../middleware/cbtMiddleware.js';
 import { checkAIUsage } from '../middleware/usageMiddleware.js';
+import { validate, validateQuery } from '../middleware/validate.js';
+import {
+    getQuestionsQuerySchema,
+    saveCBTResultSchema,
+    explainQuestionSchema,
+    generateTopicQuestionsSchema,
+    verifyAnswerSchema,
+} from '../validators/cbtValidators.js';
 
 const router = express.Router();
 
@@ -28,13 +36,13 @@ router.get('/test', testALOCConnection);
 router.get('/subjects', getAvailableSubjects);   // valid slugs, year range, exam types
 
 // Protected: fetch questions & store results
-router.get('/questions', protect, checkCBTAccess, getQuestionsProxy);
-router.post('/results', protect, saveCBTResult);
+router.get('/questions', protect, checkCBTAccess, validateQuery(getQuestionsQuerySchema), getQuestionsProxy);
+router.post('/results', protect, validate(saveCBTResultSchema), saveCBTResult);
 router.get('/results', protect, getCBTResults);
 router.get('/results/summary', protect, getCBTResultsSummary);
-router.post('/explain', protect, checkAIUsage, explainQuestion);
-// Syllabus “Study by Topic” — full URL: POST /api/cbt/generate-topic-questions (body: exam, subject, topic, count?)
-router.post('/generate-topic-questions', protect, checkAIUsage, generateTopicQuestions);
-router.post('/verify-answer', protect, verifyAnswer);
+router.post('/explain', protect, checkAIUsage, validate(explainQuestionSchema), explainQuestion);
+// Syllabus "Study by Topic" — full URL: POST /api/cbt/generate-topic-questions (body: exam, subject, topic, count?)
+router.post('/generate-topic-questions', protect, checkAIUsage, validate(generateTopicQuestionsSchema), generateTopicQuestions);
+router.post('/verify-answer', protect, validate(verifyAnswerSchema), verifyAnswer);
 
 export default router;
