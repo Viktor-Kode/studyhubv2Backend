@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { PLANS, TEACHER_PLANS } from '../config/plans.js';
 
-const VALID_PLANS = ['basic', 'pro', 'premium', 'addon', 'teacher_basic', 'teacher_pro'];
+const VALID_PLANS = Array.from(new Set([...Object.keys(PLANS || {}), ...Object.keys(TEACHER_PLANS || {})]));
 
 // POST /api/payment/initialize
 export const initializePaymentSchema = z.object({
