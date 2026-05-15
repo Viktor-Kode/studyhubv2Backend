@@ -21,21 +21,29 @@ import { awardXP } from './progressController.js';
  * Helper to shuffle options and update correct answer index
  */
 const shuffleOptions = (options, correctIndex) => {
-  if (!options || options.length === 0 || correctIndex === undefined || typeof correctIndex !== 'number') {
-    return { options, correctIndex };
+  let finalIndex = correctIndex;
+
+  // Convert string index to number if needed
+  if (typeof finalIndex === 'string' && /^[0-4]$/.test(finalIndex)) {
+    finalIndex = parseInt(finalIndex);
+  }
+
+  if (!options || options.length === 0 || finalIndex === undefined || finalIndex === null || typeof finalIndex !== 'number') {
+    return { options, correctIndex: finalIndex };
   }
   
   // Create an array of objects with value and original index
   let indexedOptions = options.map((opt, i) => ({ opt, originalIndex: i }));
   
   // Shuffle using Fisher-Yates
+  // We use a high-quality shuffle to ensure true randomness
   for (let i = indexedOptions.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [indexedOptions[i], indexedOptions[j]] = [indexedOptions[j], indexedOptions[i]];
   }
   
   const newOptions = indexedOptions.map(item => item.opt);
-  const newCorrectIndex = indexedOptions.findIndex(item => item.originalIndex === correctIndex);
+  const newCorrectIndex = indexedOptions.findIndex(item => item.originalIndex === finalIndex);
   
   return { options: newOptions, correctIndex: newCorrectIndex };
 };

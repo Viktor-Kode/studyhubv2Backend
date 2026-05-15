@@ -12,7 +12,7 @@ export const quizPrompt = (text, amount = 3, typeInstructions = 'multiple-choice
   
   IMPORTANT: You must ensure 100% accuracy of the answers. Double-check your logic against the provided text before providing the final JSON. Incorrect answers are unacceptable.
   
-  CRITICAL: Distribute the correct answers evenly across the options (A, B, C, D). Do not favor any specific position. Ensure that for a set of questions, there is a mix of A, B, C, and D as correct answers.
+  NOTE: The system will automatically shuffle the options for the user. You do not need to worry about the position of the correct answer; just ensure it is correctly identified in the "answer" field.
 
   Each question object MUST have:
   1. "question": The clear question text.
