@@ -18,6 +18,29 @@ import LibraryDocument from '../models/LibraryDocument.js';
 import { awardXP } from './progressController.js';
 
 /**
+ * Helper to shuffle options and update correct answer index
+ */
+const shuffleOptions = (options, correctIndex) => {
+  if (!options || options.length === 0 || correctIndex === undefined || typeof correctIndex !== 'number') {
+    return { options, correctIndex };
+  }
+  
+  // Create an array of objects with value and original index
+  let indexedOptions = options.map((opt, i) => ({ opt, originalIndex: i }));
+  
+  // Shuffle using Fisher-Yates
+  for (let i = indexedOptions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indexedOptions[i], indexedOptions[j]] = [indexedOptions[j], indexedOptions[i]];
+  }
+  
+  const newOptions = indexedOptions.map(item => item.opt);
+  const newCorrectIndex = indexedOptions.findIndex(item => item.originalIndex === correctIndex);
+  
+  return { options: newOptions, correctIndex: newCorrectIndex };
+};
+
+/**
  * Controller to generate study notes.
  */
 export const generateNotes = async (req, res) => {
@@ -365,11 +388,15 @@ export const generateQuiz = async (req, res) => {
             if (idx !== -1) correctAnswer = idx;
           }
 
+          const { options: shuffledOptions, correctIndex: shuffledCorrectIndex } = (questionType === 'multiple-choice' || (q.options && q.options.length > 0)) 
+            ? shuffleOptions(options, correctAnswer) 
+            : { options, correctIndex: correctAnswer };
+
           return {
             teacherId: userId,
             question: q.question || q.content || q.text || q.prompt || q.questionText || "",
-            options: options,
-            correctAnswer: correctAnswer,
+            options: shuffledOptions,
+            correctAnswer: shuffledCorrectIndex,
             knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
             subject: subject || "General Study",
             type: questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-blank' ? 'fill-blank' : questionType))
@@ -467,11 +494,15 @@ export const generateQuiz = async (req, res) => {
         if (idx !== -1) correctAnswer = idx;
       }
 
+      const { options: shuffledOptions, correctIndex: shuffledCorrectIndex } = (questionType === 'multiple-choice' || (q.options && q.options.length > 0)) 
+        ? shuffleOptions(options, correctAnswer) 
+        : { options, correctIndex: correctAnswer };
+
       return {
         teacherId: userId,
         question: q.question || q.content || q.text || q.prompt || q.questionText || "",
-        options: options,
-        correctAnswer: correctAnswer,
+        options: shuffledOptions,
+        correctAnswer: shuffledCorrectIndex,
         knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
         subject: subject || "General Study",
         type: questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-blank' ? 'fill-blank' : questionType))

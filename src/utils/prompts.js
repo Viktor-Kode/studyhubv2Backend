@@ -11,6 +11,8 @@ export const quizPrompt = (text, amount = 3, typeInstructions = 'multiple-choice
   This field is NOT just the answer, but a 3-4 sentence educational explanation that teaches the underlying concept. If there is a calculation, show the steps.
   
   IMPORTANT: You must ensure 100% accuracy of the answers. Double-check your logic against the provided text before providing the final JSON. Incorrect answers are unacceptable.
+  
+  CRITICAL: Distribute the correct answers evenly across the options (A, B, C, D). Do not favor any specific position. Ensure that for a set of questions, there is a mix of A, B, C, and D as correct answers.
 
   Each question object MUST have:
   1. "question": The clear question text.
