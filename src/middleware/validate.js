@@ -18,6 +18,7 @@ export const validate = (schema) => (req, res, next) => {
         field: e.path.join('.'),
         message: e.message,
       }));
+      console.error(`[Validation Failed] on ${req.originalUrl || req.url}:`, JSON.stringify(errors, null, 2));
       return res.status(400).json({
         status: 'fail',
         message: 'Validation failed',
