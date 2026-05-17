@@ -39,17 +39,17 @@ export const chatWithTutorSchema = z.object({
     .string({ required_error: 'message is required' })
     .trim()
     .min(1, 'Message cannot be empty')
-    .max(4000, 'Message is too long'),
+    .max(10000, 'Message is too long'),
   context: z.string().trim().max(50000).optional(),
   documentId: z.string().trim().optional(),
   chatHistory: z
     .array(
       z.object({
         role: z.enum(['user', 'assistant', 'system']),
-        content: z.string().max(4000),
+        content: z.string().max(50000),
       })
     )
-    .max(20, 'Chat history too long')
+    .max(100, 'Chat history too long')
     .optional()
     .default([]),
   modelId: z.string().trim().optional(),
