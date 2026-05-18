@@ -15,6 +15,7 @@ import UserProgress from '../models/UserProgress.js';
 import UserDailyActivity from '../models/UserDailyActivity.js';
 import ChatHistory from '../models/ChatHistory.js';
 import PaywallEvent from '../models/PaywallEvent.js';
+import ExplanationCache from '../models/ExplanationCache.js';
 import { PLANS } from '../config/plans.js';
 import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
 
