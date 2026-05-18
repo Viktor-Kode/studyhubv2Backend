@@ -25,8 +25,9 @@ export const checkAIUsage = async (req, res, next) => {
             });
         }
 
-        // Check AI limit - prevents bypassing by requesting large batches
-        if (user.aiUsageCount + requestedAmount > user.aiUsageLimit) {
+        // Check AI limit - prevents bypassing by requesting large batches (includes referral aiCredits)
+        const totalLimit = user.aiUsageLimit + (user.aiCredits || 0);
+        if (user.aiUsageCount + requestedAmount > totalLimit) {
             await logPaywallEvent({
                 userId: user._id,
                 userEmail: user.email,
@@ -34,23 +35,23 @@ export const checkAIUsage = async (req, res, next) => {
                 context: {
                     used: user.aiUsageCount,
                     requested: requestedAmount,
-                    limit: user.aiUsageLimit
+                    limit: totalLimit
                 }
             });
 
-            const remaining = Math.max(0, user.aiUsageLimit - user.aiUsageCount);
+            const remaining = Math.max(0, totalLimit - user.aiUsageCount);
 
             return res.status(403).json({
                 error: 'AI limit reached',
                 message: user.subscriptionStatus === 'free'
                     ? (remaining > 0 
                         ? `You only have ${remaining} AI credits left, but this request needs ${requestedAmount}. Upgrade for more.`
-                        : 'You have used up your free AI credits. Upgrade to a paid plan to continue.')
+                        : 'You have used up your free and referral AI credits. Invite friends to get more, or upgrade to a paid plan.')
                     : `AI limit reached. You need ${requestedAmount} units but only have ${remaining} left. Purchase an add-on pack for ₦500.`,
                 showUpgrade: true,
                 used: user.aiUsageCount,
                 requested: requestedAmount,
-                limit: user.aiUsageLimit,
+                limit: totalLimit,
                 code: 'AI_LIMIT_REACHED'
             });
         }
