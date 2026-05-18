@@ -13,6 +13,7 @@ import Reminder from '../models/Reminder.js';
 import LibraryMaterial from '../models/LibraryMaterial.js';
 import UserProgress from '../models/UserProgress.js';
 import UserDailyActivity from '../models/UserDailyActivity.js';
+import UserStats from '../models/UserStats.js';
 import ChatHistory from '../models/ChatHistory.js';
 import PaywallEvent from '../models/PaywallEvent.js';
 import ExplanationCache from '../models/ExplanationCache.js';
@@ -992,6 +993,13 @@ export const deleteUser = async (req, res) => {
         if (!deleted) {
             return res.status(404).json({ success: false, error: 'User not found' });
         }
+
+        // Clean up leaderboard, statistics and streak references
+        await Promise.all([
+            UserProgress.deleteOne({ userId: deleted.firebaseUid }),
+            UserStats.deleteOne({ userId: id }),
+            Streak.deleteOne({ studentId: id })
+        ]);
 
         res.json({ success: true, message: 'User deleted' });
     } catch (err) {
