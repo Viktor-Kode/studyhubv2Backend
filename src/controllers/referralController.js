@@ -6,7 +6,12 @@ import User from '../models/User.js';
  */
 export const processReferral = async (newUserId, refCode) => {
     // Find referrer by code
-    const referrer = await User.findOne({ referralCode: refCode.toUpperCase() });
+    let referrer = await User.findOne({ referralCode: refCode.toUpperCase() });
+
+    if (!referrer) {
+        // Fallback: Check if the refCode is a firebaseUid (backward compatibility)
+        referrer = await User.findOne({ firebaseUid: refCode });
+    }
 
     // Edge case: invalid code
     if (!referrer) return { success: false, reason: 'Invalid referral code' };
@@ -91,7 +96,11 @@ export const validateReferralCode = async (req, res, next) => {
             });
         }
 
-        const referrer = await User.findOne({ referralCode: code.toUpperCase() });
+        let referrer = await User.findOne({ referralCode: code.toUpperCase() });
+        if (!referrer) {
+            // Fallback: Check if the code is a firebaseUid
+            referrer = await User.findOne({ firebaseUid: code });
+        }
         if (!referrer) {
             return res.status(404).json({
                 status: 'fail',

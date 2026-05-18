@@ -121,7 +121,7 @@ export const getMe = async (req, res, next) => {
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
             'flashcardUsageCount flashcardUsageLimit ' +
-            'notificationsEnabled aiCredits'
+            'notificationsEnabled aiCredits referralCode'
         );
 
         if (!user) {
