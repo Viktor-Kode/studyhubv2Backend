@@ -51,6 +51,7 @@ export const explainQuestionSchema = z.object({
   correctAnswer: z.string({ required_error: 'correctAnswer is required' }).trim().min(1).max(500),
   options: z.array(z.string().max(500)).max(6).optional().default([]),
   stream: z.boolean().optional().default(false),
+  subject: z.string().max(80).optional(),
 });
 
 // POST /api/cbt/generate-topic-questions

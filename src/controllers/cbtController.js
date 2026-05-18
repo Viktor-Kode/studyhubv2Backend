@@ -537,7 +537,7 @@ export const getCBTResults = async (req, res) => {
 };
 
 export const explainQuestion = async (req, res) => {
-    const { question, correctAnswer, options = [], stream = false } = req.body;
+    const { question, correctAnswer, options = [], stream = false, subject = '' } = req.body;
     if (!question || !correctAnswer) {
         return res.status(400).json({ status: 'error', message: 'Missing required fields' });
     }
@@ -602,7 +602,8 @@ export const explainQuestion = async (req, res) => {
                 questionHash: qHash,
                 questionText: question,
                 correctAnswer,
-                explanation: fullExplanation
+                explanation: fullExplanation,
+                subject: subject || ''
             });
 
             await incrementAIUsage(studentId);
@@ -624,7 +625,8 @@ export const explainQuestion = async (req, res) => {
             questionHash: qHash,
             questionText: question,
             correctAnswer,
-            explanation
+            explanation,
+            subject: subject || ''
         });
 
         // 5. Increment AI usage (one credit per new explanation)
@@ -640,6 +642,39 @@ export const explainQuestion = async (req, res) => {
             return res.end();
         }
         res.status(500).json({ error: 'Failed to generate explanation', details: error.message });
+    }
+};
+
+export const explainQuestionVote = async (req, res) => {
+    try {
+        const { question, correctAnswer, options = [], vote } = req.body;
+        if (!question || !correctAnswer || !vote) {
+            return res.status(400).json({ error: 'Missing required fields: question, correctAnswer, vote' });
+        }
+        if (vote !== 'up' && vote !== 'down') {
+            return res.status(400).json({ error: 'Invalid vote. Must be "up" or "down".' });
+        }
+
+        const qHash = crypto.createHash('sha256')
+            .update(`${question}|${correctAnswer}|${options.sort().join(',')}`)
+            .digest('hex');
+
+        const update = vote === 'up' ? { $inc: { upvotes: 1 } } : { $inc: { downvotes: 1 } };
+        
+        const cached = await ExplanationCache.findOneAndUpdate({ questionHash: qHash }, update, { new: true });
+        if (!cached) {
+            return res.status(404).json({ error: 'Explanation cache entry not found for this question.' });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: `Feedback recorded: ${vote}`,
+            upvotes: cached.upvotes || 0,
+            downvotes: cached.downvotes || 0
+        });
+    } catch (err) {
+        console.error('[Explain Vote Error]:', err);
+        return res.status(500).json({ error: 'Internal server error', message: err.message });
     }
 };
 

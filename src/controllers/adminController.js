@@ -1044,7 +1044,15 @@ export const getFullDashboardStats = async (req, res) => {
             totalStorageAgg,
             failedPayments,
             aiUsageAgg,
-            libByRole
+            libByRole,
+            subjectMastery,
+            killerQuestions,
+            streakDistribution,
+            subBreakdown,
+            flaggedExplanations,
+            contentBreakdown,
+            examTypesBreakdown,
+            featCounts
         ] = await Promise.all([
             User.countDocuments(),
             User.countDocuments({ createdAt: { $gte: todayStartD } }),
@@ -1114,6 +1122,94 @@ export const getFullDashboardStats = async (req, res) => {
                         files: { $sum: 1 }
                     }
                 }
+            ]),
+            CBTResult.aggregate([
+                { $group: { _id: '$subject', avgScore: { $avg: '$accuracy' }, count: { $sum: 1 } } },
+                { $sort: { avgScore: 1 } }
+            ]),
+            CBTResult.aggregate([
+                { $unwind: '$answers' },
+                {
+                    $group: {
+                        _id: '$answers.question',
+                        questionId: { $first: '$answers.questionId' },
+                        subject: { $first: '$subject' },
+                        attempts: { $sum: 1 },
+                        fails: { $sum: { $cond: [{ $eq: ['$answers.isCorrect', false] }, 1, 0] } }
+                    }
+                },
+                { $match: { attempts: { $gte: 2 } } },
+                {
+                    $project: {
+                        question: '$_id',
+                        questionId: 1,
+                        subject: 1,
+                        attempts: 1,
+                        fails: 1,
+                        failRate: { $multiply: [{ $divide: ['$fails', '$attempts'] }, 100] }
+                    }
+                },
+                { $sort: { failRate: -1 } },
+                { $limit: 10 }
+            ]),
+            Streak.aggregate([
+                {
+                    $project: {
+                        range: {
+                            $cond: [
+                                { $eq: ['$currentStreak', 0] }, '0 day',
+                                { $cond: [
+                                    { $lte: ['$currentStreak', 2] }, '1-2 days',
+                                    { $cond: [
+                                        { $lte: ['$currentStreak', 6] }, '3-6 days',
+                                        '7+ days'
+                                    ]}
+                                ]}
+                            ]
+                        }
+                    }
+                },
+                { $group: { _id: '$range', count: { $sum: 1 } } }
+            ]),
+            User.aggregate([
+                { $group: { _id: '$subscriptionStatus', count: { $sum: 1 } } }
+            ]),
+            ExplanationCache.find({ downvotes: { $gt: 0 } })
+                .sort({ downvotes: -1 })
+                .limit(10)
+                .lean(),
+            LibraryMaterial.aggregate([
+                {
+                    $group: {
+                        _id: {
+                            $let: {
+                                vars: {
+                                    parts: { $split: [{ $ifNull: ['$fileName', ''] }, '.'] }
+                                },
+                                in: {
+                                    $cond: [
+                                        { $eq: [{ $size: '$$parts' }, 1] },
+                                        'unknown',
+                                        { $toLower: { $arrayElemAt: ['$$parts', -1] } }
+                                    ]
+                                }
+                            }
+                        },
+                        count: { $sum: 1 },
+                        size: { $sum: '$fileSize' }
+                    }
+                }
+            ]),
+            CBTResult.aggregate([
+                { $group: { _id: '$examType', count: { $sum: 1 } } }
+            ]),
+            Promise.all([
+                CBTResult.countDocuments(),
+                StudyNote.countDocuments(),
+                FlashcardProgress.countDocuments(),
+                ChatHistory.countDocuments(),
+                StudySession.countDocuments(),
+                Reminder.countDocuments()
             ])
         ]);
 
@@ -1184,7 +1280,24 @@ export const getFullDashboardStats = async (req, res) => {
             topStudents: topStudentsData,
             userGrowth,
             teacherToolTotals,
-            aiUsageTotal: aiUsageAgg[0]?.total || 0
+            aiUsageTotal: aiUsageAgg[0]?.total || 0,
+            analytics: {
+                subjectMastery,
+                killerQuestions,
+                streakDistribution,
+                subBreakdown,
+                flaggedExplanations,
+                contentBreakdown,
+                examTypesBreakdown,
+                featurePopularity: [
+                    { name: 'CBT Practice', count: featCounts[0] || 0 },
+                    { name: 'Study Notes', count: featCounts[1] || 0 },
+                    { name: 'Flashcards', count: featCounts[2] || 0 },
+                    { name: 'AI Chats', count: featCounts[3] || 0 },
+                    { name: 'Sessions', count: featCounts[4] || 0 },
+                    { name: 'Reminders', count: featCounts[5] || 0 }
+                ]
+            }
         });
     } catch (err) {
         console.error('[Admin Stats]', err);

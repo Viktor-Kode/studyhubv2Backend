@@ -12,6 +12,18 @@ const explanationCacheSchema = new mongoose.Schema({
     explanation: {
         type: String,
         required: true
+    },
+    subject: {
+        type: String,
+        default: ''
+    },
+    upvotes: {
+        type: Number,
+        default: 0
+    },
+    downvotes: {
+        type: Number,
+        default: 0
     }
 }, {
     timestamps: true

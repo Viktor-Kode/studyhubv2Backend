@@ -7,6 +7,7 @@ import {
     getCBTResultsSummary,
     getCBTResults,
     explainQuestion,
+    explainQuestionVote,
     generateTopicQuestions,
     verifyAnswer,
 } from '../controllers/cbtController.js';
@@ -41,6 +42,7 @@ router.post('/results', protect, validate(saveCBTResultSchema), saveCBTResult);
 router.get('/results', protect, getCBTResults);
 router.get('/results/summary', protect, getCBTResultsSummary);
 router.post('/explain', protect, checkAIUsage, validate(explainQuestionSchema), explainQuestion);
+router.post('/explain/vote', protect, explainQuestionVote);
 // Syllabus "Study by Topic" — full URL: POST /api/cbt/generate-topic-questions (body: exam, subject, topic, count?)
 router.post('/generate-topic-questions', protect, checkAIUsage, validate(generateTopicQuestionsSchema), generateTopicQuestions);
 router.post('/verify-answer', protect, validate(verifyAnswerSchema), verifyAnswer);
