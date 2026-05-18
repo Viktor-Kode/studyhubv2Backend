@@ -28,6 +28,7 @@ export const signupSchema = z.object({
     .regex(/^\+?[0-9]{7,15}$/, 'Invalid phone number format')
     .optional()
     .or(z.literal('')),
+  refCode: z.string().trim().optional(),
 });
 
 // POST /api/users/login

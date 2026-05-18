@@ -123,7 +123,28 @@ const userSchema = new mongoose.Schema({
     isPWA: { type: Boolean, default: false },
     following: [{ type: String }],
 
+    // Referral System
+    referralCode: { type: String, unique: true, sparse: true },
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    referralCount: { type: Number, default: 0 },
+    aiCredits: { type: Number, default: 5 },
+    referrals: [{
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        rewarded: { type: Boolean, default: false },
+        date: { type: Date, default: Date.now }
+    }]
+
 }, { timestamps: true });
+
+// Generate referral code on signup
+userSchema.pre('save', async function () {
+    if (this.isNew && !this.referralCode) {
+        this.referralCode = Buffer.from(this._id.toString())
+            .toString('base64')
+            .slice(0, 8)
+            .toUpperCase();
+    }
+});
 
 // Hash password before saving
 userSchema.pre('save', async function () {

@@ -4,6 +4,7 @@ import sendEmail from '../utils/email.js';
 import crypto from 'crypto';
 import { getEnv } from '../config/env.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
+import { processReferral } from './referralController.js';
 
 /**
  * Signs a JWT token
@@ -51,7 +52,7 @@ const createSendToken = (user, statusCode, res) => {
  */
 export const signup = async (req, res, next) => {
     try {
-        const { email, password, role, name, schoolName, phone } = req.body;
+        const { email, password, role, name, schoolName, phone, refCode } = req.body;
 
         const newUser = await User.create({
             email,
@@ -63,7 +64,18 @@ export const signup = async (req, res, next) => {
             phoneNumber: phone || null
         });
 
-        createSendToken(newUser, 201, res);
+        if (refCode) {
+            try {
+                await processReferral(newUser._id, refCode);
+            } catch (refErr) {
+                console.error(`[Referral] Processing failed for user ${newUser._id}:`, refErr.message);
+            }
+        }
+
+        // Fetch refreshed user so the token response contains updated fields like referredBy
+        const refreshedUser = await User.findById(newUser._id);
+
+        createSendToken(refreshedUser || newUser, 201, res);
     } catch (err) {
         next(err);
     }
