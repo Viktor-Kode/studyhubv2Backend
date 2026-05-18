@@ -50,6 +50,15 @@ export const getReferralStats = async (req, res, next) => {
             });
         }
 
+        // Auto-generate code on-demand if missing (for pre-existing users)
+        if (!user.referralCode) {
+            user.referralCode = Buffer.from(user._id.toString())
+                .toString('base64')
+                .slice(0, 8)
+                .toUpperCase();
+            await user.save();
+        }
+
         const creditsEarned = user.referrals
             ? user.referrals.filter(r => r.rewarded).length * 20
             : 0;
