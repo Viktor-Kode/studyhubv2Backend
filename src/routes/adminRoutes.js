@@ -22,7 +22,8 @@ import {
     getActivityFeed,
     adminQuickAction,
     exportUsersCSV,
-    getPaywallEvents
+    getPaywallEvents,
+    getPWAUsers
 } from '../controllers/adminController.js';
 import {
     sendEmailCampaign,
@@ -94,6 +95,7 @@ router.post('/notify-all', protect, restrictTo('admin'), adminNotifyAll);
 router.get('/shared-library/pending', protect, restrictTo('admin'), adminListPendingSharedLibrary);
 router.patch('/shared-library/:id', protect, restrictTo('admin'), adminSetSharedLibraryStatus);
 router.get('/paywall-events', protect, restrictTo('admin'), getPaywallEvents);
+router.get('/pwa-users', protect, restrictTo('admin'), getPWAUsers);
 
 // POST /api/admin/fix-subscription
 router.post('/fix-subscription', async (req, res) => {

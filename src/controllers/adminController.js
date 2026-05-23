@@ -1493,6 +1493,67 @@ export const exportUsersCSV = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+export const getPWAUsers = async (req, res) => {
+    try {
+        const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 25));
+        const search = (req.query.search || '').trim();
+        const plan   = (req.query.plan   || '').trim();
+        const sort   = (req.query.sort   || 'newest').trim();
+
+        const conditions = [{ isPWA: true }];
+
+        if (search) {
+            conditions.push({
+                $or: [
+                    { email: { $regex: search, $options: 'i' } },
+                    { name:  { $regex: search, $options: 'i' } }
+                ]
+            });
+        }
+
+        if (plan === 'free') {
+            conditions.push({
+                $or: [
+                    { subscriptionStatus: { $ne: 'active' } },
+                    { subscriptionPlan: null }
+                ]
+            });
+        } else if (['daily', 'weekly', 'monthly'].includes(plan)) {
+            conditions.push({ subscriptionPlan: plan, subscriptionStatus: 'active' });
+        } else if (plan === 'teacher') {
+            conditions.push({ role: 'teacher' });
+        }
+
+        const filter  = { $and: conditions };
+        const sortObj =
+            sort === 'oldest' ? { createdAt:  1 } :
+            sort === 'name'   ? { name:       1 } :
+                                { createdAt: -1 };
+
+        const [users, total] = await Promise.all([
+            User.find(filter)
+                .sort(sortObj)
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .select('name email subscriptionStatus subscriptionPlan subscriptionEnd createdAt lastSeen role isPWA isVerified banned avatar')
+                .lean(),
+            User.countDocuments(filter)
+        ]);
+
+        res.json({
+            success: true,
+            users,
+            total,
+            page,
+            pages: Math.max(1, Math.ceil(total / limit))
+        });
+    } catch (err) {
+        console.error('[Admin] getPWAUsers error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
 export const getPaywallEvents = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
