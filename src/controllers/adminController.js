@@ -17,6 +17,7 @@ import UserStats from '../models/UserStats.js';
 import ChatHistory from '../models/ChatHistory.js';
 import PaywallEvent from '../models/PaywallEvent.js';
 import ExplanationCache from '../models/ExplanationCache.js';
+import UserActivity from '../models/UserActivity.js';
 import { PLANS } from '../config/plans.js';
 import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
 
@@ -579,6 +580,44 @@ export const getUserActivity = async (req, res) => {
         });
     } catch (err) {
         console.error('[Admin] getUserActivity error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+/** Return recent page/route views for a given user */
+export const getUserPageViews = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
+
+        const exists = await User.findById(id).select('_id').lean();
+        if (!exists) return res.status(404).json({ success: false, error: 'User not found' });
+
+        const views = await UserActivity.find({ userId: userId(id), type: 'page_view' })
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .select('title subtitle metadata createdAt')
+            .lean();
+
+        // Aggregate by route: count & last visited
+        const routeMap = new Map();
+        for (const v of views) {
+            const route = (v.metadata?.route || v.title || '').toString();
+            if (!routeMap.has(route)) {
+                routeMap.set(route, { route, label: v.title, count: 0, lastVisited: v.createdAt });
+            }
+            const entry = routeMap.get(route);
+            entry.count++;
+            if (new Date(v.createdAt) > new Date(entry.lastVisited)) {
+                entry.lastVisited = v.createdAt;
+            }
+        }
+
+        const routes = Array.from(routeMap.values()).sort((a, b) => b.count - a.count);
+
+        res.json({ success: true, views, routes, total: views.length });
+    } catch (err) {
+        console.error('[Admin] getUserPageViews error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 };

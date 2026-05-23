@@ -9,6 +9,7 @@ import {
     updateMe,
     updateUserPreferences,
     trackPwaUsage,
+    logPageView,
 } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validate.js';
@@ -35,6 +36,7 @@ router.patch('/preferences', protect, updateUserPreferences);
 router.patch('/update-me', protect, validate(updateMeSchema), updateMe);
 router.post('/update-password', protect, validate(updatePasswordSchema), updatePassword);
 router.post('/pwa-usage', protect, trackPwaUsage);
+router.post('/page-view', protect, logPageView);
 
 export default router;
 

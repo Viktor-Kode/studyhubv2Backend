@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { getEnv } from '../config/env.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 import { processReferral } from './referralController.js';
+import { logUserActivity } from '../services/activityService.js';
 
 /**
  * Signs a JWT token
@@ -365,6 +366,33 @@ export const trackPwaUsage = async (req, res, next) => {
         res.status(200).json({
             status: 'success',
             data: { isPWA: user?.isPWA }
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
+/**
+ * Log page/route transitions
+ */
+export const logPageView = async (req, res, next) => {
+    try {
+        const { title, subtitle, metadata } = req.body;
+        if (!title) {
+            return res.status(400).json({ error: 'Title is required' });
+        }
+
+        await logUserActivity({
+            userId: req.user._id,
+            type: 'page_view',
+            title,
+            subtitle: subtitle || '',
+            color: 'indigo',
+            metadata: metadata || {}
+        });
+
+        res.status(200).json({
+            status: 'success'
         });
     } catch (err) {
         next(err);
