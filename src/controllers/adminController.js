@@ -143,7 +143,7 @@ export const getAdminStats = async (req, res) => {
         const totalUsers = Math.max(userCounts, 1);
         const conversionRate = ((activeSubs / totalUsers) * 100).toFixed(1);
 
-        const revenueKobo = revenueData[0]?.total || 0;
+        const revenueKobo = (revenueData[0]?.total || 0) * 100;
         const revenueNaira = (revenueKobo / 100).toFixed(2);
 
         const stats = {
@@ -1253,7 +1253,7 @@ export const getFullDashboardStats = async (req, res) => {
             _id: `W${r._id.w}`,
             y: r._id.y,
             w: r._id.w,
-            total: r.total,
+            total: r.total * 100,
             count: r.count
         }));
 
@@ -1269,10 +1269,10 @@ export const getFullDashboardStats = async (req, res) => {
                 pwa: pwaUsers
             },
             revenue: {
-                total: totalRevenue[0]?.total || 0,
-                week: weekRevenue[0]?.total || 0,
-                month: monthRevenue[0]?.total || 0,
-                byPlan: revenueByPlan,
+                total: (totalRevenue[0]?.total || 0) * 100,
+                week: (weekRevenue[0]?.total || 0) * 100,
+                month: (monthRevenue[0]?.total || 0) * 100,
+                byPlan: revenueByPlan.map(p => ({ ...p, total: p.total * 100 })),
                 weekly: weeklyRevenue
             },
             cbt: {
