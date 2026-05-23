@@ -24,6 +24,7 @@ import {
     adminQuickAction,
     exportUsersCSV,
     getPaywallEvents,
+    getPaymentHistory,
     getPWAUsers
 } from '../controllers/adminController.js';
 import {
@@ -98,6 +99,7 @@ router.get('/shared-library/pending', protect, restrictTo('admin'), adminListPen
 router.patch('/shared-library/:id', protect, restrictTo('admin'), adminSetSharedLibraryStatus);
 router.get('/paywall-events', protect, restrictTo('admin'), getPaywallEvents);
 router.get('/pwa-users', protect, restrictTo('admin'), getPWAUsers);
+router.get('/payment-history', protect, restrictTo('admin'), getPaymentHistory);
 
 // POST /api/admin/fix-subscription
 router.post('/fix-subscription', async (req, res) => {

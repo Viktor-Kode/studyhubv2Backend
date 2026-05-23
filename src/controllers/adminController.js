@@ -1532,6 +1532,73 @@ export const exportUsersCSV = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+export const getPaymentHistory = async (req, res) => {
+    try {
+        const page   = Math.max(1, parseInt(req.query.page,   10) || 1);
+        const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
+        const search = (req.query.search || '').trim();
+        const plan   = (req.query.plan   || '').trim();
+        const status = (req.query.status || 'success').trim();
+        const sort   = req.query.sort === 'oldest' ? 1 : -1;
+
+        // Build filter
+        const filter = {};
+        if (['pending', 'success', 'failed', 'all'].includes(status) && status !== 'all') {
+            filter.status = status;
+        }
+        if (['daily', 'weekly', 'monthly', 'addon'].includes(plan)) {
+            filter.plan = plan;
+        }
+
+        // If searching by name/email we need a join — do it via population + manual filter
+        let transactions;
+        let total;
+
+        if (search) {
+            // Fetch more then filter in JS (search is rare, keep it simple)
+            const all = await Transaction.find(filter)
+                .sort({ createdAt: sort })
+                .populate('userId', 'name email')
+                .lean();
+
+            const q = search.toLowerCase();
+            const filtered = all.filter((t) => {
+                const u = t.userId;
+                if (!u) return false;
+                return (
+                    (u.email || '').toLowerCase().includes(q) ||
+                    (u.name  || '').toLowerCase().includes(q)
+                );
+            });
+
+            total = filtered.length;
+            transactions = filtered.slice((page - 1) * limit, page * limit);
+        } else {
+            [transactions, total] = await Promise.all([
+                Transaction.find(filter)
+                    .sort({ createdAt: sort })
+                    .skip((page - 1) * limit)
+                    .limit(limit)
+                    .populate('userId', 'name email')
+                    .lean(),
+                Transaction.countDocuments(filter)
+            ]);
+        }
+
+        res.json({
+            success: true,
+            transactions,
+            total,
+            page,
+            pages: Math.max(1, Math.ceil(total / limit))
+        });
+    } catch (err) {
+        console.error('[Admin] getPaymentHistory error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
 export const getPWAUsers = async (req, res) => {
     try {
         const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
