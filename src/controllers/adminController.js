@@ -526,7 +526,7 @@ export const getUserActivity = async (req, res) => {
             FlashcardProgress.find({ studentId: userId(id) }).sort({ updatedAt: -1 }).limit(20).lean(),
             Streak.findOne({ studentId: userId(id) }).lean(),
             StudyNote.find({ userId: userId(id) }).sort({ createdAt: -1 }).limit(10).select('title subject createdAt').lean(),
-            Transaction.find({ userId: userId(id) }).sort({ createdAt: -1 }).lean()
+            Transaction.find({ userId: userId(id), status: 'success' }).sort({ createdAt: -1 }).lean()
         ]);
 
         if (!user) {
@@ -1326,7 +1326,7 @@ export const getActivityFeed = async (req, res) => {
                 .limit(pool)
                 .select('name email subscriptionPlan subscriptionStatus createdAt')
                 .lean(),
-            Transaction.find()
+            Transaction.find({ status: 'success' })
                 .sort({ createdAt: -1 })
                 .limit(pool)
                 .populate('userId', 'name email')
@@ -1348,13 +1348,14 @@ export const getActivityFeed = async (req, res) => {
             })),
             ...recentPayments.map((t) => {
                 const email = t.userId?.email || 'Unknown';
-                const naira = t.amount != null ? Math.round(t.amount / 100).toLocaleString('en-NG') : '0';
+                // amount is stored in naira (not kobo) — do NOT divide by 100
+                const naira = t.amount != null ? Number(t.amount).toLocaleString('en-NG') : '0';
                 return {
-                    type: t.status === 'failed' ? 'failed_payment' : 'payment',
+                    type: 'payment',
                     time: t.createdAt,
                     message: `${email} — ₦${naira} (${t.plan})`,
                     status: t.status,
-                    icon: t.status === 'failed' ? '❌' : '💰'
+                    icon: '💰'
                 };
             }),
             ...recentCbtResults.map((r) => {
