@@ -22,6 +22,7 @@ export const signupSchema = z.object({
     .max(100, 'Name is too long'),
   role: z.enum(['student', 'teacher']).optional().default('student'),
   schoolName: z.string().trim().max(200).optional(),
+  institution: z.string().trim().max(200).optional(),
   phone: z
     .string()
     .trim()
@@ -59,6 +60,7 @@ export const updateMeSchema = z.object({
   name: z.string().trim().min(2).max(100).optional(),
   role: z.enum(['student', 'teacher']).optional(),
   schoolName: z.string().trim().max(200).optional(),
+  institution: z.string().trim().max(200).optional(),
   phone: z
     .string()
     .trim()

@@ -19,21 +19,36 @@ export async function syncRoleFromFirestore(firebaseUid, currentUser) {
         const snap = await db.collection('users').doc(firebaseUid).get();
         if (!snap.exists) return currentUser;
 
-        const fsRole = snap.get('role');
-        if (!fsRole || !VALID_ROLES.has(fsRole)) return currentUser;
-        if (fsRole === currentUser.role) return currentUser;
+        const updateData = {};
 
-        // Avoid accidental demotion: only promote to teacher from Firestore here.
-        // MongoDB might still have an older/stale value (e.g. `student` or `unknown`),
-        // so we promote whenever Firestore says `teacher` and Mongo isn't already teacher.
-        if (fsRole === 'teacher' && currentUser.role !== 'teacher') {
-            const prevRole = currentUser.role
-            await User.findByIdAndUpdate(currentUser._id, { role: 'teacher' }, { runValidators: false });
-            currentUser.role = 'teacher';
+        // Role sync
+        const fsRole = snap.get('role');
+        if (fsRole && VALID_ROLES.has(fsRole)) {
+            // Avoid accidental demotion: only promote to teacher from Firestore here.
+            if (fsRole === 'teacher' && currentUser.role !== 'teacher') {
+                updateData.role = 'teacher';
+            }
+        }
+
+        // Institution sync
+        const fsInstitution = snap.get('institution');
+        if (fsInstitution && fsInstitution !== currentUser.institution) {
+            updateData.institution = fsInstitution;
+        }
+
+        // SchoolName sync
+        const fsSchoolName = snap.get('schoolName');
+        if (fsSchoolName && fsSchoolName !== currentUser.schoolName) {
+            updateData.schoolName = fsSchoolName;
+        }
+
+        // Apply updates if any
+        if (Object.keys(updateData).length > 0) {
+            await User.findByIdAndUpdate(currentUser._id, updateData, { runValidators: false });
+            Object.assign(currentUser, updateData);
             console.log(
-                `[AUTH] Synced teacher role from Firestore for ${currentUser.email || firebaseUid} (was: ${uRoleDebug(
-                    prevRole
-                )})`
+                `[AUTH] Synced fields from Firestore to MongoDB for ${currentUser.email || firebaseUid}:`,
+                Object.keys(updateData)
             );
         }
     } catch (err) {

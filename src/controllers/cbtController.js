@@ -353,13 +353,70 @@ export const getQuestionsProxy = async (req, res) => {
     }
 };
 
-export const getAvailableSubjects = (req, res) => {
-    const unique = [...new Set(Object.values(SUBJECT_SLUG_MAP))];
-    return res.status(200).json({
-        subjects: unique,
-        yearRange: '2001–2023',
-        examTypes: ['utme', 'wassce', 'post-utme'],
-    });
+// ─────────────────────────────────────────────────────────────────────────────
+// SUBJECT METADATA DISCOVERY & CACHING
+// ─────────────────────────────────────────────────────────────────────────────
+let metadataCache = null;
+let lastMetadataFetch = 0;
+const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
+
+async function fetchSubjectMetadata() {
+    if (metadataCache && (Date.now() - lastMetadataFetch < CACHE_TTL)) {
+        return metadataCache;
+    }
+
+    // We probe a shortlist of major subjects because PQ API lacks a /subjects endpoint
+    const candidates = [
+        'English Language', 'Mathematics', 'Chemistry', 'Physics', 'Biology', 
+        'Literature in English', 'Economics', 'Government', 'Christian Religious Knowledge',
+        'Commerce', 'Accounting', 'Civic Education'
+    ];
+    
+    const available = [];
+    const yearRangeSet = new Set();
+    
+    // Fallback default years if the API response doesn't give them
+    const defaultYears = ['2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023'];
+
+    // Probe in parallel for speed
+    await Promise.allSettled(candidates.map(async (sub) => {
+        try {
+            const res = await axios.get(`${PQ_BASE}/questions?subject=${encodeURIComponent(sub)}`, { timeout: 8000 });
+            if (res.status === 200 && res.data.total > 0) {
+                available.push(sub);
+                
+                // If the API returns questions, we can also extract years from them if needed,
+                // but since the PQ API often returns 'all' for year, we use the known working years.
+                defaultYears.forEach(y => yearRangeSet.add(y));
+            }
+        } catch (err) {
+            // subject not found on PQ API
+        }
+    }));
+
+    if (available.length === 0) {
+        // Fallback if PQ API is completely down
+        available.push('English Language');
+        defaultYears.forEach(y => yearRangeSet.add(y));
+    }
+
+    metadataCache = {
+        subjects: available,
+        years: Array.from(yearRangeSet).sort((a, b) => b.localeCompare(a)), // descending
+        examTypes: ['utme'] // PQ API primarily serves UTME format currently
+    };
+    lastMetadataFetch = Date.now();
+    return metadataCache;
+}
+
+export const getAvailableSubjects = async (req, res) => {
+    try {
+        const metadata = await fetchSubjectMetadata();
+        return res.status(200).json(metadata);
+    } catch (error) {
+        console.error('[CBT Metadata Fetch Error]:', error);
+        return res.status(500).json({ error: 'Failed to fetch CBT metadata' });
+    }
 };
 
 export const saveCBTResult = async (req, res) => {

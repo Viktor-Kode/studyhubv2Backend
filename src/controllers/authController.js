@@ -53,7 +53,7 @@ const createSendToken = (user, statusCode, res) => {
  */
 export const signup = async (req, res, next) => {
     try {
-        const { email, password, role, name, schoolName, phone, refCode } = req.body;
+        const { email, password, role, name, schoolName, institution, phone, refCode } = req.body;
 
         const newUser = await User.create({
             email,
@@ -61,6 +61,7 @@ export const signup = async (req, res, next) => {
             role: role || 'student',
             name,
             schoolName,
+            institution,
             phone,
             phoneNumber: phone || null
         });
@@ -118,7 +119,7 @@ export const login = async (req, res, next) => {
 export const getMe = async (req, res, next) => {
     try {
         let user = await User.findById(req.user.id || req.user._id).select(
-            'name email role phoneNumber schoolName preferences firebaseUid ' +
+            'name email role phoneNumber schoolName institution preferences firebaseUid ' +
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
             'flashcardUsageCount flashcardUsageLimit ' +
@@ -274,12 +275,13 @@ export const updatePassword = async (req, res, next) => {
  */
 export const updateMe = async (req, res, next) => {
     try {
-        const { name, role, schoolName, phone } = req.body;
+        const { name, role, schoolName, institution, phone } = req.body;
         const updateData = {};
 
         if (name) updateData.name = name;
         if (role) updateData.role = role;
         if (schoolName) updateData.schoolName = schoolName;
+        if (institution !== undefined) updateData.institution = institution || null;
         if (phone) {
             updateData.phone = phone;
             updateData.phoneNumber = phone;

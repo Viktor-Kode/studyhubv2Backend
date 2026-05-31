@@ -44,6 +44,7 @@ const userSchema = new mongoose.Schema({
     },
 
     schoolName: String,
+    institution: String,
 
     // Phone fields (keep legacy `phone` for backward compatibility)
     phone: String,
