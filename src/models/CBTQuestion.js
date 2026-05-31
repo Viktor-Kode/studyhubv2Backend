@@ -11,6 +11,8 @@ const CBTQuestionSchema = new mongoose.Schema({
     explanation: { type: String, default: null }, // cached AI explanation
     // Optional diagram or image associated with the question
     image: { type: String, default: null },
+    topic: { type: String, default: null },
+    tested_word: { type: String, default: null },
     source: { type: String, default: 'API' },    // 'API' or 'internal'
     createdAt: { type: Date, default: Date.now }
 });

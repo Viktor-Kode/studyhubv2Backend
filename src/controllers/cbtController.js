@@ -15,7 +15,6 @@ import { awardXP } from './progressController.js';
 import { logUserActivity } from '../services/activityService.js';
 import { logPaywallEvent } from '../utils/paywallLogger.js';
 
-const ALOC_BASE = 'https://questions.aloc.com.ng/api/v2';
 const PQ_BASE = 'https://ng-pastquestions-api.onrender.com';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,9 +48,6 @@ const SUBJECT_SLUG_MAP = {
     'currentaffairs': 'currentaffairs',
     'history': 'history',
 };
-
-const ALOC_MIN_YEAR = 2001;
-const ALOC_MAX_YEAR = 2020;
 
 function resolveSubjectSlug(subject) {
     if (!subject) return null;
@@ -89,60 +85,22 @@ function mapToPqSubjectName(subject) {
     return clean.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
-function safeParseAlocResponse(response) {
-    const rawData = response.data;
-    if (typeof rawData === 'object' && rawData !== null) {
-        return { ok: true, data: rawData };
-    }
-    if (typeof rawData === 'string') {
-        const trimmed = rawData.trim();
-        if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
-            return { ok: false, error: 'ALOC returned HTML instead of JSON.', rawSnippet: trimmed.substring(0, 200) };
-        }
-        try {
-            const parsed = JSON.parse(trimmed);
-            return { ok: true, data: parsed };
-        } catch {
-            return { ok: false, error: 'ALOC returned non-JSON text.', rawSnippet: trimmed.substring(0, 200) };
-        }
-    }
-    return { ok: false, error: 'Unrecognised response format from ALOC.', rawData };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // CONTROLLER: Test Connections
 // ─────────────────────────────────────────────────────────────────────────────
 export const testALOCConnection = async (req, res) => {
-    const alocToken = getEnv('ALOC_ACCESS_TOKEN');
-    const results = { pqApi: 'unknown', alocApi: 'unknown' };
+    const results = { pqApi: 'unknown' };
     
     try {
-        // 1. Test PQ API
+        // Test PQ API
         const pqResponse = await axios.get(`${PQ_BASE}/`, { timeout: 8000 });
-        if (pqResponse.status === 200 && pqResponse.data?.message?.includes('running')) {
+        if (pqResponse.status === 200) {
             results.pqApi = 'reachable';
         } else {
             results.pqApi = `unreachable (status: ${pqResponse.status})`;
         }
     } catch (error) {
         results.pqApi = `error: ${error.message}`;
-    }
-
-    if (alocToken) {
-        try {
-            // 2. Test ALOC API
-            const alocUrl = `${ALOC_BASE}/q/1?subject=chemistry&year=2010&type=utme`;
-            const alocResponse = await axios.get(alocUrl, {
-                headers: { 'Accept': 'application/json', 'AccessToken': alocToken },
-                timeout: 8000,
-            });
-            const parsed = safeParseAlocResponse(alocResponse);
-            results.alocApi = parsed.ok ? 'reachable' : `error: ${parsed.error}`;
-        } catch (error) {
-            results.alocApi = `error: ${error.message}`;
-        }
-    } else {
-        results.alocApi = 'not configured (ALOC_ACCESS_TOKEN missing)';
     }
 
     const pqReachable = results.pqApi === 'reachable';
@@ -153,14 +111,14 @@ export const testALOCConnection = async (req, res) => {
     return res.status(502).json({ status: 'fail', message: 'Primary PQ API is unreachable', results });
 };
 
-// ── Shared: fetch questions (DB cache + PQ API / ALOC) — used by HTTP proxy and Group CBT ──
+// ── Shared: fetch questions (DB cache + PQ API) ──
 export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 }) {
     if (!subject) return { ok: false, httpStatus: 400, body: { error: 'subject is required.' } };
 
     const subjectSlug = resolveSubjectSlug(subject);
     if (!subjectSlug) return { ok: false, httpStatus: 400, body: { error: `"${subject}" is not recognised.` } };
 
-    const clampedAmount = Math.min(Math.max(parseInt(amount, 10) || 10, 1), 40);
+    const clampedAmount = Math.min(Math.max(parseInt(amount, 10) || 10, 1), 100);
 
     const getExamTypesToTry = (t) => {
         if (!t) return ['utme', 'wassce'];
@@ -197,40 +155,6 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
         }
     };
 
-    const fetchFromALOC = async (targetType, targetYear = null, attempt = 1) => {
-        const token = getEnv('ALOC_ACCESS_TOKEN');
-        if (!token) return { ok: false, error: 'ALOC_ACCESS_TOKEN not configured' };
-
-        const params = new URLSearchParams({ subject: subjectSlug, type: targetType });
-        if (targetYear && targetYear !== 'any' && attempt === 1) params.append('year', targetYear);
-
-        const url = `${ALOC_BASE}/m/${clampedAmount}?${params.toString()}`;
-        console.log(`[ALOC Proxy] Attempting: ${url}, attempt: ${attempt}`);
-
-        try {
-            const response = await axios.get(url, {
-                headers: { 'Accept': 'application/json', 'AccessToken': token },
-                timeout: 40000,
-            });
-
-            const parsed = safeParseAlocResponse(response);
-            if (!parsed.ok) return { ok: false, error: parsed.error };
-
-            const data = parsed.data;
-            if (data.status === false || data.status === 0 || !data.data || !Array.isArray(data.data) || data.data.length === 0) {
-                return { ok: false, message: data.message || 'No data returned' };
-            }
-            return { ok: true, data };
-        } catch (err) {
-            console.error(`ALOC attempt ${attempt} failed:`, err.message);
-            if (attempt < 3) {
-                await new Promise(r => setTimeout(r, 2000));
-                return fetchFromALOC(targetType, null, attempt + 1);
-            }
-            return { ok: false, error: err.message };
-        }
-    };
-
     let finalData = null;
     let lastError = 'No questions found';
 
@@ -250,19 +174,19 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                         solution: q.explanation,
                         examType: q.examType,
                         year: q.year,
-                        image: q.image || null
+                        image: q.image || null,
+                        topic: q.topic || null,
+                        tested_word: q.tested_word || null
                     }))
                 };
                 break;
             }
 
-            // Try PQ API first
-            let pqSuccess = false;
+            // Try PQ API
             const pqSubjectName = mapToPqSubjectName(subject);
             if (pqSubjectName) {
                 const pqResult = await fetchFromPQ(pqSubjectName, year);
                 if (pqResult.ok) {
-                    pqSuccess = true;
                     const mappedQuestions = pqResult.data.questions.map(q => ({
                         id: q.no || q.id,
                         question: q.question,
@@ -277,7 +201,9 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                         solution: q.explanation || q.solution || null,
                         examType: targetType,
                         year: pqResult.data.year !== 'all' ? pqResult.data.year : (q.year || year || 'any'),
-                        image: q.image || null
+                        image: q.image || null,
+                        topic: q.topic || null,
+                        tested_word: q.tested_word || null
                     }));
 
                     const ops = mappedQuestions.map((q, i) => {
@@ -296,6 +222,8 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                                         correctAnswer: q.answer,
                                         explanation: q.solution,
                                         image: q.image,
+                                        topic: q.topic || null,
+                                        tested_word: q.tested_word || null,
                                         source: 'API'
                                     }
                                 },
@@ -316,23 +244,13 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                     lastError = `PQ API failed: ${pqResult.error}`;
                 }
             }
-
-            // Fallback to ALOC API
-            const result = await fetchFromALOC(targetType, year);
-            if (result.ok) {
-                finalData = result.data;
-                break;
-            }
-            lastError = result.message || result.error;
         }
 
         // Try PQ API for year === 'any' / null
-        let pqSuccess = false;
         const pqSubjectName = mapToPqSubjectName(subject);
         if (pqSubjectName) {
             const pqResult = await fetchFromPQ(pqSubjectName, null);
             if (pqResult.ok) {
-                pqSuccess = true;
                 const mappedQuestions = pqResult.data.questions.map(q => ({
                     id: q.no || q.id,
                     question: q.question,
@@ -347,7 +265,9 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                     solution: q.explanation || q.solution || null,
                     examType: targetType,
                     year: pqResult.data.year !== 'all' ? pqResult.data.year : (q.year || year || 'any'),
-                    image: q.image || null
+                    image: q.image || null,
+                    topic: q.topic || null,
+                    tested_word: q.tested_word || null
                 }));
 
                 const ops = mappedQuestions.map((q, i) => {
@@ -366,6 +286,8 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                                     correctAnswer: q.answer,
                                     explanation: q.solution,
                                     image: q.image,
+                                    topic: q.topic || null,
+                                    tested_word: q.tested_word || null,
                                     source: 'API'
                                 }
                             },
@@ -386,13 +308,6 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                 lastError = `PQ API failed: ${pqResult.error}`;
             }
         }
-
-        const result = await fetchFromALOC(targetType, null);
-        if (result.ok) {
-            finalData = result.data;
-            break;
-        }
-        lastError = result.message || result.error;
     }
 
     if (!finalData) {
@@ -401,7 +316,7 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
             httpStatus: 404,
             body: {
                 error: 'No questions found',
-                message: `ALOC/PQ failed for ${subjectSlug} (${type} ${year}). Details: ${lastError}`
+                message: `PQ API failed for ${subjectSlug} (${type} ${year}). Details: ${lastError}`
             }
         };
     }
@@ -410,67 +325,9 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
         console.log(`[CBT Proxy] Sample question raw data (${finalData.message}):`, JSON.stringify(finalData.data[0], null, 2));
     }
 
-    if (finalData.message === 'Questions from PQ API' || finalData.message === 'Questions from cache') {
-        return { ok: true, finalData, subjectSlug, typesToTry, year, clampedAmount };
-    }
-
-    // Mask sensitive info (BOLA & Cheating prevention)
-    const maskQuestions = (qs) => qs.map(q => {
-        const { answer, solution, explanation, correctAnswer, ...rest } = q;
-        return rest;
-    });
-
-    const ops = finalData.data.map((q, i) => {
-        const opts = q.option ? Object.values(q.option).filter(v => v !== null && v !== undefined) : [];
-        const qYear = q.year || year || 'any';
-        const qType = q.examType || typesToTry[0];
-
-        const explanation = q.solution || q.explanation || q.note || q.discussion ||
-            q.answer_explanation || q.knowledge_deep_dive ||
-            q.knowledgeDeepDive || q.modelAnswer || q.reason || null;
-
-        const image =
-            q.image ||
-            q.diagram ||
-            q.img ||
-            q.image_url ||
-            q.imageUrl ||
-            q.questionImage ||
-            q.picture ||
-            q.figure ||
-            q.image_link ||
-            null;
-
-        return {
-            updateOne: {
-                filter: { subject: subjectSlug, examType: qType, year: qYear, questionNumber: q.id || i + 1 },
-                update: {
-                    $setOnInsert: {
-                        subject: subjectSlug,
-                        examType: qType,
-                        year: qYear,
-                        questionNumber: q.id || i + 1,
-                        questionText: q.question,
-                        options: opts,
-                        correctAnswer: q.answer,
-                        explanation: explanation,
-                        image,
-                        source: 'API'
-                    }
-                },
-                upsert: true
-            }
-        };
-    });
-
-    await CBTQuestion.bulkWrite(ops, { ordered: false }).catch(() => { });
-
     return { ok: true, finalData, subjectSlug, typesToTry, year, clampedAmount };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONTROLLER: Get Questions Proxy (Database-First Cache)
-// ─────────────────────────────────────────────────────────────────────────────
 export const getQuestionsProxy = async (req, res) => {
     try {
         const { subject, type, year, amount = 10 } = req.validatedQuery || req.query;
@@ -500,7 +357,7 @@ export const getAvailableSubjects = (req, res) => {
     const unique = [...new Set(Object.values(SUBJECT_SLUG_MAP))];
     return res.status(200).json({
         subjects: unique,
-        yearRange: `${ALOC_MIN_YEAR}–${ALOC_MAX_YEAR}`,
+        yearRange: '2001–2023',
         examTypes: ['utme', 'wassce', 'post-utme'],
     });
 };
