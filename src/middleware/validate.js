@@ -31,10 +31,12 @@ export const validate = (schema) => (req, res, next) => {
 
 /**
  * Same as validate() but for req.query (GET params).
+ * Stores the parsed result in req.validatedQuery because Express's
+ * req.query is a getter-only property that cannot be reassigned.
  */
 export const validateQuery = (schema) => (req, res, next) => {
   try {
-    req.query = schema.parse(req.query);
+    req.validatedQuery = schema.parse(req.query);
     next();
   } catch (err) {
     if (err instanceof ZodError) {

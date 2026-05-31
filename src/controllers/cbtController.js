@@ -473,7 +473,8 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
 // ─────────────────────────────────────────────────────────────────────────────
 export const getQuestionsProxy = async (req, res) => {
     try {
-        const { subject, type, year, amount = 10 } = req.query;
+        const { subject, type, year, amount = 10 } = req.validatedQuery || req.query;
+
         const result = await fetchCbtQuestionPack({ subject, type, year, amount });
         if (!result.ok) {
             return res.status(result.httpStatus || 500).json(result.body || { error: 'Unknown error' });
