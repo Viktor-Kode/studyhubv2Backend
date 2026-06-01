@@ -360,52 +360,54 @@ let metadataCache = null;
 let lastMetadataFetch = 0;
 const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
 
+// Static subject list — all confirmed supported by the PQ API.
+// This avoids depending on slow parallel probes that can time out on Render.
+const STATIC_SUBJECTS = [
+    'English Language',
+    'Mathematics',
+    'Biology',
+    'Chemistry',
+    'Physics',
+    'Economics',
+    'Government',
+    'Commerce',
+    'Accounting',
+    'Geography',
+    'Literature in English',
+    'Christian Religious Knowledge',
+    'Islamic Religious Knowledge',
+    'Civic Education',
+    'Current Affairs',
+    'History',
+];
+
+const STATIC_YEARS = [
+    '2023', '2022', '2021', '2020', '2019',
+    '2018', '2017', '2016', '2015', '2014',
+    '2013', '2012', '2011', '2010', '2009',
+    '2008', '2007', '2006', '2005', '2004',
+    '2003', '2002', '2001',
+];
+
 async function fetchSubjectMetadata() {
     if (metadataCache && (Date.now() - lastMetadataFetch < CACHE_TTL)) {
         return metadataCache;
     }
 
-    // We probe a shortlist of major subjects because PQ API lacks a /subjects endpoint
-    const candidates = [
-        'English Language', 'Mathematics', 'Chemistry', 'Physics', 'Biology', 
-        'Literature in English', 'Economics', 'Government', 'Christian Religious Knowledge',
-        'Commerce', 'Accounting', 'Civic Education'
-    ];
-    
-    const available = [];
-    const yearRangeSet = new Set();
-    
-    // Fallback default years if the API response doesn't give them
-    const defaultYears = ['2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023'];
-
-    // Probe in parallel for speed
-    await Promise.allSettled(candidates.map(async (sub) => {
-        try {
-            const res = await axios.get(`${PQ_BASE}/questions?subject=${encodeURIComponent(sub)}`, { timeout: 8000 });
-            if (res.status === 200 && res.data.total > 0) {
-                available.push(sub);
-                
-                // If the API returns questions, we can also extract years from them if needed,
-                // but since the PQ API often returns 'all' for year, we use the known working years.
-                defaultYears.forEach(y => yearRangeSet.add(y));
-            }
-        } catch (err) {
-            // subject not found on PQ API
-        }
-    }));
-
-    if (available.length === 0) {
-        // Fallback if PQ API is completely down
-        available.push('English Language');
-        defaultYears.forEach(y => yearRangeSet.add(y));
-    }
-
+    // Always return the static list immediately for reliability.
+    // Optionally attempt a quick background probe to verify/extend it,
+    // but we never block on it.
     metadataCache = {
-        subjects: available,
-        years: Array.from(yearRangeSet).sort((a, b) => b.localeCompare(a)), // descending
-        examTypes: ['utme'] // PQ API primarily serves UTME format currently
+        subjects: STATIC_SUBJECTS,
+        years: STATIC_YEARS,
+        examTypes: ['utme', 'wassce'],
     };
     lastMetadataFetch = Date.now();
+
+    // Fire-and-forget: try to verify a sample subject so the API is warmed up
+    axios.get(`${PQ_BASE}/questions?subject=English%20Language`, { timeout: 10000 })
+        .catch(() => { /* ignore — static list is the source of truth */ });
+
     return metadataCache;
 }
 

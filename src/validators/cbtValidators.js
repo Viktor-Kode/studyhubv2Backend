@@ -18,7 +18,7 @@ export const getQuestionsQuerySchema = z.object({
     .string()
     .regex(/^\d+$/, 'amount must be a number')
     .transform(Number)
-    .refine((n) => n >= 1 && n <= 40, 'amount must be between 1 and 40')
+    .refine((n) => n >= 1 && n <= 100, 'amount must be between 1 and 100')
     .optional(),
 });
 
