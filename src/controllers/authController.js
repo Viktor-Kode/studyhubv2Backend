@@ -6,6 +6,7 @@ import { getEnv } from '../config/env.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 import { processReferral } from './referralController.js';
 import { logUserActivity } from '../services/activityService.js';
+import { sendNotification } from '../services/notificationService.js';
 
 /**
  * Signs a JWT token
@@ -65,6 +66,22 @@ export const signup = async (req, res, next) => {
             phone,
             phoneNumber: phone || null
         });
+
+        // Send welcome email immediately (non-blocking)
+        try {
+            sendNotification({
+                userId: newUser.firebaseUid || newUser._id.toString(),
+                type: 'welcome',
+                title: 'You just made a smart move 🎯',
+                body: 'Welcome to Studyhelp — the tool behind every first class.',
+                icon: '🎯',
+                link: '/dashboard',
+            }).catch(emailErr => {
+                console.error('[Welcome Email] Failed to send on signup:', emailErr.message);
+            });
+        } catch (err) {
+            console.error('[Welcome Email] Error initiating send on signup:', err.message);
+        }
 
         if (refCode) {
             try {
