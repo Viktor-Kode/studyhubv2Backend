@@ -15,6 +15,7 @@ const PushNotificationSchema = new mongoose.Schema(
         'new_post_follow',
         'streak_ending',
         'admin_announcement',
+        'welcome',
       ],
       required: true,
     },

@@ -5,6 +5,7 @@ import UserDailyActivity from '../models/UserDailyActivity.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
 import { getEnv } from '../config/env.js';
+import { sendNotification } from '../services/notificationService.js';
 
 const utcDayKey = (d = new Date()) => d.toISOString().slice(0, 10);
 
@@ -84,6 +85,22 @@ export const protect = async (req, res, next) => {
                     role: 'student' // Default role for auto-created users
                 });
                 console.log(`[AUTH] Auto-created MongoDB user for UID: ${decodedToken.uid}`);
+
+                // Send welcome email immediately (non-blocking)
+                try {
+                    sendNotification({
+                        userId: currentUser.firebaseUid || currentUser._id.toString(),
+                        type: 'welcome',
+                        title: 'You just made a smart move 🎯',
+                        body: 'Welcome to Studyhelp — the tool behind every first class.',
+                        icon: '🎯',
+                        link: '/dashboard',
+                    }).catch(emailErr => {
+                        console.error('[Welcome Email] Failed to send on auto-create:', emailErr.message);
+                    });
+                } catch (err) {
+                    console.error('[Welcome Email] Error initiating send on auto-create:', err.message);
+                }
             } catch (createErr) {
                 console.error('[AUTH] Failed to auto-create user in MongoDB:', createErr.message);
                 return res.status(500).json({ status: 'error', message: 'Internal auth synchronization error' });
