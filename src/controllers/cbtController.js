@@ -133,33 +133,61 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
     const typesToTry = getExamTypesToTry(type);
 
     const fetchFromPQ = async (targetSubject, targetYear = null) => {
+        const baseUrls = [
+            PQ_BASE,
+            process.env.PQ_FALLBACK_BASE || 'https://ng-pastquestions-api-backup.onrender.com'
+        ];
         const params = new URLSearchParams();
         params.append('subject', targetSubject);
         if (targetYear && targetYear !== 'any') {
             params.append('year', targetYear);
         }
 
-        const url = `${PQ_BASE}/questions?${params.toString()}`;
-        console.log(`[PQ API Proxy] Attempting: ${url}`);
+        let lastCapturedError = null;
 
-        try {
-            const response = await axios.get(url, { timeout: 40000 });
-            const data = response.data;
-            if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
-                return { ok: false, error: 'No questions returned from PQ API' };
+        // Try each base URL with up to 3 attempts each and exponential backoff
+        for (const base of baseUrls) {
+            const url = `${base}/questions?${params.toString()}`;
+            console.log(`[PQ API Proxy] Attempting: ${url}`);
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    const response = await axios.get(url, { timeout: 40000 });
+                    const data = response.data;
+                    if (!data || !Array.isArray(data.questions) || data.questions.length === 0) {
+                        return { ok: false, error: 'No questions returned from PQ API' };
+                    }
+                    return { ok: true, data };
+                } catch (err) {
+                    const status = err.response?.status;
+                    const errorMsg = err.response?.data?.message || err.message;
+                    lastCapturedError = errorMsg;
+
+                    console.error(`PQ API attempt ${attempt} failed for ${base}:`, errorMsg, status ? `(Status: ${status})` : '');
+                    
+                    if (attempt === 3) {
+                        // after three attempts, move to next base URL
+                        continue;
+                    }
+                    // exponential backoff: 500ms, 1000ms, 2000ms. If rate limited (429), wait longer.
+                    let backoff = 500 * Math.pow(2, attempt - 1);
+                    if (status === 429) {
+                        backoff = 2000 * attempt; // 2s, 4s backoff for 429
+                        console.warn(`[PQ API Proxy] Rate limit (429) encountered. Backing off for ${backoff}ms.`);
+                    }
+                    await new Promise(r => setTimeout(r, backoff));
+                }
             }
-            return { ok: true, data };
-        } catch (err) {
-            console.error('PQ API failed:', err.message);
-            return { ok: false, error: err.message };
         }
+        return { ok: false, error: lastCapturedError || 'All PQ API endpoints failed' };
     };
+
 
     let finalData = null;
     let lastError = 'No questions found';
 
     for (const targetType of typesToTry) {
         if (year && year !== 'any') {
+            // 1. Direct cache check
             const cached = await CBTQuestion.find({ subject: subjectSlug, examType: targetType, year }).limit(clampedAmount);
             if (cached.length >= clampedAmount) {
                 console.log(`✅ Served from cache: ${subjectSlug} (${targetType} ${year})`);
@@ -180,6 +208,59 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                     }))
                 };
                 break;
+            }
+
+            // 2. Cross-exam type cache sharing (reusing questions cached under other exam types for this subject & year)
+            const cachedAnyType = await CBTQuestion.find({ subject: subjectSlug, year }).limit(clampedAmount);
+            if (cachedAnyType.length >= clampedAmount) {
+                console.log(`✅ Served from cross-exam cache: copying questions from other exam type to ${targetType} for ${subjectSlug} (${year})`);
+                const ops = cachedAnyType.map((q, i) => {
+                    const opts = q.options || [];
+                    return {
+                        updateOne: {
+                            filter: { subject: subjectSlug, examType: targetType, year: q.year, questionNumber: q.questionNumber },
+                            update: {
+                                $setOnInsert: {
+                                    subject: subjectSlug,
+                                    examType: targetType,
+                                    year: q.year,
+                                    questionNumber: q.questionNumber,
+                                    questionText: q.questionText,
+                                    options: opts,
+                                    correctAnswer: q.correctAnswer,
+                                    explanation: q.explanation,
+                                    image: q.image || null,
+                                    topic: q.topic || null,
+                                    tested_word: q.tested_word || null,
+                                    source: 'Cache Copy'
+                                }
+                            },
+                            upsert: true
+                        }
+                    };
+                });
+                await CBTQuestion.bulkWrite(ops, { ordered: false }).catch(() => { });
+
+                const freshlyCached = await CBTQuestion.find({ subject: subjectSlug, examType: targetType, year }).limit(clampedAmount);
+                if (freshlyCached.length >= clampedAmount) {
+                    finalData = {
+                        status: true,
+                        message: 'Questions from cache copy',
+                        data: freshlyCached.map(q => ({
+                            id: q.questionNumber,
+                            question: q.questionText,
+                            option: { a: q.options[0], b: q.options[1], c: q.options[2], d: q.options[3], e: q.options[4] },
+                            answer: q.correctAnswer,
+                            solution: q.explanation,
+                            examType: q.examType,
+                            year: q.year,
+                            image: q.image || null,
+                            topic: q.topic || null,
+                            tested_word: q.tested_word || null
+                        }))
+                    };
+                    break;
+                }
             }
 
             // Try PQ API
@@ -246,49 +327,125 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
             }
         }
 
-        // Try PQ API for year === 'any' / null
-        const pqSubjectName = mapToPqSubjectName(subject);
-        if (pqSubjectName) {
-            const pqResult = await fetchFromPQ(pqSubjectName, null);
-            if (pqResult.ok) {
-                const mappedQuestions = pqResult.data.questions.map(q => ({
-                    id: q.no || q.id,
-                    question: q.question,
-                    option: {
-                        a: q.options?.A || null,
-                        b: q.options?.B || null,
-                        c: q.options?.C || null,
-                        d: q.options?.D || null,
-                        e: q.options?.E || null
-                    },
-                    answer: q.answer,
-                    solution: q.explanation || q.solution || null,
-                    examType: targetType,
-                    year: pqResult.data.year !== 'all' ? pqResult.data.year : (q.year || year || 'any'),
-                    image: q.image || null,
-                    topic: q.topic || null,
-                    tested_word: q.tested_word || null
-                }));
+        // Try PQ API for year === 'any' / null (only if we didn't just get rate-limited)
+        if (!lastError.includes('429')) {
+            const pqSubjectName = mapToPqSubjectName(subject);
+            if (pqSubjectName) {
+                const pqResult = await fetchFromPQ(pqSubjectName, null);
+                if (pqResult.ok) {
+                    const mappedQuestions = pqResult.data.questions.map(q => ({
+                        id: q.no || q.id,
+                        question: q.question,
+                        option: {
+                            a: q.options?.A || null,
+                            b: q.options?.B || null,
+                            c: q.options?.C || null,
+                            d: q.options?.D || null,
+                            e: q.options?.E || null
+                        },
+                        answer: q.answer,
+                        solution: q.explanation || q.solution || null,
+                        examType: targetType,
+                        year: pqResult.data.year !== 'all' ? pqResult.data.year : (q.year || year || 'any'),
+                        image: q.image || null,
+                        topic: q.topic || null,
+                        tested_word: q.tested_word || null
+                    }));
 
-                const ops = mappedQuestions.map((q, i) => {
-                    const opts = q.option ? Object.values(q.option).filter(v => v !== null && v !== undefined) : [];
+                    const ops = mappedQuestions.map((q, i) => {
+                        const opts = q.option ? Object.values(q.option).filter(v => v !== null && v !== undefined) : [];
+                        return {
+                            updateOne: {
+                                filter: { subject: subjectSlug, examType: targetType, year: q.year, questionNumber: q.id || i + 1 },
+                                update: {
+                                    $setOnInsert: {
+                                        subject: subjectSlug,
+                                        examType: targetType,
+                                        year: q.year,
+                                        questionNumber: q.id || i + 1,
+                                        questionText: q.question,
+                                        options: opts,
+                                        correctAnswer: q.answer,
+                                        explanation: q.solution,
+                                        image: q.image,
+                                        topic: q.topic || null,
+                                        tested_word: q.tested_word || null,
+                                        source: 'API'
+                                    }
+                                },
+                                upsert: true
+                            }
+                        };
+                    });
+                    await CBTQuestion.bulkWrite(ops, { ordered: false }).catch(() => { });
+
+                    const shuffled = mappedQuestions.sort(() => 0.5 - Math.random());
+                    finalData = {
+                        status: true,
+                        message: 'Questions from PQ API',
+                        data: shuffled.slice(0, clampedAmount)
+                    };
+                    break;
+                } else {
+                    lastError = `PQ API failed: ${pqResult.error}`;
+                }
+            }
+        }
+    }
+
+    // 3. Graceful Database Fallbacks on API failure
+    if (!finalData) {
+        console.log(`⚠️ Primary PQ API failed (${lastError}). Attempting DB fallback for ${subjectSlug}...`);
+        for (const targetType of typesToTry) {
+            const fallbackCached = await CBTQuestion.find({ subject: subjectSlug, examType: targetType }).limit(clampedAmount);
+            if (fallbackCached.length > 0) {
+                console.log(`✅ DB Fallback Success: Serving ${fallbackCached.length} questions for ${subjectSlug} (${targetType}, any year)`);
+                finalData = {
+                    status: true,
+                    message: 'Questions from cache fallback (any year)',
+                    data: fallbackCached.map(q => ({
+                        id: q.questionNumber,
+                        question: q.questionText,
+                        option: { a: q.options[0], b: q.options[1], c: q.options[2], d: q.options[3], e: q.options[4] },
+                        answer: q.correctAnswer,
+                        solution: q.explanation,
+                        examType: q.examType,
+                        year: q.year,
+                        image: q.image || null,
+                        topic: q.topic || null,
+                        tested_word: q.tested_word || null
+                    }))
+                };
+                break;
+            }
+        }
+    }
+
+    if (!finalData) {
+        // Absolute fallback: search for any questions for this subject across ANY examType and ANY year, clone to targetType, and serve
+        for (const targetType of typesToTry) {
+            const fallbackCachedAnyType = await CBTQuestion.find({ subject: subjectSlug }).limit(clampedAmount);
+            if (fallbackCachedAnyType.length > 0) {
+                console.log(`✅ Absolute DB Fallback Success: Copying/serving questions from other types/years for ${subjectSlug} (${targetType})`);
+                const ops = fallbackCachedAnyType.map((q, i) => {
+                    const opts = q.options || [];
                     return {
                         updateOne: {
-                            filter: { subject: subjectSlug, examType: targetType, year: q.year, questionNumber: q.id || i + 1 },
+                            filter: { subject: subjectSlug, examType: targetType, year: q.year, questionNumber: q.questionNumber },
                             update: {
                                 $setOnInsert: {
                                     subject: subjectSlug,
                                     examType: targetType,
                                     year: q.year,
-                                    questionNumber: q.id || i + 1,
-                                    questionText: q.question,
+                                    questionNumber: q.questionNumber,
+                                    questionText: q.questionText,
                                     options: opts,
-                                    correctAnswer: q.answer,
-                                    explanation: q.solution,
-                                    image: q.image,
+                                    correctAnswer: q.correctAnswer,
+                                    explanation: q.explanation,
+                                    image: q.image || null,
                                     topic: q.topic || null,
                                     tested_word: q.tested_word || null,
-                                    source: 'API'
+                                    source: 'Absolute Cache Copy'
                                 }
                             },
                             upsert: true
@@ -297,15 +454,26 @@ export async function fetchCbtQuestionPack({ subject, type, year, amount = 10 })
                 });
                 await CBTQuestion.bulkWrite(ops, { ordered: false }).catch(() => { });
 
-                const shuffled = mappedQuestions.sort(() => 0.5 - Math.random());
-                finalData = {
-                    status: true,
-                    message: 'Questions from PQ API',
-                    data: shuffled.slice(0, clampedAmount)
-                };
-                break;
-            } else {
-                lastError = `PQ API failed: ${pqResult.error}`;
+                const freshlyCached = await CBTQuestion.find({ subject: subjectSlug, examType: targetType }).limit(clampedAmount);
+                if (freshlyCached.length > 0) {
+                    finalData = {
+                        status: true,
+                        message: 'Questions from cache fallback copy (any year/type)',
+                        data: freshlyCached.map(q => ({
+                            id: q.questionNumber,
+                            question: q.questionText,
+                            option: { a: q.options[0], b: q.options[1], c: q.options[2], d: q.options[3], e: q.options[4] },
+                            answer: q.correctAnswer,
+                            solution: q.explanation,
+                            examType: q.examType,
+                            year: q.year,
+                            image: q.image || null,
+                            topic: q.topic || null,
+                            tested_word: q.tested_word || null
+                        }))
+                    };
+                    break;
+                }
             }
         }
     }
