@@ -135,7 +135,45 @@ const userSchema = new mongoose.Schema({
         date: { type: Date, default: Date.now }
     }]
 
-}, { timestamps: true });
+}, { 
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+});
+
+// Virtual field for backward compatibility with frontend 'plan' expectations
+userSchema.virtual('plan').get(function () {
+    let isActive = false;
+    let planType = 'free';
+
+    if (this.role === 'admin') {
+        isActive = true;
+        planType = 'premium';
+    } else if (this.role === 'teacher') {
+        isActive = this.teacherPlan !== 'free' && 
+                   this.teacherPlanEnd && 
+                   new Date(this.teacherPlanEnd) > new Date();
+        planType = isActive ? (this.teacherPlan || 'monthly') : 'free';
+    } else {
+        isActive = this.subscriptionStatus === 'active' && 
+                   this.subscriptionEnd && 
+                   new Date(this.subscriptionEnd) > new Date();
+        planType = isActive ? (this.subscriptionPlan || 'monthly') : 'free';
+    }
+    
+    return {
+        type: planType,
+        testsAllowed: planType === 'free' ? 3 : 99999,
+        testsUsed: 0,
+        aiExplanationsAllowed: this.aiUsageLimit || 5,
+        aiExplanationsUsed: this.aiUsageCount || 0,
+        subjectsAllowed: planType === 'free' ? ['english'] : [],
+        allSubjects: planType !== 'free',
+        expiresAt: (this.role === 'teacher' ? this.teacherPlanEnd : this.subscriptionEnd) 
+            ? (this.role === 'teacher' ? this.teacherPlanEnd : this.subscriptionEnd).toISOString() 
+            : null
+    };
+});
 
 // Generate referral code on signup
 userSchema.pre('save', async function () {
