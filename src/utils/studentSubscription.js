@@ -44,6 +44,17 @@ export async function expireStaleActiveSubscription(user) {
 
 /** Paid library / storage tier: active status AND end date still in the future */
 export function hasActivePaidStudentPlan(user) {
-  if (!user || user.subscriptionStatus !== 'active' || !user.subscriptionEnd) return false;
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+
+  // Teachers with active teacher plan
+  if (user.role === 'teacher') {
+    return user.teacherPlan !== 'free' && 
+           user.teacherPlanEnd && 
+           new Date(user.teacherPlanEnd) > new Date();
+  }
+
+  // Students with active subscription
+  if (user.subscriptionStatus !== 'active' || !user.subscriptionEnd) return false;
   return new Date(user.subscriptionEnd) > new Date();
 }
