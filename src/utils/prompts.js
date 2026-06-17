@@ -7,6 +7,8 @@ export const quizPrompt = (text, amount = 3, typeInstructions = 'multiple-choice
 
   return `Generate exactly ${amount} ${typeInstructions} based on the text below.${exclusionClause}
 
+  CRITICAL: Keep each question concise — maximum 2 sentences. Avoid lengthy preambles.
+
   CRITICAL REQUIREMENT: For EVERY single question, you must provide a "knowledgeDeepDive" field. 
   This field is NOT just the answer, but a 3-4 sentence educational explanation that teaches the underlying concept. If there is a calculation, show the steps.
   
