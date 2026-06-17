@@ -247,6 +247,7 @@ export const updateStudyNote = async (req, res) => {
 export const generateQuiz = async (req, res) => {
   const { text, documentId, subject, modelId, amount = 5, questionType = 'multiple-choice', fileName, forceNew = false, stream = false } = req.body;
   const userId = req.user._id;
+  const cleanSubject = subject || (fileName ? (fileName.includes('.') ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName) : null) || "General Study";
 
   let contentToUse = text;
 
@@ -406,7 +407,7 @@ export const generateQuiz = async (req, res) => {
             options: shuffledOptions,
             correctAnswer: shuffledCorrectIndex,
             knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
-            subject: subject || "General Study",
+            subject: cleanSubject,
             type: questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-blank' ? 'fill-blank' : questionType))
           };
         });
@@ -414,7 +415,7 @@ export const generateQuiz = async (req, res) => {
         const savedQuestions = await Question.insertMany(formattedQuestions);
         const session = new QuizSession({
           userId,
-          title: `${questionType.charAt(0).toUpperCase() + questionType.slice(1)} Quiz - ${new Date().toLocaleDateString()}`,
+          title: `${cleanSubject} Quiz - ${new Date().toLocaleDateString()}`,
           questionType,
           questionCount: savedQuestions.length,
           questions: savedQuestions.map(q => q._id)
@@ -512,7 +513,7 @@ export const generateQuiz = async (req, res) => {
         options: shuffledOptions,
         correctAnswer: shuffledCorrectIndex,
         knowledgeDeepDive: q.knowledgeDeepDive || q.knowledge_deep_dive || q.KnowledgeDeepDive || q.explanation || q.explanationText || q.model_answer || q.modelAnswer || q.solution || q.workingSolution || q.reason || q.note || q.discussion || q.answer_explanation || q.commentary || "No deep-dive available.",
-        subject: subject || "General Study",
+        subject: cleanSubject,
         type: questionType === 'multiple-choice' ? 'obj' : (questionType === 'theory' ? 'theory' : (questionType === 'fill-in-the-blank' ? 'fill-blank' : questionType))
       };
     });
@@ -521,7 +522,7 @@ export const generateQuiz = async (req, res) => {
 
     const session = new QuizSession({
       userId,
-      title: `${questionType.charAt(0).toUpperCase() + questionType.slice(1)} Quiz - ${new Date().toLocaleDateString()}`,
+      title: `${cleanSubject} Quiz - ${new Date().toLocaleDateString()}`,
       questionType,
       questionCount: savedQuestions.length,
       questions: savedQuestions.map(q => q._id)
