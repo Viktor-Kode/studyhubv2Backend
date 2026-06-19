@@ -238,7 +238,15 @@ export const extractOnly = async (req, res) => {
  */
 export const generateOnly = async (req, res) => {
   try {
-    const { text, requestedCount: reqCount, questionType } = req.body;
+    const { text, requestedCount: reqCount, questionType, fileName, subject } = req.body;
+
+    let cleanSubject = subject;
+    if (!cleanSubject && fileName) {
+      cleanSubject = fileName.replace(/\.[^/.]+$/, "").trim();
+    }
+    if (cleanSubject && cleanSubject.length > 60) {
+      cleanSubject = cleanSubject.substring(0, 57) + "...";
+    }
 
     if (!text || text.trim().length < 50) {
       return res.status(400).json({ error: 'Text content is too short for question generation.' });
@@ -354,7 +362,7 @@ ${truncated}`;
     }
 
     return res.status(200).json({
-      subject: parsedData.subject || 'General',
+      subject: cleanSubject || parsedData.subject || 'General',
       totalFound: questions.length,
       questions,
     });
