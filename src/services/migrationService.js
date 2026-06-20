@@ -14,8 +14,30 @@ export async function runSubjectMigration() {
         console.log('🔄 Checking for legacy generic CBT results to migrate...');
         
         // Match generic subjects like "General Study", "General studies", "general", "General"
-        const genericRegex = /^(general study|general studies|general)$/i;
+        const genericRegex = /^(general study|general studies|general|study session|manual entry)$/i;
         
+        // First: nuke any subjects that are clearly question text (contain '?')
+        const questionTextResults = await CBTResult.find({ subject: { $regex: '\\?', $options: 'i' } });
+        if (questionTextResults.length > 0) {
+            console.log(`🔄 Found ${questionTextResults.length} CBT results with question-text subjects. Resetting to "Study Session"...`);
+            await CBTResult.updateMany(
+                { subject: { $regex: '\\?', $options: 'i' } },
+                { $set: { subject: 'Study Session' } }
+            );
+            await Question.updateMany(
+                { subject: { $regex: '\\?', $options: 'i' } },
+                { $set: { subject: 'Study Session' } }
+            );
+            // Also update activity
+            for (const r of questionTextResults) {
+                await UserActivity.updateMany(
+                    { userId: r.studentId, type: 'cbt_result', 'metadata.resultId': String(r._id) },
+                    { $set: { title: 'Study Session practice completed', 'metadata.subject': 'Study Session' } }
+                );
+            }
+            console.log(`✅ Reset question-text subjects to "Study Session".`);
+        }
+
         // Find CBT results with generic subjects
         const resultsToMigrate = await CBTResult.find({
             subject: genericRegex
@@ -69,20 +91,10 @@ export async function runSubjectMigration() {
                 }
             }
 
-            // 4. Try parsing first line of first question as fallback if still not resolved
-            if (!resolvedSubject && result.answers && result.answers.length > 0 && result.answers[0].question) {
-                const firstQuestionText = result.answers[0].question;
-                const lines = firstQuestionText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-                if (lines.length > 0) {
-                    let firstLine = lines[0].replace(/[#*_\-\[\]]/g, '').trim();
-                    if (firstLine.length > 50) {
-                        firstLine = firstLine.substring(0, 47) + '...';
-                    }
-                    if (firstLine.length > 3 && !genericRegex.test(firstLine)) {
-                        resolvedSubject = firstLine;
-                        console.log(`📌 Resolved via Question text fallback: "${result.subject}" -> "${resolvedSubject}"`);
-                    }
-                }
+            // Discard any subject that looks like question text (contains '?' or is very long)
+            if (resolvedSubject && (resolvedSubject.includes('?') || resolvedSubject.length > 80)) {
+                console.log(`⚠️  Discarding question-text subject: "${resolvedSubject}"`);
+                resolvedSubject = null;
             }
 
             // If a valid descriptive subject is resolved, apply the changes

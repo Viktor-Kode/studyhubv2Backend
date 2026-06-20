@@ -249,8 +249,13 @@ export const generateQuiz = async (req, res) => {
   const userId = req.user._id;
 
   let cleanSubject = subject;
-  if (!cleanSubject && fileName) {
+  if (!cleanSubject && fileName && fileName !== 'Manual Entry') {
     cleanSubject = fileName.replace(/\.[^/.]+$/, "").trim();
+  }
+
+  // Sanitise: discard anything that looks like question text (contains "?" or is very long)
+  if (cleanSubject && (cleanSubject.includes('?') || cleanSubject.length > 80)) {
+    cleanSubject = null;
   }
 
   let contentToUse = text;
@@ -272,22 +277,8 @@ export const generateQuiz = async (req, res) => {
     }
   }
 
-  // Fallback heuristic for manual entries or generic subjects
-  if (contentToUse && (!cleanSubject || cleanSubject === "Manual Entry" || cleanSubject === "General Study")) {
-    const lines = contentToUse.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length > 0) {
-      let firstLine = lines[0].replace(/[#*_\-\[\]]/g, '').trim();
-      if (firstLine.length > 50) {
-        firstLine = firstLine.substring(0, 47) + '...';
-      }
-      if (firstLine.length > 3) {
-        cleanSubject = firstLine;
-      }
-    }
-  }
-
   if (!cleanSubject) {
-    cleanSubject = "General Study";
+    cleanSubject = "Study Session";
   }
   if (cleanSubject.length > 60) {
     cleanSubject = cleanSubject.substring(0, 57) + "...";

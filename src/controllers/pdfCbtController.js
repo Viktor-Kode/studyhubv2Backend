@@ -241,25 +241,19 @@ export const generateOnly = async (req, res) => {
     const { text, requestedCount: reqCount, questionType, fileName, subject } = req.body;
 
     let cleanSubject = subject;
-    if (!cleanSubject && fileName) {
+    if (!cleanSubject && fileName && fileName !== 'Manual Entry') {
       cleanSubject = fileName.replace(/\.[^/.]+$/, "").trim();
     }
 
-    // Fallback heuristic for manual entries or generic subjects
-    if (text && (!cleanSubject || cleanSubject === "Manual Entry" || cleanSubject === "General Study" || cleanSubject === "General")) {
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      if (lines.length > 0) {
-        let firstLine = lines[0].replace(/[#*_\-\[\]]/g, '').trim();
-        if (firstLine.length > 50) {
-          firstLine = firstLine.substring(0, 47) + '...';
-        }
-        if (firstLine.length > 3) {
-          cleanSubject = firstLine;
-        }
-      }
+    // Discard anything that looks like question text (contains "?" or is very long)
+    if (cleanSubject && (cleanSubject.includes('?') || cleanSubject.length > 80)) {
+      cleanSubject = null;
     }
 
-    if (cleanSubject && cleanSubject.length > 60) {
+    if (!cleanSubject) {
+      cleanSubject = "Study Session";
+    }
+    if (cleanSubject.length > 60) {
       cleanSubject = cleanSubject.substring(0, 57) + "...";
     }
 
