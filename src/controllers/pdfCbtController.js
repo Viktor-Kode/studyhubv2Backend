@@ -244,6 +244,21 @@ export const generateOnly = async (req, res) => {
     if (!cleanSubject && fileName) {
       cleanSubject = fileName.replace(/\.[^/.]+$/, "").trim();
     }
+
+    // Fallback heuristic for manual entries or generic subjects
+    if (text && (!cleanSubject || cleanSubject === "Manual Entry" || cleanSubject === "General Study" || cleanSubject === "General")) {
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      if (lines.length > 0) {
+        let firstLine = lines[0].replace(/[#*_\-\[\]]/g, '').trim();
+        if (firstLine.length > 50) {
+          firstLine = firstLine.substring(0, 47) + '...';
+        }
+        if (firstLine.length > 3) {
+          cleanSubject = firstLine;
+        }
+      }
+    }
+
     if (cleanSubject && cleanSubject.length > 60) {
       cleanSubject = cleanSubject.substring(0, 57) + "...";
     }

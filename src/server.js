@@ -15,6 +15,11 @@ connectDB().then(() => {
   registerNotificationJobs();
   registerPushNotificationCrons();
   registerStudyPlanJobs();
+
+  // Run legacy subject migration in background
+  import('./services/migrationService.js')
+    .then(({ runSubjectMigration }) => runSubjectMigration())
+    .catch(err => console.error('Failed to start legacy subject migration:', err));
 });
 
 const PORT = Number(getEnv('PORT', 5000));
