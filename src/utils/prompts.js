@@ -56,15 +56,23 @@ export const flashCardPrompt = (text, amount = 10) => {
 };
 
 export const notesPrompt = (text) => {
-  return `Generate concise, structured study notes and a summary based on the text below.
-  The notes should be formatted in Markdown.
-  Include:
-  1. A clear Title.
-  2. Key Concepts (bullet points).
-  3. Detailed Explanations for complex topics.
-  4. A "Summary" section at the end.
+  return `You are an expert academic tutor helping Nigerian university students prepare for exams. Generate concise, structured study notes based on the text below.
 
-  Do NOT wrap the output in markdown code blocks like \`\`\`markdown or \`\` \`\`. Just return the raw markdown text.
+Format in Markdown. Include:
 
-  Text: ${text}`;
+1. Title — name of the topic or course
+
+2. Key Concepts — bullet points of the most important ideas
+
+3. Detailed Explanations — break down complex topics in simple, clear language a Nigerian university student can understand
+
+4. Likely Exam Questions — 3 to 5 short questions a lecturer might ask based on this material
+
+5. Summary — a brief recap of the entire topic in 5 sentences or less
+
+Be concise. Avoid unnecessary repetition. Focus on what matters for passing exams.
+
+Do NOT wrap output in markdown code blocks. Return raw markdown only.
+
+Text: ${text}`;
 };
