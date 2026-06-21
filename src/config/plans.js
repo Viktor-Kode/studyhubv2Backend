@@ -43,9 +43,9 @@ export const PLANS = {
         aiLimit: 999999,
         flashcardLimit: 999999,
         durationDays: 7,
-        price: 100000, // kobo — ₦1,000
-        amount: 1000, // naira
-        label: '₦1,000 / week',
+        price: 70000, // kobo — ₦700
+        amount: 700, // naira
+        label: '₦700 / week',
         features: [
             'Unlimited CBT tests & study sessions',
             'Unlimited AI questions & tutoring',
@@ -63,11 +63,11 @@ export const PLANS = {
         aiLimit: 999999,
         flashcardLimit: 999999,
         durationDays: 30,
-        price: 350000, // kobo — ₦3,500
-        amount: 3500, // naira
-        label: '₦3,500 / month',
+        price: 150000, // kobo — ₦1,500
+        amount: 1500, // naira
+        label: '₦1,500 / month',
         badge: 'Best Value',
-        savings: 'Save ₦500 vs weekly',
+        savings: 'Save ₦1,300 vs weekly',
         features: [
             'Unlimited CBT tests & study sessions',
             'Unlimited AI questions & tutoring',
