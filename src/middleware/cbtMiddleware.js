@@ -31,31 +31,27 @@ export const checkCBTAccess = async (req, res, next) => {
             user.subscriptionEnd &&
             new Date(user.subscriptionEnd) > now;
 
-        // Free/inactive users get limited CBT access — don't fully block them
+        // Free/inactive users get limited CBT access
         if (!isActive) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            const todayTests = await CBTResult.countDocuments({
-                studentId: req.user.id,
-                takenAt: { $gte: today }
+            const totalTests = await CBTResult.countDocuments({
+                studentId: req.user.id
             });
 
-            // Free users get 1 test per day
-            if (todayTests >= 1) {
+            // Free users get 3 sessions total
+            if (totalTests >= 3) {
                 await logPaywallEvent({
                     userId: user._id,
                     userEmail: user.email,
                     action: 'CBT_LIMIT_REACHED',
-                    context: { testsToday: todayTests }
+                    context: { totalTests }
                 });
 
                 return res.status(403).json({
                     error: 'Upgrade Required',
-                    message: 'Free users get 1 CBT test per day. Upgrade for unlimited access.',
+                    message: 'Free plan is limited to 3 practice sessions. Upgrade to a paid plan for unlimited access.',
                     showUpgrade: true,
                     code: 'CBT_LIMIT_REACHED',
-                    testsToday: todayTests
+                    totalTests
                 });
             }
         }

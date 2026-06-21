@@ -3,39 +3,35 @@
 export const PLANS = {
     free: {
         name: 'Free',
-        aiLimit: 5,
-        flashcardLimit: 3,
+        aiLimit: 999999,
+        flashcardLimit: 999999,
         durationDays: null,
         price: 0,
         amount: 0,
         label: 'Free forever',
         features: [
-            '5 AI-generated questions',
-            '3 CBT practice tests',
-            '5 flashcard reviews',
+            '3 practice sessions (10 questions each)',
             'Basic study timer',
             'Limited analytics'
         ],
         notIncluded: [
-            'Unlimited CBT tests',
+            'Unlimited CBT practice',
             'Post-UTME practice',
-            'AI explanations',
             'Notes & highlights',
             'Streak tracking'
         ]
     },
     daily: {
         name: 'Daily',
-        aiLimit: 80,
-        flashcardLimit: 40,
+        aiLimit: 999999,
+        flashcardLimit: 999999,
         durationDays: 1,
         price: 0,
         amount: 0,
         label: '1-day pass',
         features: [
-            '80 AI-generated questions (same cap as weekly for the window)',
+            'Unlimited AI questions & tutoring',
             'Unlimited CBT tests',
-            '40 flashcard reviews',
             'All exam types (JAMB, WAEC, Post-UTME)',
             'Full analytics & progress tracking',
             'AI explanations for answers'
@@ -44,16 +40,16 @@ export const PLANS = {
     },
     weekly: {
         name: 'Weekly',
-        aiLimit: 80,
-        flashcardLimit: 40,
+        aiLimit: 999999,
+        flashcardLimit: 999999,
         durationDays: 7,
-        price: 60000, // kobo — ₦600
-        amount: 600, // naira
-        label: '₦600 / week',
+        price: 100000, // kobo — ₦1,000
+        amount: 1000, // naira
+        label: '₦1,000 / week',
         features: [
-            '80 AI-generated questions',
-            'Unlimited CBT tests',
-            '40 flashcard reviews',
+            'Unlimited CBT tests & study sessions',
+            'Unlimited AI questions & tutoring',
+            'Unlimited flashcards',
             'All exam types (JAMB, WAEC, Post-UTME)',
             'Smart study timer',
             'Full analytics & progress tracking',
@@ -65,18 +61,18 @@ export const PLANS = {
     },
     monthly: {
         name: 'Monthly',
-        aiLimit: 250,
-        flashcardLimit: 120,
+        aiLimit: 999999,
+        flashcardLimit: 999999,
         durationDays: 30,
-        price: 230000, // kobo — ₦2,300
-        amount: 2300, // naira
-        label: '₦2,300 / month',
+        price: 350000, // kobo — ₦3,500
+        amount: 3500, // naira
+        label: '₦3,500 / month',
         badge: 'Best Value',
-        savings: 'Save ₦1,100 vs weekly',
+        savings: 'Save ₦500 vs weekly',
         features: [
-            '250 AI-generated questions',
-            'Unlimited CBT tests',
-            '120 flashcard reviews',
+            'Unlimited CBT tests & study sessions',
+            'Unlimited AI questions & tutoring',
+            'Unlimited flashcards',
             'All exam types (JAMB, WAEC, Post-UTME)',
             'Smart study timer',
             'Full analytics & progress tracking',
@@ -89,18 +85,18 @@ export const PLANS = {
     },
     yearly: {
         name: 'Yearly',
-        aiLimit: 4000,
-        flashcardLimit: 2000,
+        aiLimit: 999999,
+        flashcardLimit: 999999,
         durationDays: 365,
-        price: 1799000, // kobo — ₦17,990
-        amount: 17990, // naira
-        label: '₦17,990 / year',
+        price: 2999000, // kobo — ₦29,990
+        amount: 29990, // naira
+        label: '₦29,990 / year',
         badge: 'Best Savings',
-        savings: 'Save 35% vs monthly',
+        savings: 'Save 30% vs monthly',
         features: [
-            '4,000 AI-generated questions',
-            'Unlimited CBT tests',
-            '2,000 flashcard reviews',
+            'Unlimited CBT tests & study sessions',
+            'Unlimited AI questions & tutoring',
+            'Unlimited flashcards',
             'All exam types (JAMB, WAEC, Post-UTME)',
             'Smart study timer',
             'Full analytics & progress tracking',

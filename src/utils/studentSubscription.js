@@ -2,9 +2,10 @@ import User from '../models/User.js';
 
 /** Free-tier defaults after a paid plan ends */
 export const FREE_TIER_LIMITS = {
-  aiUsageLimit: 5,
-  flashcardUsageLimit: 3,
+  aiUsageLimit: 999999,
+  flashcardUsageLimit: 999999,
 };
+
 
 /**
  * If DB says "active" but subscriptionEnd is in the past, atomically downgrade to free limits.

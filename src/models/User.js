@@ -76,15 +76,14 @@ const userSchema = new mongoose.Schema({
     },
     subscriptionStart: { type: Date, default: null },
     subscriptionEnd: { type: Date, default: null },
-
     // AI usage (server‑side enforced)
     aiUsageCount: { type: Number, default: 0 },
-    aiUsageLimit: { type: Number, default: 5 },
+    aiUsageLimit: { type: Number, default: 999999 },
     aiLastReset: { type: Date, default: Date.now },
 
     // Flashcard generation usage
     flashcardUsageCount: { type: Number, default: 0 },
-    flashcardUsageLimit: { type: Number, default: 3 },
+    flashcardUsageLimit: { type: Number, default: 999999 },
 
     // ─── Teacher Plan & Usage ───────────────────────────────────────────────
     teacherPlan: { type: String, enum: ['free', 'weekly', 'monthly'], default: 'free' },

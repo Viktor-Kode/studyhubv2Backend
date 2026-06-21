@@ -500,7 +500,12 @@ export const getQuestionsProxy = async (req, res) => {
     try {
         const { subject, type, year, amount = 10 } = req.validatedQuery || req.query;
 
-        const result = await fetchCbtQuestionPack({ subject, type, year, amount });
+        let finalAmount = parseInt(amount) || 10;
+        if (!req.isSubscribed && req.user?.role !== 'admin') {
+            finalAmount = Math.min(finalAmount, 10);
+        }
+
+        const result = await fetchCbtQuestionPack({ subject, type, year, amount: finalAmount });
         if (!result.ok) {
             return res.status(result.httpStatus || 500).json(result.body || { error: 'Unknown error' });
         }
