@@ -331,7 +331,11 @@ export const grantPlan = async (req, res) => {
                     aiUsageCount: 0,
                     aiUsageLimit: planConfig.aiLimit,
                     flashcardUsageCount: 0,
-                    flashcardUsageLimit: planConfig.flashcardLimit
+                    flashcardUsageLimit: planConfig.flashcardLimit,
+                    noteUsageCount: 0,
+                    noteUsageLimit: 999999,
+                    quizUsageCount: 0,
+                    quizUsageLimit: 999999,
                 }
             },
             { new: true }
@@ -1455,7 +1459,11 @@ export const adminQuickAction = async (req, res) => {
                 aiUsageCount: 0,
                 aiUsageLimit: planConfig.aiLimit,
                 flashcardUsageCount: 0,
-                flashcardUsageLimit: planConfig.flashcardLimit
+                flashcardUsageLimit: planConfig.flashcardLimit,
+                noteUsageCount: 0,
+                noteUsageLimit: 999999,
+                quizUsageCount: 0,
+                quizUsageLimit: 999999,
             });
             return res.json({
                 success: true,
@@ -1475,7 +1483,11 @@ export const adminQuickAction = async (req, res) => {
                         aiUsageCount: 0,
                         aiUsageLimit: freeConfig.aiLimit,
                         flashcardUsageCount: 0,
-                        flashcardUsageLimit: freeConfig.flashcardLimit
+                        flashcardUsageLimit: freeConfig.flashcardLimit,
+                        noteUsageCount: 0,
+                        noteUsageLimit: 3,
+                        quizUsageCount: 0,
+                        quizUsageLimit: 3,
                     }
                 },
                 { new: true }

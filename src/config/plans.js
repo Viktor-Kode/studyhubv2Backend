@@ -3,8 +3,8 @@
 export const PLANS = {
     free: {
         name: 'Free',
-        aiLimit: 999999,
-        flashcardLimit: 999999,
+        aiLimit: 3,
+        flashcardLimit: 3,
         durationDays: null,
         price: 0,
         amount: 0,

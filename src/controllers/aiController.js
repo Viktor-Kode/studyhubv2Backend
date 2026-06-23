@@ -8,7 +8,7 @@ import CBTResult from '../models/CBTResult.js';
 import { AI_PROVIDERS, getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
 import crypto from 'crypto';
 import { createRequire } from 'module';
-import { incrementAIUsage } from '../middleware/usageMiddleware.js';
+import { incrementAIUsage, incrementQuizUsage } from '../middleware/usageMiddleware.js';
 import { updateStreak } from '../services/streakService.js';
 import { sampleStudyMaterial } from '../utils/studyMaterialSample.js';
 import fetch from 'node-fetch';
@@ -451,6 +451,7 @@ export const generateQuiz = async (req, res) => {
         }
 
         await incrementAIUsage(req.user._id, savedQuestions.length);
+        await incrementQuizUsage(req.user._id);
         await awardXP(req.user._id, 'ai_generate_quiz');
         await updateStreak(req.user._id, 'question_generator');
 
@@ -558,6 +559,7 @@ export const generateQuiz = async (req, res) => {
     }
 
     await incrementAIUsage(req.user._id, savedQuestions.length);
+    await incrementQuizUsage(req.user._id);
     await awardXP(req.user._id, 'ai_generate_quiz');
     const streak = await updateStreak(req.user._id, 'question_generator');
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Africa/Lagos' });

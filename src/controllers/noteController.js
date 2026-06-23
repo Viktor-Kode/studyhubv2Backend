@@ -1,4 +1,5 @@
 import StudyNote from '../models/StudyNote.js';
+import { incrementNoteUsage } from '../middleware/usageMiddleware.js';
 
 // GET /api/notes
 export const getNotes = async (req, res) => {
@@ -52,6 +53,7 @@ export const createNote = async (req, res) => {
       color: color || '#ffffff'
     });
 
+    await incrementNoteUsage(userId);
     res.status(201).json({ success: true, note });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -140,6 +142,7 @@ export const createNoteFromAI = async (req, res) => {
       color: color || '#ffffff'
     });
 
+    await incrementNoteUsage(userId);
     res.status(201).json({ success: true, note });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });

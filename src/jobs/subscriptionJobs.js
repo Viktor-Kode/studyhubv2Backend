@@ -26,9 +26,13 @@ cron.schedule('0 0 * * *', async () => {
                 subscriptionPlan: null,
                 // Reset to free limits
                 aiUsageCount: 0,
-                aiUsageLimit: 5,
+                aiUsageLimit: 3,
                 flashcardUsageCount: 0,
-                flashcardUsageLimit: 3
+                flashcardUsageLimit: 3,
+                noteUsageCount: 0,
+                noteUsageLimit: 3,
+                quizUsageCount: 0,
+                quizUsageLimit: 3,
             });
 
             console.log(`❌ Expired: ${user.email}`);

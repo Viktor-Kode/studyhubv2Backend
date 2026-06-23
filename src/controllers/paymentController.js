@@ -328,7 +328,11 @@ const applySubscriptionToUser = async (userId, plan) => {
             aiUsageCount: 0,
             aiUsageLimit: planConfig.aiLimit,
             flashcardUsageCount: 0,
-            flashcardUsageLimit: planConfig.flashcardLimit
+            flashcardUsageLimit: planConfig.flashcardLimit,
+            noteUsageCount: 0,
+            noteUsageLimit: 999999,
+            quizUsageCount: 0,
+            quizUsageLimit: 999999,
         }
     });
 

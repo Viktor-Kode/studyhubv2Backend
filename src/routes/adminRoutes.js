@@ -130,7 +130,11 @@ router.post('/fix-subscription', async (req, res) => {
                     aiUsageCount: 0,
                     aiUsageLimit: planConfig.aiLimit,
                     flashcardUsageCount: 0,
-                    flashcardUsageLimit: planConfig.flashcardLimit
+                    flashcardUsageLimit: planConfig.flashcardLimit,
+                    noteUsageCount: 0,
+                    noteUsageLimit: 999999,
+                    quizUsageCount: 0,
+                    quizUsageLimit: 999999,
                 }
             },
             { new: true }
@@ -201,7 +205,11 @@ router.post('/migrate-subscriptions', async (req, res) => {
                 aiUsageCount: user.plan?.aiExplanationsUsed || 0,
                 aiUsageLimit: planConfig.aiLimit,
                 flashcardUsageCount: 0,
-                flashcardUsageLimit: planConfig.flashcardLimit
+                flashcardUsageLimit: planConfig.flashcardLimit,
+                noteUsageCount: 0,
+                noteUsageLimit: 999999,
+                quizUsageCount: 0,
+                quizUsageLimit: 999999,
             }
         });
 

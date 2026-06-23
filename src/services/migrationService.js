@@ -4,6 +4,7 @@ import QuizSession from '../models/QuizSession.js';
 import DocumentHash from '../models/DocumentHash.js';
 import UserActivity from '../models/UserActivity.js';
 import Question from '../models/Question.js';
+import User from '../models/User.js';
 
 /**
  * Migration service to resolve and clean up legacy 'General Study' subjects in CBTResult, 
@@ -144,5 +145,108 @@ export async function runSubjectMigration() {
         console.log(`✅ Migration complete. Successfully migrated ${migratedCount}/${resultsToMigrate.length} legacy results.`);
     } catch (error) {
         console.error('❌ Legacy subject migration failed:', error);
+    }
+}
+
+/**
+ * Migration to automatically update free-tier users' limits to 3 (AI, Notes, Quizzes),
+ * and backfill active users' limits to 999999 on startup.
+ */
+export async function runFreeTierLimitsMigration() {
+    try {
+        console.log('🔄 Checking for free-tier users needing limit migration...');
+
+        // ─── 1. Free / Expired users ──────────────────────────────────────────────
+        const freeTierFilter = {
+            $or: [
+                { subscriptionStatus: 'free' },
+                { subscriptionStatus: 'expired' },
+                { subscriptionStatus: { $exists: false } },
+                { subscriptionStatus: null },
+            ],
+            role: { $ne: 'admin' },
+        };
+
+        const freeUsers = await User.find(freeTierFilter)
+            .select('_id email subscriptionStatus aiUsageLimit noteUsageLimit quizUsageLimit')
+            .lean();
+
+        let freeCapped = 0;
+        let freeAlreadyOk = 0;
+
+        for (const u of freeUsers) {
+            const needsUpdate =
+                (u.aiUsageLimit ?? 999999) > 3 ||
+                u.noteUsageLimit === undefined ||
+                u.noteUsageLimit === null ||
+                u.quizUsageLimit === undefined ||
+                u.quizUsageLimit === null;
+
+            if (!needsUpdate) {
+                freeAlreadyOk++;
+                continue;
+            }
+
+            console.log(
+                `  [FREE LIMIT MIGRATION] ${u.email} — aiLimit: ${u.aiUsageLimit} → 3 | noteLimit: ${u.noteUsageLimit ?? 'unset'} → 3 | quizLimit: ${u.quizUsageLimit ?? 'unset'} → 3`
+            );
+
+            await User.updateOne(
+                { _id: u._id },
+                {
+                    $set: {
+                        aiUsageLimit: 3,
+                        noteUsageLimit: 3,
+                        quizUsageLimit: 3,
+                    },
+                }
+            );
+            freeCapped++;
+        }
+
+        // ─── 2. Active (paid) users — backfill missing note/quiz limit fields ─────
+        const activeFilter = {
+            subscriptionStatus: 'active',
+            $or: [
+                { noteUsageLimit: { $exists: false } },
+                { noteUsageLimit: null },
+                { quizUsageLimit: { $exists: false } },
+                { quizUsageLimit: null },
+            ],
+            role: { $ne: 'admin' },
+        };
+
+        const activeUsers = await User.find(activeFilter)
+            .select('_id email subscriptionStatus noteUsageLimit quizUsageLimit')
+            .lean();
+
+        let activePatchCount = 0;
+        for (const u of activeUsers) {
+            console.log(`  [ACTIVE LIMIT MIGRATION] ${u.email} — noteLimit: ${u.noteUsageLimit ?? 'unset'} → 999999 | quizLimit: ${u.quizUsageLimit ?? 'unset'} → 999999`);
+
+            await User.updateOne(
+                { _id: u._id },
+                {
+                    $set: {
+                        noteUsageLimit: 999999,
+                        quizUsageLimit: 999999,
+                    },
+                }
+            );
+            activePatchCount++;
+        }
+
+        if (freeCapped > 0 || activePatchCount > 0) {
+            console.log('─────────────────────────────────────');
+            console.log(`Free/expired users already correct : ${freeAlreadyOk}`);
+            console.log(`Free/expired users updated         : ${freeCapped}`);
+            console.log(`Active users backfilled            : ${activePatchCount}`);
+            console.log('─────────────────────────────────────');
+            console.log('✅ Free-tier limits migration complete.');
+        } else {
+            console.log('✅ Free-tier limits migration: All users are already up to date.');
+        }
+    } catch (error) {
+        console.error('❌ Free-tier limits migration failed:', error);
     }
 }

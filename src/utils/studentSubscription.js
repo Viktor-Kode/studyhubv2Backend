@@ -2,8 +2,10 @@ import User from '../models/User.js';
 
 /** Free-tier defaults after a paid plan ends */
 export const FREE_TIER_LIMITS = {
-  aiUsageLimit: 999999,
+  aiUsageLimit: 3,
   flashcardUsageLimit: 999999,
+  noteUsageLimit: 3,
+  quizUsageLimit: 3,
 };
 
 
@@ -31,6 +33,10 @@ export async function expireStaleActiveSubscription(user) {
         aiUsageLimit: FREE_TIER_LIMITS.aiUsageLimit,
         flashcardUsageCount: 0,
         flashcardUsageLimit: FREE_TIER_LIMITS.flashcardUsageLimit,
+        noteUsageCount: 0,
+        noteUsageLimit: FREE_TIER_LIMITS.noteUsageLimit,
+        quizUsageCount: 0,
+        quizUsageLimit: FREE_TIER_LIMITS.quizUsageLimit,
       },
     },
     { new: true },

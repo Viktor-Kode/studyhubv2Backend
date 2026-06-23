@@ -78,12 +78,20 @@ const userSchema = new mongoose.Schema({
     subscriptionEnd: { type: Date, default: null },
     // AI usage (server‑side enforced)
     aiUsageCount: { type: Number, default: 0 },
-    aiUsageLimit: { type: Number, default: 999999 },
+    aiUsageLimit: { type: Number, default: 3 },
     aiLastReset: { type: Date, default: Date.now },
 
     // Flashcard generation usage
     flashcardUsageCount: { type: Number, default: 0 },
     flashcardUsageLimit: { type: Number, default: 999999 },
+
+    // Note creation usage (free: 3 notes max)
+    noteUsageCount: { type: Number, default: 0 },
+    noteUsageLimit: { type: Number, default: 3 },
+
+    // Quiz session generation usage (free: 3 quiz sets max)
+    quizUsageCount: { type: Number, default: 0 },
+    quizUsageLimit: { type: Number, default: 3 },
 
     // ─── Teacher Plan & Usage ───────────────────────────────────────────────
     teacherPlan: { type: String, enum: ['free', 'weekly', 'monthly'], default: 'free' },

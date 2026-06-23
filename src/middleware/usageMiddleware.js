@@ -129,3 +129,100 @@ export const incrementFlashcardUsage = async (userId) => {
     });
 };
 
+// Check note creation usage
+export const checkNoteUsage = async (req, res, next) => {
+    try {
+        let user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(401).json({ error: 'User not found', message: 'User not found' });
+        }
+        user = await expireStaleActiveSubscription(user);
+
+        // Paid users and admins have unlimited notes
+        if (user.subscriptionStatus === 'active' || user.role === 'admin') {
+            req.currentUser = user;
+            return next();
+        }
+
+        const limit = user.noteUsageLimit ?? 3;
+        const used = user.noteUsageCount ?? 0;
+
+        if (used >= limit) {
+            await logPaywallEvent({
+                userId: user._id,
+                userEmail: user.email,
+                action: 'NOTE_LIMIT_REACHED',
+                context: { used, limit }
+            });
+
+            return res.status(403).json({
+                error: 'Note limit reached',
+                message: `You've used all ${limit} free notes. Upgrade to create unlimited notes.`,
+                showUpgrade: true,
+                used,
+                limit,
+                code: 'NOTE_LIMIT_REACHED'
+            });
+        }
+
+        req.currentUser = user;
+        next();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const incrementNoteUsage = async (userId) => {
+    await User.findByIdAndUpdate(userId, {
+        $inc: { noteUsageCount: 1 }
+    });
+};
+
+// Check quiz session generation usage
+export const checkQuizUsage = async (req, res, next) => {
+    try {
+        let user = await User.findById(req.user.id);
+        if (!user) {
+            return res.status(401).json({ error: 'User not found', message: 'User not found' });
+        }
+        user = await expireStaleActiveSubscription(user);
+
+        // Paid users and admins have unlimited quiz generation
+        if (user.subscriptionStatus === 'active' || user.role === 'admin') {
+            req.currentUser = user;
+            return next();
+        }
+
+        const limit = user.quizUsageLimit ?? 3;
+        const used = user.quizUsageCount ?? 0;
+
+        if (used >= limit) {
+            await logPaywallEvent({
+                userId: user._id,
+                userEmail: user.email,
+                action: 'QUIZ_LIMIT_REACHED',
+                context: { used, limit }
+            });
+
+            return res.status(403).json({
+                error: 'Quiz limit reached',
+                message: `You've used all ${limit} free question sets. Upgrade to generate unlimited quizzes.`,
+                showUpgrade: true,
+                used,
+                limit,
+                code: 'QUIZ_LIMIT_REACHED'
+            });
+        }
+
+        req.currentUser = user;
+        next();
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const incrementQuizUsage = async (userId) => {
+    await User.findByIdAndUpdate(userId, {
+        $inc: { quizUsageCount: 1 }
+    });
+};
