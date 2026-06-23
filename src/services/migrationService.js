@@ -168,19 +168,21 @@ export async function runFreeTierLimitsMigration() {
         };
 
         const freeUsers = await User.find(freeTierFilter)
-            .select('_id email subscriptionStatus aiUsageLimit noteUsageLimit quizUsageLimit')
+            .select('_id email subscriptionStatus aiUsageLimit noteUsageLimit quizUsageLimit aiCredits referralCount')
             .lean();
 
         let freeCapped = 0;
         let freeAlreadyOk = 0;
 
         for (const u of freeUsers) {
+            const hasWelcomeCredits = (u.aiCredits ?? 0) > 0 && (u.referralCount || 0) === 0;
             const needsUpdate =
                 (u.aiUsageLimit ?? 999999) > 3 ||
                 u.noteUsageLimit === undefined ||
                 u.noteUsageLimit === null ||
                 u.quizUsageLimit === undefined ||
-                u.quizUsageLimit === null;
+                u.quizUsageLimit === null ||
+                hasWelcomeCredits;
 
             if (!needsUpdate) {
                 freeAlreadyOk++;
@@ -188,18 +190,21 @@ export async function runFreeTierLimitsMigration() {
             }
 
             console.log(
-                `  [FREE LIMIT MIGRATION] ${u.email} — aiLimit: ${u.aiUsageLimit} → 3 | noteLimit: ${u.noteUsageLimit ?? 'unset'} → 3 | quizLimit: ${u.quizUsageLimit ?? 'unset'} → 3`
+                `  [FREE LIMIT MIGRATION] ${u.email} — aiLimit: ${u.aiUsageLimit} → 3 | noteLimit: ${u.noteUsageLimit ?? 'unset'} → 3 | quizLimit: ${u.quizUsageLimit ?? 'unset'} → 3${hasWelcomeCredits ? ' | resetting welcome credits' : ''}`
             );
+
+            const updateFields = {
+                aiUsageLimit: 3,
+                noteUsageLimit: 3,
+                quizUsageLimit: 3,
+            };
+            if (hasWelcomeCredits) {
+                updateFields.aiCredits = 0;
+            }
 
             await User.updateOne(
                 { _id: u._id },
-                {
-                    $set: {
-                        aiUsageLimit: 3,
-                        noteUsageLimit: 3,
-                        quizUsageLimit: 3,
-                    },
-                }
+                { $set: updateFields }
             );
             freeCapped++;
         }

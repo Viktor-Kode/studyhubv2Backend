@@ -135,7 +135,7 @@ const userSchema = new mongoose.Schema({
     referralCode: { type: String, unique: true, sparse: true },
     referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     referralCount: { type: Number, default: 0 },
-    aiCredits: { type: Number, default: 5 },
+    aiCredits: { type: Number, default: 0 },
     referrals: [{
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         rewarded: { type: Boolean, default: false },
