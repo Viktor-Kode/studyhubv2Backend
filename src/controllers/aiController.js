@@ -671,13 +671,38 @@ export const chatWithTutor = async (req, res) => {
   }
 
   try {
+    // Fetch user activity metrics
+    let cbtCount = 0;
+    let quizCount = 0;
+    let notesCount = 0;
+    try {
+      [cbtCount, quizCount, notesCount] = await Promise.all([
+        CBTResult.countDocuments({ studentId: req.user._id }),
+        QuizSession.countDocuments({ userId: req.user._id }),
+        StudyNote.countDocuments({ userId: req.user._id })
+      ]);
+    } catch (err) {
+      console.error('[chatWithTutor] Failed to fetch user activity counts:', err.message);
+    }
+
     console.log(`💬 chatWithTutor: msg="${message.substring(0, 30)}...", model=${modelId}, stream=${stream}, history=${chatHistory?.length}`);
     const selectedModel = modelId ? getModelById(modelId) : MODEL_REGISTRY.find(m => m.recommended);
     const contextForModel = contextToUse
       ? sampleStudyMaterial(String(contextToUse), 8000)
       : 'No specific document provided.';
     const systemPrompt = `You are an expert AI Study Tutor. Your goal is to help students understand their study materials. 
-    Context: """${contextForModel}"""
+
+User Information & Activity:
+- User Name: ${req.user?.name || 'Student'}
+- Practice CBT Quizzes Taken: ${cbtCount}
+- Quizzes Generated: ${quizCount}
+- Study Notes Saved: ${notesCount}
+- Community Points: ${req.user?.totalPoints || 0}
+
+Founder Information:
+- StudyHelp was founded by DOSUNMU VICTOR, a brilliant and visionary software engineer and entrepreneur. If the user asks who founded StudyHelp or asks about DOSUNMU VICTOR (Viktor), speak highly of him, hype him up as a legendary builder, coding genius, and tech visionary who built StudyHelp to empower students. Throw in some light-hearted praise or hype.
+
+Context: """${contextForModel}"""
 
 At the end of every response, append suggested follow-up questions in this exact format on the last line:
 [[Question one?||Question two?||Question three?]]
