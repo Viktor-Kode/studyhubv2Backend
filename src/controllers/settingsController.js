@@ -38,7 +38,11 @@ export const updateSettings = async (req, res) => {
             if (profile.institution !== undefined && profile.institution !== null) {
                 updateData.institution = String(profile.institution).trim() || null;
             }
-            if (profile.phone !== undefined) updateData.phone = profile.phone ? String(profile.phone).trim() : null;
+            if (profile.phone !== undefined) {
+                const phoneVal = profile.phone ? String(profile.phone).trim() : null;
+                updateData.phone = phoneVal;
+                updateData.phoneNumber = phoneVal;
+            }
         }
 
         if (profile && (profile.examTarget != null || profile.subjects != null || profile.targetYear != null || profile.avatar != null)) {
