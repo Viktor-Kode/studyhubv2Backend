@@ -1,4 +1,5 @@
 import User from '../models/User.js';
+import { applySubscriptionToUser } from './paymentController.js';
 
 /**
  * Server-side referral processing helper
@@ -27,11 +28,15 @@ export const processReferral = async (newUserId, refCode) => {
     );
     if (alreadyReferred) return { success: false, reason: 'Already referred' };
 
-    // Award +20 AI credits to referrer and push new referral
+    // Award 1 day of free unlimited access to referrer
+    // applySubscriptionToUser stacks duration if already active, so multiple referrals
+    // keep extending the referrer's free unlimited access by 1 day each.
     await User.findByIdAndUpdate(referrer._id, {
-        $inc: { aiCredits: 20, referralCount: 1 },
+        $inc: { referralCount: 1 },
         $push: { referrals: { userId: newUserId, rewarded: true } }
     });
+
+    await applySubscriptionToUser(referrer._id, 'daily');
 
     // Save referredBy on new user
     await User.findByIdAndUpdate(newUserId, {
@@ -64,8 +69,8 @@ export const getReferralStats = async (req, res, next) => {
             await user.save();
         }
 
-        const creditsEarned = user.referrals
-            ? user.referrals.filter(r => r.rewarded).length * 20
+        const rewardedReferrals = user.referrals
+            ? user.referrals.filter(r => r.rewarded).length
             : 0;
 
         res.status(200).json({
@@ -73,8 +78,8 @@ export const getReferralStats = async (req, res, next) => {
             data: {
                 referralCode: user.referralCode,
                 referralCount: user.referralCount || 0,
-                aiCredits: user.aiCredits || 0,
-                creditsEarned
+                referralDaysEarned: rewardedReferrals, // each successful referral = 1 free day
+                rewardedReferrals
             }
         });
     } catch (err) {

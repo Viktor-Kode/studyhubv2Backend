@@ -294,7 +294,7 @@ export const getPaymentStatus = async (req, res) => {
 };
 
 // ─── Apply plan to user (transaction row already claimed) ───────────────────
-const applySubscriptionToUser = async (userId, plan) => {
+export const applySubscriptionToUser = async (userId, plan) => {
     const planConfig = PLANS[plan];
     if (!planConfig) throw new Error(`Unknown plan: ${plan}`);
 
