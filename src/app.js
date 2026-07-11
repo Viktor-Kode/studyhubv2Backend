@@ -124,8 +124,8 @@ app.use(cors({
 // Paystack webhook must receive raw body for HMAC verification
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
 
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ limit: '25mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 // HEALTH CHECK (For Render/uptime monitoring)

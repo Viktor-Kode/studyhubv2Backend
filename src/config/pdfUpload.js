@@ -17,7 +17,7 @@ const storage = cloudinaryStorage({
 
 export const pdfUpload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = new Set([
       'application/pdf',

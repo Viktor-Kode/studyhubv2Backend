@@ -4,7 +4,7 @@ const storage = multer.memoryStorage();
 
 export const pdfMemoryUpload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 }, // Slightly increased to 25MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   fileFilter: (req, file, cb) => {
     const mimetype = file.mimetype.toLowerCase();
     const originalname = file.originalname.toLowerCase();
