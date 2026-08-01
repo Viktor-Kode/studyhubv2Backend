@@ -1,4 +1,5 @@
 import Reminder from '../models/Reminder.js';
+import { sendNotification } from '../services/notificationService.js';
 
 export const getReminders = async (req, res) => {
     try {
@@ -15,6 +16,21 @@ export const createReminder = async (req, res) => {
             ...req.body,
             userId: req.user._id
         });
+
+        // Send instant push notification confirmation when reminder is set
+        try {
+            const recipientId = req.user.firebaseUid || req.user._id.toString();
+            await sendNotification({
+                userId: recipientId,
+                type: 'timetable_reminder',
+                title: `🔔 Reminder Set: ${reminder.title}`,
+                body: `Scheduled for ${reminder.date} at ${reminder.time}. We'll notify you!`,
+                link: '/dashboard/timetable'
+            });
+        } catch (pushErr) {
+            console.error('[createReminder] Push notification dispatch failed:', pushErr.message);
+        }
+
         res.status(201).json({ success: true, reminder });
     } catch (error) {
         res.status(400).json({ success: false, message: error.message });
