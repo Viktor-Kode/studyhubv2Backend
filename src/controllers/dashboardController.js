@@ -58,6 +58,16 @@ export const getDashboardSummary = async (req, res) => {
                         totalExams: { $sum: 1 },
                         totalCorrect: { $sum: '$correctAnswers' },
                         totalQuestions: { $sum: '$totalQuestions' },
+                        todayQuestions: {
+                            $sum: {
+                                $cond: [{ $gte: ['$createdAt', today] }, '$totalQuestions', 0]
+                            }
+                        },
+                        todayExams: {
+                            $sum: {
+                                $cond: [{ $gte: ['$createdAt', today] }, 1, 0]
+                            }
+                        },
                         avgAccuracy: { $avg: '$accuracy' },
                         bestSubject: { $push: { subject: '$subject', accuracy: '$accuracy' } }
                     }
@@ -234,6 +244,8 @@ export const getDashboardSummary = async (req, res) => {
                         : '0%',
                     totalCorrect: cbt.totalCorrect,
                     totalQuestions: cbt.totalQuestions,
+                    todayQuestions: cbt.todayQuestions || 0,
+                    todayExams: cbt.todayExams || 0,
                     bestSubject: topSubject,
                     strengthsWeaknesses: {
                         strengths,
