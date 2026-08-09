@@ -15,6 +15,7 @@ export const XP_REWARDS = {
     ai_tutor_chat: 3,
     ai_generate_notes: 15,
     ai_generate_quiz: 20,
+    blind_summary: 25,
 };
 
 export const LEVELS = [
