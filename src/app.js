@@ -39,6 +39,7 @@ import groupsRoutes from './routes/groupsRoutes.js';
 import studyGroupRoutes from './routes/studyGroupRoutes.js';
 import pdfCbtRoutes from './routes/pdfCbtRoutes.js';
 import studyPlanRoutes from './routes/studyPlanRoutes.js';
+import studyPathRoutes from './routes/studyPathRoutes.js';
 import referralRoutes from './routes/referralRoutes.js';
 import SharedNote from './models/SharedNote.js';
 import SharedLibraryItem from './models/SharedLibraryItem.js';
@@ -278,6 +279,8 @@ app.use('/api/groups', groupsRoutes);
 app.use('/api/study-groups', studyGroupRoutes);
 app.use('/api/pdf-cbt', cbtAILimiter, pdfCbtRoutes);
 app.use('/api/study-plan', studyPlanRoutes);
+app.use('/api/generate-path', studyPathRoutes);
+app.use('/api/study-path', studyPathRoutes);
 app.use('/api/referral', referralRoutes);
 
 app.get('/', (req, res) => {

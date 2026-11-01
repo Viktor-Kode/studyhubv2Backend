@@ -76,3 +76,43 @@ Do NOT wrap output in markdown code blocks. Return raw markdown only.
 
 Text: ${text}`;
 };
+
+export const studyPathPrompt = (text, title = 'Study Material') => {
+  return `You are an elite educational curriculum designer. Based on the provided study material, generate a gamified, structured learning path for a student.
+
+Material Title: ${title}
+
+Rules:
+1. Break down the material into 4 to 6 sequential learning nodes (steps).
+2. The nodes must progress logically from foundational concepts to advanced application, with the final node being a review / unit assessment.
+3. Every node MUST have:
+   - "id": sequential number starting from 1
+   - "title": clear, engaging concept title
+   - "xp": 20 for early nodes, up to 50 for the final assessment
+   - "duration": estimated time e.g. "5 min", "8 min", "10 min"
+   - "summary": 2-3 sentence overview of this node
+   - "keyConcepts": array of 3-4 specific concept terms
+   - "lessonContent": object with:
+       - "analogy": a memorable real-world analogy explaining the concept
+       - "paragraphs": array of 2-3 short, clear explanatory paragraphs
+       - "keyConcepts": array of 3-4 key concept strings
+   - "quiz": object testing this node with:
+       - "question": realistic multiple-choice question testing the concept
+       - "options": array of 4 distinct answer strings
+       - "correctAnswerIndex": index (0-3) of the correct answer
+       - "explanation": educational explanation of why the answer is correct
+       - "hint": helpful hint without giving away the answer directly
+   - "nextNodeTitle": title of the next node (or null for the last node)
+
+4. Overall structure:
+   - "topicId": URL-safe slug e.g. "custom-topic-${Date.now()}"
+   - "title": Main topic/course title based on content
+   - "courseCode": Relevant subject/code e.g. "STUDY 101 · Interactive Study Path"
+   - "currentProgress": 0
+   - "nodes": array of the node objects above, with the first node having "status": "active" and all subsequent nodes having "status": "locked".
+
+CRITICAL: Return ONLY raw valid JSON matching this schema. No markdown formatting, no backticks, no introductory text.
+
+Material:
+${text}`;
+};
