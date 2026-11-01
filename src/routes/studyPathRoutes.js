@@ -3,6 +3,7 @@ import multer from 'multer';
 import {
   generateStudyPath,
   getActiveStudyPath,
+  getUserStudyPaths,
   getStudyPathById,
   updateNodeStatus
 } from '../controllers/studyPathController.js';
@@ -34,6 +35,8 @@ router.post('/generate', optionalProtect, uploadFields, generateStudyPath);
 
 // GET /api/generate-path/active or /api/study-path/active
 router.get('/active', optionalProtect, getActiveStudyPath);
+router.get('/all', optionalProtect, getUserStudyPaths);
+router.get('/user/all', optionalProtect, getUserStudyPaths);
 
 // GET & PUT for specific path
 router.get('/:topicId', optionalProtect, getStudyPathById);

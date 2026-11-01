@@ -395,6 +395,38 @@ export const getStudyPathById = async (req, res) => {
 };
 
 /**
+ * GET /api/study-path/all or /api/study-path/user/all
+ */
+export const getUserStudyPaths = async (req, res) => {
+  try {
+    const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.query?.userId;
+
+    if (!userId || userId === 'anonymous-user') {
+      return res.status(200).json({
+        success: true,
+        studyPaths: []
+      });
+    }
+
+    const paths = await StudyPath.find({ userId }).sort({ updatedAt: -1 }).lean();
+
+    return res.status(200).json({
+      success: true,
+      studyPaths: paths.map(p => ({
+        topicId: p.topicId,
+        title: p.title,
+        courseCode: p.courseCode,
+        currentProgress: p.currentProgress || 0,
+        nodes: p.nodes
+      }))
+    });
+  } catch (error) {
+    console.error('[getUserStudyPaths] Error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
  * PUT /api/study-path/:topicId/node/:nodeId
  */
 export const updateNodeStatus = async (req, res) => {
