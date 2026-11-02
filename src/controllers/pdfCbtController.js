@@ -190,10 +190,10 @@ export const extractOnly = async (req, res) => {
     );
 
     const parsed = await Promise.race([extractionPromise, timeoutPromise]);
-    const rawText = parsed.text;
+    let rawText = typeof parsed === 'string' ? parsed : (parsed?.text ? String(parsed.text) : ''); rawText = rawText.trim();
     const docTitle = req.file.originalname.replace(/\.[^/.]+$/i, '');
 
-    if (!rawText || rawText.trim().length < 50) {
+    if (!rawText || rawText.length < 50) {
       return res.status(422).json({
         error: 'The document does not contain enough readable text (minimum 50 characters required).'
       });

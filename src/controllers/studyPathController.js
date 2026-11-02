@@ -114,9 +114,10 @@ async function callDeepSeekForStudyPath({
   }
 
   // DeepSeek-V3 context window is 64k tokens (~180,000 characters)
-  const trimmedText = rawText.length > 180000
-    ? rawText.slice(0, 180000) + '\n\n[Content truncated due to size limit]'
-    : rawText;
+  const safeText = typeof rawText === 'string' ? rawText : String(rawText || '');
+  const trimmedText = safeText.length > 180000
+    ? safeText.slice(0, 180000) + '\n\n[Content truncated due to size limit]'
+    : safeText;
 
   userInstruction += `Document Content:\n${trimmedText}`;
 
@@ -270,24 +271,34 @@ export const generateStudyPath = async (req, res) => {
 
     const file = req.file || (req.files && (req.files.pdf?.[0] || req.files.file?.[0] || req.files.document?.[0]));
 
-    if (file) {
+    // 1. Prioritize client pre-extracted text if provided
+    if (req.body?.text && String(req.body.text).trim().length >= 30) {
+      rawText = String(req.body.text).trim();
+      fileName = file?.originalname || req.body?.title || 'Study Material';
+      console.log(`[generateStudyPath] Using client pre-extracted text for: ${fileName} (${rawText.length} chars)`);
+    } else if (file && file.buffer) {
       fileName = file.originalname || 'document.pdf';
       console.log(`[generateStudyPath] Processing uploaded file: ${fileName} (${file.size || file.buffer?.length} bytes)`);
       try {
         const parsed = await parseDocumentBuffer(file.buffer, file.originalname, file.mimetype);
-        rawText    = parsed?.text || '';
-        totalPages = parsed?.numpages || 0;
+        if (typeof parsed === 'string') {
+          rawText = parsed;
+        } else if (parsed && typeof parsed.text === 'string') {
+          rawText = parsed.text;
+          totalPages = parsed.numpages || 0;
+        } else if (parsed?.text) {
+          rawText = String(parsed.text);
+          totalPages = parsed.numpages || 0;
+        }
       } catch (parseErr) {
         console.warn('[generateStudyPath] Document parser text extraction notice:', parseErr.message);
       }
     }
 
-    if (!rawText && req.body?.text && String(req.body.text).trim().length >= 30) {
-      rawText = String(req.body.text).trim();
-      fileName = fileName || req.body.title || 'Study Material';
-    }
+    // Ensure rawText is always safely coerced to a trimmed string
+    rawText = typeof rawText === 'string' ? rawText.trim() : String(rawText || '').trim();
 
-    if (!rawText || rawText.trim().length < 30) {
+    if (!rawText || rawText.length < 30) {
       return res.status(400).json({
         success: false,
         message: 'Could not extract readable text from document. Please upload a clear document or paste text.'
