@@ -2,21 +2,22 @@ import PDFParser from 'pdf2json';
 
 /**
  * PDF text extraction using pdf2json.
- * Avoids all CommonJS/ESM import issues that plagued pdf-parse.
+ * Returns { text, numpages } where numpages is the real page count.
  */
 const extractTextFromPDF = (buffer) => {
   return new Promise((resolve, reject) => {
     const pdfParser = new PDFParser();
 
     pdfParser.on('pdfParser_dataReady', (pdfData) => {
-      const text = pdfData.Pages
+      const pages = pdfData.Pages || [];
+      const text = pages
         .map(page =>
-          page.Texts
-            .map(t => decodeURIComponent(t.R[0].T))
+          (page.Texts || [])
+            .map(t => decodeURIComponent(t.R?.[0]?.T || ''))
             .join(' ')
         )
         .join('\n');
-      resolve(text);
+      resolve({ text, numpages: pages.length });
     });
 
     pdfParser.on('pdfParser_dataError', (err) => {
@@ -29,6 +30,7 @@ const extractTextFromPDF = (buffer) => {
 
 /**
  * Exported wrapper — matches the existing parsePdfBuffer signature.
+ * Returns { text, numpages }
  */
 export const parsePdfBuffer = async (buffer) => {
   try {
@@ -40,12 +42,9 @@ export const parsePdfBuffer = async (buffer) => {
       throw new Error('File is not a valid PDF (missing %PDF header)');
     }
 
-    const text = await extractTextFromPDF(buffer);
+    const { text, numpages } = await extractTextFromPDF(buffer);
 
-    return {
-      text: text || '',
-      numpages: 0   // pdf2json doesn't expose a simple page count; 0 is a safe default
-    };
+    return { text: text || '', numpages };
   } catch (err) {
     console.error('[parsePdfBuffer] Failed:', err.message);
     throw new Error(`PDF parsing failed: ${err.message}`);

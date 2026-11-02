@@ -11,9 +11,13 @@ const quizItemSchema = new mongoose.Schema({
 const learningNodeSchema = new mongoose.Schema({
   id: { type: Number, required: true },
   title: { type: String, required: true },
+  unit: { type: String },                   // optional chapter/section heading
   status: { type: String, enum: ['completed', 'active', 'locked'], default: 'locked' },
   xp: { type: Number, default: 20 },
   duration: { type: String, default: '5 min' },
+  slideImage: { type: String },
+  sourcePages: [{ type: Number }],
+  sourceFacts: [{ type: String }],
   summary: { type: String, default: '' },
   keyConcepts: [{ type: String }],
   lessonContent: {
@@ -37,7 +41,8 @@ const studyPathSchema = new mongoose.Schema({
   currentProgress: { type: Number, default: 0 },
   nodes: [learningNodeSchema],
   isActive: { type: Boolean, default: true, index: true },
-  sourceFileName: { type: String }
+  sourceFileName: { type: String },
+  extractedText: { type: String }
 }, { timestamps: true });
 
 export default mongoose.model('StudyPath', studyPathSchema);

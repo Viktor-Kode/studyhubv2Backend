@@ -1,281 +1,435 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { PDFDocument } from 'pdf-lib';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAIFileManager } from '@google/generative-ai/server';
 import StudyPath from '../models/StudyPath.js';
 import { parseDocumentBuffer } from '../utils/documentParser.js';
-import { sampleStudyMaterial } from '../utils/studyMaterialSample.js';
-import aiClient from '../utils/aiClient.js';
-import { studyPathPrompt } from '../utils/prompts.js';
-import { getModelById, MODEL_REGISTRY } from '../config/aiConfig.js';
+import {
+  studyPathSystemPrompt,
+  studyPathResponseSchema,
+  studyPathPrompt
+} from '../utils/prompts.js';
+import { getEnv } from '../config/env.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
 
+const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
+
+// ─── chunk config ──────────────────────────────────────────────────────────────
+const CHUNK_THRESHOLD   = 40;   // pages — above this we chunk
+const CHUNK_SIZE        = 28;   // target pages per chunk
+const CHUNK_CONCURRENCY = 3;    // parallel Gemini calls for chunks
+
 /**
- * Creates structured fallback learning nodes from extracted text
+ * Validates generated study path nodes against quality criteria.
+ * No longer enforces a fixed node count — just needs at least 1.
  */
-function createFallbackNodes(text, title) {
-  const cleanTitle = title || 'Core Concepts';
-  const sentences = text
-    .split(/(?<=[.?!])\s+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 20);
+export function validateStudyPathNodes(nodes, extractedText = '') {
+  const problems = [];
+  if (!Array.isArray(nodes) || nodes.length < 1) {
+    problems.push(`Expected at least 1 node, but received ${Array.isArray(nodes) ? nodes.length : 0}`);
+    return problems;   // nothing more to check
+  }
 
-  const chunkSize = Math.max(2, Math.floor(sentences.length / 4));
-  const p1 = sentences.slice(0, chunkSize).join(' ') || 'Overview of foundational principles.';
-  const p2 = sentences.slice(chunkSize, chunkSize * 2).join(' ') || 'Analysis of core mechanisms and structural rules.';
-  const p3 = sentences.slice(chunkSize * 2, chunkSize * 3).join(' ') || 'Practical applications and edge cases.';
-  const p4 = sentences.slice(chunkSize * 3).join(' ') || 'Summary of key takeaways and assessment criteria.';
+  const normExtracted = (extractedText || '').toLowerCase();
 
-  return [
-    {
-      id: 1,
-      title: 'Foundational Concepts',
-      status: 'active',
-      xp: 20,
-      duration: '5 min',
-      summary: `Introduction to the primary concepts of ${cleanTitle}.`,
-      keyConcepts: ['Definition', 'Fundamental Principles', 'Core Terminology'],
-      lessonContent: {
-        analogy: `Think of ${cleanTitle} as a building foundation—everything else rests on these basic principles.`,
-        paragraphs: [
-          p1.slice(0, 300) || 'Understanding foundational terminology and structure is the essential first step.',
-          'Key ideas build sequentially. Master these basics before proceeding.'
-        ],
-        keyConcepts: ['Definition', 'Fundamental Principles', 'Core Terminology']
-      },
-      quiz: {
-        question: `What is the primary foundation of ${cleanTitle}?`,
-        options: [
-          'Core foundational principles and correct terminology',
-          'Arbitrary rules with no practical application',
-          'Unrelated secondary facts',
-          'Historical background only'
-        ],
-        correctAnswerIndex: 0,
-        explanation: 'Mastering the core definitions and fundamental mechanisms establishes the basis for advanced problem solving.',
-        hint: 'Focus on the main definition and principles.'
-      },
-      quiz2: {
-        question: `How does mastering the fundamental principles of ${cleanTitle} impact practical performance?`,
-        options: [
-          'It enables systematic problem-solving and reduces implementation errors',
-          'It replaces the need for any practical execution or testing',
-          'It is only useful for theoretical examinations, not real tasks',
-          'It makes system performance unpredictable'
-        ],
-        correctAnswerIndex: 0,
-        explanation: 'Grounding in fundamentals allows students to troubleshoot issues rapidly and design reliable solutions.',
-        hint: 'Think about the link between theory and debugging.'
-      },
-      nextNodeTitle: 'Mechanisms & Dynamics'
-    },
-    {
-      id: 2,
-      title: 'Mechanisms & Dynamics',
-      status: 'locked',
-      xp: 25,
-      duration: '7 min',
-      summary: `Deep dive into how ${cleanTitle} operates under standard conditions.`,
-      keyConcepts: ['System Operations', 'Internal State', 'Standard Workflows'],
-      lessonContent: {
-        analogy: 'Like the moving parts inside a mechanical clock, each component triggers the next.',
-        paragraphs: [
-          p2.slice(0, 300) || 'Detailed mechanics dictate how data and processes interact in the system.',
-          'Understanding cause and effect relationships ensures predictable outcomes.'
-        ],
-        keyConcepts: ['System Operations', 'Internal State', 'Standard Workflows']
-      },
-      quiz: {
-        question: `How do the core mechanisms operate in ${cleanTitle}?`,
-        options: [
-          'Through structured, predictable operations and state transitions',
-          'Completely randomly without order',
-          'Only when manually configured each time',
-          'Without state or structure'
-        ],
-        correctAnswerIndex: 0,
-        explanation: 'Structured operations and state transitions maintain system stability and predictable execution.',
-        hint: 'Think about systematic processes.'
-      },
-      quiz2: {
-        question: `When system operations encounter unexpected state transitions in ${cleanTitle}, what is the best practice?`,
-        options: [
-          'Validate state invariants and enforce deterministic transition guards',
-          'Silently ignore state changes and let execution continue',
-          'Reset the system without logging the error condition',
-          'Disable state validation checks'
-        ],
-        correctAnswerIndex: 0,
-        explanation: 'Enforcing deterministic state validation ensures predictability and isolates errors before cascading failures occur.',
-        hint: 'Think about ensuring stability and invariants.'
-      },
-      nextNodeTitle: 'Applied Problem Solving'
-    },
-    {
-      id: 3,
-      title: 'Applied Problem Solving',
-      status: 'locked',
-      xp: 30,
-      duration: '8 min',
-      summary: 'Practical application, common pitfalls, and edge-case optimization.',
-      keyConcepts: ['Real-world Scenarios', 'Edge Cases', 'Efficiency'],
-      lessonContent: {
-        analogy: 'Like a driver navigating heavy rain, you must apply the rules to unpredictable real-world situations.',
-        paragraphs: [
-          p3.slice(0, 300) || 'Applying theoretical knowledge requires recognizing specific patterns in complex scenarios.',
-          'Optimization focuses on minimizing overhead and handling edge cases gracefully.'
-        ],
-        keyConcepts: ['Real-world Scenarios', 'Edge Cases', 'Efficiency']
-      },
-      quiz: {
-        question: 'What is the most effective way to resolve complex edge cases?',
-        options: [
-          'Apply systematic diagnostic patterns and verify boundary conditions',
-          'Ignore edge cases until they cause complete failure',
-          'Change the base definitions arbitrarily',
-          'Disable error checking entirely'
-        ],
-        correctAnswerIndex: 0,
-        explanation: 'Verifying boundary conditions with systematic diagnostic patterns ensures robust solutions.',
-        hint: 'Think about test boundaries and verification.'
-      },
-      quiz2: {
-        question: `In applied optimization for ${cleanTitle}, which factor yields the most sustainable performance gains?`,
-        options: [
-          'Addressing architectural bottlenecks and reducing redundant operations',
-          'Micro-optimizing unrelated routines without profiling',
-          'Removing error logging to save clock cycles',
-          'Increasing resource consumption without limits'
-        ],
-        correctAnswerIndex: 0,
-        explanation: 'Targeting verified architectural bottlenecks produces measurable, robust improvements over micro-optimizations.',
-        hint: 'Think about profiling before optimizing.'
-      },
-      nextNodeTitle: 'Summary & Review'
-    },
-    {
-      id: 4,
-      title: 'Summary & Review',
-      status: 'locked',
-      xp: 35,
-      duration: '8 min',
-      isSummary: true,
-      summary: `Comprehensive review of all key concepts covered in ${cleanTitle}, including foundational principles, mechanisms, and applied problem solving.`,
-      keyConcepts: ['Definition', 'Fundamental Principles', 'Core Terminology', 'System Operations', 'Internal State', 'Real-world Scenarios', 'Edge Cases'],
-      lessonContent: {
-        analogy: `Think of this as your study guide — connecting all the dots from ${cleanTitle} into one cohesive picture.`,
-        paragraphs: [
-          p1.slice(0, 200) || 'We started with foundational concepts and core terminology.',
-          p2.slice(0, 200) || 'Then explored the internal mechanisms and workflows.',
-          p3.slice(0, 200) || 'Finally, we applied these concepts to real-world problem solving.',
-          'Now it is time to bring it all together and prepare for the final assessment.'
-        ],
-        keyConcepts: ['Definition', 'Fundamental Principles', 'System Operations', 'Real-world Scenarios']
-      },
-      quiz: {
-        question: `Which factor best guarantees long-term retention of ${cleanTitle}?`,
-        options: [
-          'Active recall and practical synthesis across all subtopics',
-          'Passive reading without testing knowledge',
-          'Cramming right before testing',
-          'Memorizing raw words without understanding'
-        ],
-        correctAnswerIndex: 0,
-        explanation: 'Active recall and conceptual synthesis produce the highest neural consolidation for long-term retention.',
-        hint: 'Recall requires active testing rather than passive rereading.'
-      },
-      nextNodeTitle: 'Final Assessment'
-    },
-    {
-      id: 5,
-      title: 'Final Assessment',
-      status: 'locked',
-      xp: 100,
-      duration: '15 min',
-      isFinalQuiz: true,
-      summary: 'Complete this 10-question assessment to demonstrate mastery of all concepts.',
-      keyConcepts: ['Comprehensive Review', 'Applied Knowledge', 'Critical Thinking'],
-      lessonContent: {
-        analogy: 'This is your final exam — like the boss level in a game, it tests everything you have learned.',
-        paragraphs: [
-          'This assessment covers all concepts from the entire learning path.',
-          'Answer all 10 questions to complete the map and earn maximum XP.'
-        ],
-        keyConcepts: ['Full Mastery', 'Comprehensive Assessment']
-      },
-      finalQuiz: [
-        {
-          question: `What is the primary foundation of ${cleanTitle}?`,
-          options: ['Core foundational principles', 'Arbitrary guidelines', 'Unrelated facts', 'Historical trivia only'],
-          correctAnswerIndex: 0,
-          explanation: 'Foundational principles form the base for all advanced concepts.',
-          hint: 'Think about what comes first in learning.'
-        },
-        {
-          question: `How do internal mechanisms operate in ${cleanTitle}?`,
-          options: ['Through structured state transitions', 'Randomly without pattern', 'Only with manual triggers', 'Without any state'],
-          correctAnswerIndex: 0,
-          explanation: 'Structured transitions ensure predictable system behavior.',
-          hint: 'Think systematic.'
-        },
-        {
-          question: 'What is the best approach to edge cases?',
-          options: ['Systematic diagnosis and boundary verification', 'Ignore them', 'Restart from scratch', 'Disable checks'],
-          correctAnswerIndex: 0,
-          explanation: 'Systematic approaches catch boundary issues reliably.',
-          hint: 'Think about testing boundaries.'
-        },
-        {
-          question: 'Why is active recall effective for retention?',
-          options: ['It strengthens neural pathways through testing', 'It is easier than reading', 'It requires no effort', 'It only works short-term'],
-          correctAnswerIndex: 0,
-          explanation: 'Active testing consolidates memory more effectively than passive review.',
-          hint: 'Think about how testing strengthens memory.'
-        },
-        {
-          question: `Which best describes the core terminology of ${cleanTitle}?`,
-          options: ['Precise definitions that enable clear communication', 'Vague labels with no standard meaning', 'Numbers only', 'Informal slang terms'],
-          correctAnswerIndex: 0,
-          explanation: 'Precise terminology ensures shared understanding.',
-          hint: 'Think about clarity.'
-        },
-        {
-          question: 'What role do workflows play in system operations?',
-          options: ['They provide repeatable, efficient processes', 'They add unnecessary complexity', 'They are purely decorative', 'They only apply to large systems'],
-          correctAnswerIndex: 0,
-          explanation: 'Workflows standardize operations for consistency and efficiency.',
-          hint: 'Think about repeatability.'
-        },
-        {
-          question: 'How should you approach a concept you do not fully understand?',
-          options: ['Break it into smaller parts and review fundamentals', 'Skip it entirely', 'Memorize without understanding', 'Only revisit before exams'],
-          correctAnswerIndex: 0,
-          explanation: 'Decomposing complex ideas into fundamentals builds genuine understanding.',
-          hint: 'Think about building blocks.'
-        },
-        {
-          question: 'What distinguishes applied knowledge from theoretical knowledge?',
-          options: ['Applied knowledge solves real problems using theory', 'They are identical', 'Theory is always more useful', 'Applied knowledge ignores theory'],
-          correctAnswerIndex: 0,
-          explanation: 'Application bridges theory and practice for real-world impact.',
-          hint: 'Think about using what you learn.'
-        },
-        {
-          question: 'Why is synthesizing concepts across nodes important?',
-          options: ['It reveals connections and deepens understanding', 'It wastes time', 'Each concept is completely independent', 'It only helps with memorization'],
-          correctAnswerIndex: 0,
-          explanation: 'Cross-concept synthesis reveals patterns and strengthens overall mastery.',
-          hint: 'Think about connecting the dots.'
-        },
-        {
-          question: `What is the ultimate goal of mastering ${cleanTitle}?`,
-          options: ['Confident, independent application of all core concepts', 'Passing a single test', 'Memorizing all definitions', 'Reading all material once'],
-          correctAnswerIndex: 0,
-          explanation: 'True mastery means confident independent application, not just recall.',
-          hint: 'Think beyond memorization.'
-        }
-      ],
-      nextNodeTitle: null
+  nodes.forEach((node, index) => {
+    const nodeNum = node.id ?? (index + 1);
+
+    // 1. Banned filler
+    const textsToCheck = [
+      node.title || '',
+      node.summary || '',
+      ...(Array.isArray(node.keyConcepts) ? node.keyConcepts : []),
+      ...(Array.isArray(node.sourceFacts)  ? node.sourceFacts  : [])
+    ];
+    for (const txt of textsToCheck) {
+      if (BANNED_FILLER_REGEX.test(String(txt).trim())) {
+        problems.push(`Node ${nodeNum} contains banned filler text: "${String(txt).trim()}"`);
+        break;
+      }
     }
-  ];
+
+    // 2. Fewer than 4 keyConcepts
+    if (!Array.isArray(node.keyConcepts) || node.keyConcepts.length < 4) {
+      problems.push(`Node ${nodeNum} has fewer than 4 keyConcepts (found ${node.keyConcepts?.length || 0})`);
+    }
+
+    // 3. sourceFacts grounding check (skip when extracted text is unavailable)
+    if (normExtracted.length > 0) {
+      const facts = Array.isArray(node.sourceFacts) ? node.sourceFacts : [];
+      if (facts.length === 0) {
+        problems.push(`Node ${nodeNum} has 0 sourceFacts`);
+      } else {
+        let matchCount = 0;
+        for (const fact of facts) {
+          const prefix = String(fact).trim().slice(0, 25).toLowerCase();
+          if (prefix && normExtracted.includes(prefix)) matchCount++;
+        }
+        if (matchCount / facts.length < 0.5) {
+          problems.push(`Node ${nodeNum} has under half of sourceFacts matching extracted document text (${matchCount}/${facts.length} matched)`);
+        }
+      }
+    }
+  });
+
+  return problems;
 }
+
+/** kebab-case helper */
+function toKebabCase(str) {
+  return (str || 'study-path')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'study-path';
+}
+
+// ─── coverage helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Returns the set of uncovered pages (1-based) given total page count,
+ * all nodes' sourcePages and skippedPages.
+ */
+function uncoveredPages(totalPages, nodes, skippedPages = []) {
+  const covered = new Set(skippedPages.map(Number));
+  for (const node of nodes) {
+    for (const p of (node.sourcePages || [])) covered.add(Number(p));
+  }
+  const missing = [];
+  for (let p = 1; p <= totalPages; p++) {
+    if (!covered.has(p)) missing.push(p);
+  }
+  return missing;
+}
+
+function coveragePct(totalPages, missing) {
+  if (totalPages === 0) return 100;
+  return Math.round(((totalPages - missing.length) / totalPages) * 100);
+}
+
+// ─── pdf-lib chunk helper ──────────────────────────────────────────────────────
+
+/**
+ * Slices a PDF buffer into page ranges using pdf-lib.
+ * Returns array of { buffer, startPage, endPage } (1-based, inclusive).
+ */
+async function slicePdfIntoChunks(pdfBuffer, totalPages, chunkSize) {
+  const srcDoc = await PDFDocument.load(pdfBuffer);
+  const chunks = [];
+  for (let start = 1; start <= totalPages; start += chunkSize) {
+    const end = Math.min(start + chunkSize - 1, totalPages);
+    const chunkDoc = await PDFDocument.create();
+    // copyPages uses 0-based indices
+    const indices = [];
+    for (let i = start - 1; i <= end - 1; i++) indices.push(i);
+    const copiedPages = await chunkDoc.copyPages(srcDoc, indices);
+    for (const page of copiedPages) chunkDoc.addPage(page);
+    const chunkBytes = await chunkDoc.save();
+    chunks.push({
+      buffer: Buffer.from(chunkBytes),
+      startPage: start,
+      endPage: end
+    });
+  }
+  return chunks;
+}
+
+// ─── Gemini call ───────────────────────────────────────────────────────────────
+
+/**
+ * Calls Gemini 2.5 Flash with a PDF buffer (or raw text) and returns parsed JSON.
+ * pageOffset: when chunking, the chunk's 1-based start page so the model knows
+ *             original page numbers.
+ */
+async function callGeminiForStudyPath({
+  apiKey,
+  file,
+  rawText,
+  title,
+  retryProblems = [],
+  pageOffset = 1,        // first real page of this chunk in the original document
+  totalPages = 0         // full document page count (0 = unknown)
+}) {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    systemInstruction: studyPathSystemPrompt,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: studyPathResponseSchema,
+      temperature: 0.2
+    }
+  });
+
+  const contents = [];
+  let tempFilePath = null;
+  let uploadedGoogleFile = null;
+  let fileManager = null;
+
+  try {
+    const isPdf = file && (
+      file.mimetype?.includes('pdf') ||
+      file.originalname?.toLowerCase().endsWith('.pdf') ||
+      (Buffer.isBuffer(file.buffer) && file.buffer.slice(0, 4).toString() === '%PDF')
+    );
+
+    if (isPdf && file.buffer) {
+      const FIFTEEN_MB = 15 * 1024 * 1024;
+      if (file.buffer.length > FIFTEEN_MB) {
+        fileManager = new GoogleAIFileManager(apiKey);
+        tempFilePath = path.join(os.tmpdir(), `gemini-${Date.now()}-${file.originalname || 'document.pdf'}`);
+        await fs.promises.writeFile(tempFilePath, file.buffer);
+
+        uploadedGoogleFile = await fileManager.uploadFile(tempFilePath, {
+          mimeType: 'application/pdf',
+          displayName: file.originalname || 'Lecture Deck'
+        });
+
+        contents.push({
+          fileData: {
+            fileUri: uploadedGoogleFile.file.uri,
+            mimeType: uploadedGoogleFile.file.mimeType
+          }
+        });
+      } else {
+        contents.push({
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: file.buffer.toString('base64')
+          }
+        });
+      }
+    } else if (rawText) {
+      contents.push({ text: `Document Content:\n\n${rawText}` });
+    }
+
+    let userInstruction = `Document Title: ${title || 'Study Material'}\n`;
+    if (pageOffset > 1 || totalPages > 0) {
+      userInstruction += `NOTE: This is a chunk of a larger document. ` +
+        `Pages in this chunk correspond to pages ${pageOffset}–${pageOffset + (file?.numpages || 0) - 1} ` +
+        `of the full ${totalPages}-page document. ` +
+        `Use the ORIGINAL page numbers (starting from ${pageOffset}) in sourcePages — not local chunk page numbers.\n`;
+    }
+    userInstruction += `Generate a sequential study path strictly following all system instructions.`;
+
+    if (retryProblems && retryProblems.length > 0) {
+      userInstruction += `\n\nFix these issues:\n${retryProblems.map(p => `- ${p}`).join('\n')}`;
+    }
+
+    contents.push({ text: userInstruction });
+
+    const attempt = retryProblems.length > 0 ? 'retry' : 'initial attempt';
+    console.log(`[generateStudyPath] Invoking Gemini 2.5 Flash (${attempt})...`);
+    const result = await model.generateContent(contents);
+    const responseText = result.response.text();
+
+    let cleaned = (responseText || '').trim();
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    }
+
+    return JSON.parse(cleaned);
+  } finally {
+    if (tempFilePath) {
+      await fs.promises.unlink(tempFilePath).catch(() => {});
+    }
+    if (fileManager && uploadedGoogleFile?.file?.name) {
+      fileManager.deleteFile(uploadedGoogleFile.file.name).catch(() => {});
+    }
+  }
+}
+
+// ─── coverage-aware single-pass generation ────────────────────────────────────
+
+/**
+ * Calls Gemini once, then retries if there are uncovered pages.
+ * Returns { parsedData, validationProblems }.
+ */
+async function generateAndVerify({ apiKey, file, rawText, title, totalPages, pageOffset = 1 }) {
+  // Initial call
+  let parsedData = await callGeminiForStudyPath({ apiKey, file, rawText, title, pageOffset, totalPages });
+
+  // Quality validation
+  let validationProblems = validateStudyPathNodes(parsedData?.nodes, rawText);
+
+  // Coverage check
+  const skipped = parsedData?.skippedPages || [];
+  let missing = totalPages > 0
+    ? uncoveredPages(totalPages, parsedData?.nodes || [], skipped)
+    : [];
+
+  const coverageRetryNeeded = missing.length > 0;
+
+  // Build retry problems list
+  const allProblems = [...validationProblems];
+  if (coverageRetryNeeded) {
+    allProblems.push(
+      `These pages are not covered by any node: ${missing.join(', ')}. ` +
+      `Add nodes for them, or list them in skippedPages if they have no study content. ` +
+      `Return the full updated path.`
+    );
+  }
+
+  if (allProblems.length > 0) {
+    console.warn('[generateStudyPath] Problems on initial attempt:', allProblems);
+
+    const retryData = await callGeminiForStudyPath({
+      apiKey, file, rawText, title, pageOffset, totalPages,
+      retryProblems: allProblems
+    });
+
+    const retryValidation = validateStudyPathNodes(retryData?.nodes, rawText);
+    const retrySkipped = retryData?.skippedPages || [];
+    const retryMissing = totalPages > 0
+      ? uncoveredPages(totalPages, retryData?.nodes || [], retrySkipped)
+      : [];
+
+    if (retryMissing.length > 0) {
+      console.warn(`[generateStudyPath] After retry, still ${retryMissing.length} uncovered page(s): [${retryMissing.join(', ')}] — proceeding anyway.`);
+    }
+
+    return { parsedData: retryData, validationProblems: retryValidation, uncovered: retryMissing };
+  }
+
+  return { parsedData, validationProblems, uncovered: missing };
+}
+
+// ─── chunked generation for large PDFs ────────────────────────────────────────
+
+/**
+ * Splits PDF into chunks, calls Gemini in parallel (limited concurrency),
+ * merges and renumbers nodes with correct original-document page numbers.
+ */
+async function generateChunked({ apiKey, originalFile, rawText, title, totalPages }) {
+  console.log(`[generateStudyPath] Large PDF (${totalPages} pages) — chunking into ~${CHUNK_SIZE}-page segments.`);
+  const chunks = await slicePdfIntoChunks(originalFile.buffer, totalPages, CHUNK_SIZE);
+  console.log(`[generateStudyPath] ${chunks.length} chunk(s) created.`);
+
+  // Process chunks with limited concurrency
+  const chunkResults = [];
+  for (let i = 0; i < chunks.length; i += CHUNK_CONCURRENCY) {
+    const batch = chunks.slice(i, i + CHUNK_CONCURRENCY);
+    const batchResults = await Promise.all(batch.map(async (chunk) => {
+      const chunkFile = {
+        buffer: chunk.buffer,
+        mimetype: 'application/pdf',
+        originalname: originalFile.originalname || 'document.pdf',
+        numpages: chunk.endPage - chunk.startPage + 1
+      };
+      console.log(`[generateStudyPath] Chunk pages ${chunk.startPage}–${chunk.endPage}...`);
+      const { parsedData } = await generateAndVerify({
+        apiKey,
+        file: chunkFile,
+        rawText: '',   // don't pass full text for chunked; rely on PDF content
+        title,
+        totalPages: chunk.endPage - chunk.startPage + 1,
+        pageOffset: chunk.startPage
+      });
+      return { parsedData, chunk };
+    }));
+    chunkResults.push(...batchResults);
+  }
+
+  // Merge chunks: take title/courseCode from first chunk
+  const firstData = chunkResults[0]?.parsedData;
+  const mergedNodes = [];
+  const mergedSkipped = [];
+  let nodeIdCounter = 1;
+
+  for (const { parsedData } of chunkResults) {
+    if (!parsedData) continue;
+    for (const node of (parsedData.nodes || [])) {
+      mergedNodes.push({ ...node, id: nodeIdCounter++ });
+    }
+    for (const p of (parsedData.skippedPages || [])) {
+      if (!mergedSkipped.includes(p)) mergedSkipped.push(p);
+    }
+  }
+
+  return {
+    title: firstData?.title || title,
+    courseCode: firstData?.courseCode,
+    nodes: mergedNodes,
+    skippedPages: mergedSkipped
+  };
+}
+
+// ─── server-side post-processing ──────────────────────────────────────────────
+
+function postProcessNodes(rawNodes, documentId) {
+  return (rawNodes || []).map((node, index) => {
+    const sourceFacts = Array.isArray(node.sourceFacts) ? node.sourceFacts : [];
+    const sourcePages = Array.isArray(node.sourcePages) && node.sourcePages.length > 0
+      ? node.sourcePages
+      : [index + 1];
+
+    const xp = 20 + Math.min(15, sourceFacts.length);
+
+    const summaryText = node.summary || '';
+    const keyConceptsText = Array.isArray(node.keyConcepts) ? node.keyConcepts.join(' ') : '';
+    const totalChars = summaryText.length + keyConceptsText.length;
+    const clampedMinutes = Math.min(9, Math.max(5, Math.round(5 + totalChars / 250)));
+    const duration = `${clampedMinutes} min`;
+
+    const firstPage = sourcePages[0] || 1;
+    const slideImage = `/api/slides/${documentId}/page-${firstPage}.png`;
+
+    const status = index === 0 ? 'active' : 'locked';
+
+    // Shuffle quiz options
+    const rawQuiz = node.quiz || {};
+    let options = Array.isArray(rawQuiz.options) ? [...rawQuiz.options] : [];
+    let correctIdx = typeof rawQuiz.correctAnswerIndex === 'number' ? rawQuiz.correctAnswerIndex : 0;
+    if (options.length > 0) {
+      if (correctIdx < 0 || correctIdx >= options.length) correctIdx = 0;
+      const targetOption = options[correctIdx];
+      for (let i = options.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [options[i], options[j]] = [options[j], options[i]];
+      }
+      const newIdx = options.indexOf(targetOption);
+      correctIdx = newIdx >= 0 ? newIdx : 0;
+    }
+
+    const quiz = {
+      question: rawQuiz.question || '',
+      options,
+      correctAnswerIndex: correctIdx,
+      explanation: rawQuiz.explanation || ''
+    };
+
+    const result = {
+      id: typeof node.id === 'number' ? node.id : index + 1,
+      title: node.title || `Concept ${index + 1}`,
+      status,
+      xp,
+      duration,
+      slideImage,
+      sourcePages,
+      sourceFacts,
+      summary: summaryText,
+      keyConcepts: Array.isArray(node.keyConcepts) ? node.keyConcepts : [],
+      quiz,
+      lessonContent: {
+        analogy: '',
+        paragraphs: summaryText ? [summaryText] : ['Key concepts from this lecture section.'],
+        keyConcepts: Array.isArray(node.keyConcepts) ? node.keyConcepts : []
+      }
+    };
+
+    // Optional unit field
+    if (node.unit && typeof node.unit === 'string' && node.unit.trim()) {
+      result.unit = node.unit.trim();
+    }
+
+    return result;
+  });
+}
+
+// ─── main handler ──────────────────────────────────────────────────────────────
 
 /**
  * POST /api/generate-path
@@ -285,184 +439,162 @@ export const generateStudyPath = async (req, res) => {
   try {
     let rawText = '';
     let fileName = '';
+    let totalPages = 0;
 
-    // 1. Check for client pre-extracted text or uploaded file
     const file = req.file || (req.files && (req.files.pdf?.[0] || req.files.file?.[0] || req.files.document?.[0]));
 
-    if (req.body?.text && String(req.body.text).trim().length >= 30) {
-      rawText = String(req.body.text).trim();
-      fileName = file?.originalname || req.body.title || 'Study Material';
-      console.log(`[generateStudyPath] Using pre-extracted text for: ${fileName} (${rawText.length} chars)`);
-    } else if (file) {
+    if (file) {
       fileName = file.originalname || 'document.pdf';
-      console.log(`[generateStudyPath] Processing uploaded file: ${fileName} (${file.size} bytes)`);
-
-      // Use document parser supporting PDF, DOCX, PPTX, TXT
-      const parsed = await parseDocumentBuffer(file.buffer, file.originalname, file.mimetype);
-      rawText = parsed?.text || '';
+      console.log(`[generateStudyPath] Processing uploaded file: ${fileName} (${file.size || file.buffer?.length} bytes)`);
+      try {
+        const parsed = await parseDocumentBuffer(file.buffer, file.originalname, file.mimetype);
+        rawText    = parsed?.text || '';
+        totalPages = parsed?.numpages || 0;
+      } catch (parseErr) {
+        console.warn('[generateStudyPath] Document parser text extraction notice:', parseErr.message);
+      }
     }
 
-    if (!rawText || rawText.trim().length < 30) {
-      return res.status(400).json({
+    if (!rawText && req.body?.text && String(req.body.text).trim().length >= 30) {
+      rawText = String(req.body.text).trim();
+      fileName = fileName || req.body.title || 'Study Material';
+    }
+
+    const explicitTitle = req.body?.title?.trim();
+    const derivedTitle  = explicitTitle || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Interactive Study Path';
+    const cleanTitle    = derivedTitle.charAt(0).toUpperCase() + derivedTitle.slice(1);
+
+    const apiKey = getEnv('GEMINI_API_KEY') || getEnv('GOOGLE_API_KEY') || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      console.error('[generateStudyPath] Missing GEMINI_API_KEY or GOOGLE_API_KEY in environment.');
+      return res.status(500).json({
         success: false,
-        message: 'Could not extract enough readable text from the provided file or input (minimum 30 characters required).'
+        message: 'AI Service Unavailable: Gemini API key is not configured on the server.'
       });
     }
 
-    // Determine title
-    const explicitTitle = req.body?.title?.trim();
-    const derivedTitle = explicitTitle || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Interactive Study Path';
-    const cleanTitle = derivedTitle.charAt(0).toUpperCase() + derivedTitle.slice(1);
+    // ── Generation: chunked for large PDFs, single-pass for small ones ──────────
+    let parsedData;
+    let validationProblems = [];
 
-    const topicSlug = 'path-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
+    const isPdf = file && (
+      file.mimetype?.includes('pdf') ||
+      file.originalname?.toLowerCase().endsWith('.pdf') ||
+      (Buffer.isBuffer(file.buffer) && file.buffer.slice(0, 4).toString() === '%PDF')
+    );
 
-    let generatedNodes = null;
-    let courseCode = `${cleanTitle.slice(0, 6).toUpperCase()} 101 · Interactive Study Path`;
-
-    // 2. Attempt AI generation
-    try {
-      const selectedModel = MODEL_REGISTRY.find(m => m.recommended) || MODEL_REGISTRY[0];
-      const sampledText = sampleStudyMaterial(rawText, 12000);
-
-      const prompt = studyPathPrompt(sampledText, cleanTitle);
-      console.log(`[generateStudyPath] Calling AI (${selectedModel.id}) for study path generation...`);
-
-      const aiResponse = await Promise.race([
-        aiClient.chatCompletion({
-          model: selectedModel.id,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 6000,
-          temperature: 0.2
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AI generation timed out')), 60000))
-      ]);
-
-      const content = aiResponse?.choices?.[0]?.message?.content || '';
-      const startIdx = content.indexOf('{');
-      const endIdx = content.lastIndexOf('}');
-
-      if (startIdx !== -1 && endIdx !== -1) {
-        const jsonStr = content.substring(startIdx, endIdx + 1);
-        const parsedData = JSON.parse(jsonStr);
-
-        if (Array.isArray(parsedData.nodes) && parsedData.nodes.length > 0) {
-          generatedNodes = parsedData.nodes.map((node, i) => {
-            const baseNode = {
-              id: typeof node.id === 'number' ? node.id : i + 1,
-              title: node.title || `Concept ${i + 1}`,
-              status: i === 0 ? 'active' : 'locked',
-              xp: typeof node.xp === 'number' ? node.xp : 20 + i * 5,
-              duration: node.duration || `${5 + i * 2} min`,
-              summary: node.summary || `Exploration of ${node.title || 'concepts'}.`,
-              keyConcepts: Array.isArray(node.keyConcepts) ? node.keyConcepts : ['Key Concept'],
-              lessonContent: {
-                analogy: node.lessonContent?.analogy || 'A clear mental model for understanding this concept.',
-                paragraphs: Array.isArray(node.lessonContent?.paragraphs) && node.lessonContent.paragraphs.length > 0
-                  ? node.lessonContent.paragraphs
-                  : ['Foundational details on this concept.'],
-                keyConcepts: Array.isArray(node.lessonContent?.keyConcepts)
-                  ? node.lessonContent.keyConcepts
-                  : node.keyConcepts || ['Key Concept']
-              },
-              quiz: {
-                question: node.quiz?.question || `What is the key takeaway of ${node.title}?`,
-                options: Array.isArray(node.quiz?.options) && node.quiz.options.length === 4
-                  ? node.quiz.options
-                  : ['Option A', 'Option B', 'Option C', 'Option D'],
-                correctAnswerIndex: typeof node.quiz?.correctAnswerIndex === 'number' ? node.quiz.correctAnswerIndex : 0,
-                explanation: node.quiz?.explanation || 'Comprehensive conceptual explanation.',
-                hint: node.quiz?.hint || 'Review the core definition.'
-              },
-              quiz2: node.quiz2?.question ? {
-                question: node.quiz2.question,
-                options: Array.isArray(node.quiz2.options) && node.quiz2.options.length === 4
-                  ? node.quiz2.options
-                  : ['Option A', 'Option B', 'Option C', 'Option D'],
-                correctAnswerIndex: typeof node.quiz2.correctAnswerIndex === 'number' ? node.quiz2.correctAnswerIndex : 0,
-                explanation: node.quiz2.explanation || 'Practical application of this concept.',
-                hint: node.quiz2.hint || 'Consider how this applies in practice.'
-              } : undefined,
-              nextNodeTitle: node.nextNodeTitle || (parsedData.nodes[i + 1]?.title ?? null)
-            };
-
-            // Preserve isSummary flag
-            if (node.isSummary) {
-              baseNode.isSummary = true;
-            }
-
-            // Preserve isFinalQuiz flag and finalQuiz array
-            if (node.isFinalQuiz) {
-              baseNode.isFinalQuiz = true;
-              if (Array.isArray(node.finalQuiz) && node.finalQuiz.length > 0) {
-                baseNode.finalQuiz = node.finalQuiz.map(fq => ({
-                  question: fq.question || 'Assessment question',
-                  options: Array.isArray(fq.options) && fq.options.length === 4
-                    ? fq.options
-                    : ['Option A', 'Option B', 'Option C', 'Option D'],
-                  correctAnswerIndex: typeof fq.correctAnswerIndex === 'number' ? fq.correctAnswerIndex : 0,
-                  explanation: fq.explanation || 'Review the core concepts.',
-                  hint: fq.hint || 'Think carefully about the material.'
-                }));
-              }
-            }
-
-            return baseNode;
-          });
-
-          if (parsedData.courseCode) courseCode = parsedData.courseCode;
-        }
+    if (isPdf && totalPages > CHUNK_THRESHOLD) {
+      try {
+        parsedData = await generateChunked({ apiKey, originalFile: file, rawText, title: cleanTitle, totalPages });
+      } catch (err) {
+        console.error('[generateStudyPath] Chunked generation failed:', err.message);
+        return res.status(502).json({ success: false, message: `Chunked study path generation failed: ${err.message}` });
       }
-    } catch (aiErr) {
-      console.warn('[generateStudyPath] AI generation error or timeout, applying robust fallback:', aiErr.message);
+    } else {
+      try {
+        const result = await generateAndVerify({ apiKey, file, rawText, title: cleanTitle, totalPages });
+        parsedData         = result.parsedData;
+        validationProblems = result.validationProblems;
+
+        if (validationProblems.length > 0) {
+          console.error('[generateStudyPath] Validation failed after retry:', validationProblems);
+          return res.status(502).json({
+            success: false,
+            message: `Generated study path failed quality validation: ${validationProblems.join('; ')}`,
+            issues: validationProblems
+          });
+        }
+
+        // Log coverage
+        const skippedPages = parsedData?.skippedPages || [];
+        if (totalPages > 0) {
+          const missing = result.uncovered;
+          const pct     = coveragePct(totalPages, missing);
+          console.log(`[generateStudyPath] Coverage: ${pct}% (${totalPages - missing.length}/${totalPages} pages).`);
+          if (missing.length > 0) {
+            console.warn(`[generateStudyPath] Uncovered pages after retry: [${missing.join(', ')}]`);
+          }
+          if (skippedPages.length > 0) {
+            console.log(`[generateStudyPath] Skipped (no study content): [${skippedPages.join(', ')}]`);
+          }
+        }
+      } catch (err) {
+        console.error('[generateStudyPath] Generation failed:', err.message);
+        return res.status(502).json({ success: false, message: `Failed to generate study path with Gemini: ${err.message}` });
+      }
     }
 
-    // 3. Fallback to algorithmic generation if AI did not return valid nodes
-    if (!generatedNodes || generatedNodes.length === 0) {
-      generatedNodes = createFallbackNodes(rawText, cleanTitle);
+    // ── Final coverage log for chunked results ───────────────────────────────
+    if (isPdf && totalPages > CHUNK_THRESHOLD && totalPages > 0) {
+      const skipped = parsedData?.skippedPages || [];
+      const missing = uncoveredPages(totalPages, parsedData?.nodes || [], skipped);
+      const pct     = coveragePct(totalPages, missing);
+      console.log(`[generateStudyPath] Merged coverage: ${pct}% (${totalPages - missing.length}/${totalPages} pages across ${parsedData?.nodes?.length || 0} nodes).`);
+      if (missing.length > 0) {
+        console.warn(`[generateStudyPath] Still uncovered after chunking: [${missing.join(', ')}]`);
+      }
     }
 
-    const structuredStudyPath = {
-      topicId: topicSlug,
-      title: cleanTitle,
-      courseCode: courseCode,
-      currentProgress: 0,
-      nodes: generatedNodes
-    };
+    const finalTitle  = parsedData.title || cleanTitle;
+    const topicId     = toKebabCase(finalTitle);
+    const courseCode  = parsedData.courseCode || `${finalTitle.slice(0, 6).toUpperCase()} 101 · Interactive Study Path`;
+    const documentId  = req.body?.documentId || req.body?.docId || topicId;
 
-    // 4. Persistence
+    // Post-process
+    const processedNodes = postProcessNodes(parsedData.nodes, documentId);
+
+    // Persistence
     const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
 
     try {
-      // Deactivate previous active paths for this user
       if (userId && userId !== 'anonymous-user') {
         await StudyPath.updateMany({ userId, isActive: true }, { $set: { isActive: false } });
-        await incrementAIUsage(req.user._id).catch(() => {});
-        await awardXP(req.user._id, 'ai_study_path').catch(() => {});
+        await incrementAIUsage(req.user?._id || userId).catch(() => {});
+        await awardXP(req.user?._id || userId, 'ai_study_path').catch(() => {});
       }
+
+      await StudyPath.deleteOne({ topicId }).catch(() => {});
 
       const savedRecord = new StudyPath({
         userId,
-        topicId: topicSlug,
-        title: cleanTitle,
+        topicId,
+        title: finalTitle,
         courseCode,
         currentProgress: 0,
-        nodes: generatedNodes,
+        nodes: processedNodes,
         isActive: true,
-        sourceFileName: fileName
+        sourceFileName: fileName,
+        extractedText: rawText
       });
 
       await savedRecord.save();
-      console.log(`[generateStudyPath] Saved new StudyPath: ${topicSlug} for user ${userId}`);
+      console.log(`[generateStudyPath] Saved StudyPath: ${topicId} (${processedNodes.length} nodes) for user ${userId}`);
     } catch (dbErr) {
       console.warn('[generateStudyPath] MongoDB save warning (proceeding with response):', dbErr.message);
     }
+
+    // Response formatting
+    const isDebug = String(req.query?.debug) === '1';
+    const responseNodes = processedNodes.map(node => {
+      const nodeCopy = { ...node };
+      if (!isDebug) delete nodeCopy.sourceFacts;
+      return nodeCopy;
+    });
+
+    const structuredStudyPath = {
+      topicId,
+      title: finalTitle,
+      courseCode,
+      currentProgress: 0,
+      nodes: responseNodes
+    };
 
     return res.status(201).json({
       success: true,
       message: 'Study path generated successfully',
       studyPath: structuredStudyPath,
       path: structuredStudyPath,
-      topicId: topicSlug
+      topicId
     });
 
   } catch (error) {
@@ -476,24 +608,18 @@ export const generateStudyPath = async (req, res) => {
 
 /**
  * GET /api/generate-path/active or /api/study-path/active
- * Returns the active study path for the user
  */
 export const getActiveStudyPath = async (req, res) => {
   try {
     const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.query?.userId;
 
     if (!userId || userId === 'anonymous-user') {
-      return res.status(200).json({
-        success: true,
-        studyPath: null,
-        message: 'No authenticated user session'
-      });
+      return res.status(200).json({ success: true, studyPath: null, message: 'No authenticated user session' });
     }
 
     const activeRecord = await StudyPath.findOne({ userId, isActive: true }).sort({ updatedAt: -1 }).lean();
 
     if (!activeRecord) {
-      // Return most recent if no active flag
       const recent = await StudyPath.findOne({ userId }).sort({ updatedAt: -1 }).lean();
       if (recent) {
         return res.status(200).json({
@@ -536,10 +662,7 @@ export const getStudyPathById = async (req, res) => {
     const pathRecord = await StudyPath.findOne({ topicId }).lean();
 
     if (!pathRecord) {
-      return res.status(404).json({
-        success: false,
-        message: 'Study path not found'
-      });
+      return res.status(404).json({ success: false, message: 'Study path not found' });
     }
 
     return res.status(200).json({
@@ -567,10 +690,7 @@ export const getUserStudyPaths = async (req, res) => {
     const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.query?.userId;
 
     if (!userId || userId === 'anonymous-user') {
-      return res.status(200).json({
-        success: true,
-        studyPaths: []
-      });
+      return res.status(200).json({ success: true, studyPaths: [] });
     }
 
     const paths = await StudyPath.find({ userId }).sort({ updatedAt: -1 }).lean();
@@ -587,6 +707,29 @@ export const getUserStudyPaths = async (req, res) => {
     });
   } catch (error) {
     console.error('[getUserStudyPaths] Error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * DELETE /api/study-path/:topicId
+ */
+export const deleteStudyPath = async (req, res) => {
+  try {
+    const { topicId } = req.params;
+    const userId = req.user?._id?.toString() || req.user?.firebaseUid;
+
+    const query = { topicId };
+    if (userId && userId !== 'anonymous-user') query.userId = userId;
+
+    const result = await StudyPath.deleteOne(query);
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Study path not found or not owned by user' });
+    }
+
+    return res.status(200).json({ success: true, message: 'Study path deleted' });
+  } catch (error) {
+    console.error('[deleteStudyPath] Error:', error.message);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -609,14 +752,12 @@ export const updateNodeStatus = async (req, res) => {
     if (nodeIndex !== -1) {
       pathRecord.nodes[nodeIndex].status = status;
 
-      // If completed, unlock next node if locked
       if (status === 'completed' && nodeIndex + 1 < pathRecord.nodes.length) {
         if (pathRecord.nodes[nodeIndex + 1].status === 'locked') {
           pathRecord.nodes[nodeIndex + 1].status = 'active';
         }
       }
 
-      // Recalculate progress
       pathRecord.currentProgress = pathRecord.nodes.filter(n => n.status === 'completed').length;
       await pathRecord.save();
     }

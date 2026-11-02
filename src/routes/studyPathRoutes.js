@@ -5,7 +5,8 @@ import {
   getActiveStudyPath,
   getUserStudyPaths,
   getStudyPathById,
-  updateNodeStatus
+  updateNodeStatus,
+  deleteStudyPath
 } from '../controllers/studyPathController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -38,8 +39,9 @@ router.get('/active', optionalProtect, getActiveStudyPath);
 router.get('/all', optionalProtect, getUserStudyPaths);
 router.get('/user/all', optionalProtect, getUserStudyPaths);
 
-// GET & PUT for specific path
+// GET & PUT & DELETE for specific path
 router.get('/:topicId', optionalProtect, getStudyPathById);
 router.put('/:topicId/node/:nodeId', optionalProtect, updateNodeStatus);
+router.delete('/:topicId', optionalProtect, deleteStudyPath);
 
 export default router;
