@@ -16,6 +16,7 @@ export const XP_REWARDS = {
     ai_generate_notes: 15,
     ai_generate_quiz: 20,
     blind_summary: 25,
+    unit_challenge: 50,
 };
 
 export const LEVELS = [

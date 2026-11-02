@@ -63,7 +63,7 @@ async function tryGrantTop10Badge(userIdStr, rankInBoard) {
 
 export const awardXP = async (userId, action, metadata = {}) => {
     try {
-        let xpToAdd = XP_REWARDS[action] || 0;
+        let xpToAdd = typeof action === 'number' ? action : (metadata?.amount != null ? metadata.amount : (XP_REWARDS[action] || 0));
         if (!xpToAdd) return null;
 
         let progress = await UserProgress.findOne({ userId });

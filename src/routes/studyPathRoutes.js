@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import {
   generateStudyPath,
   getActiveStudyPath,
@@ -7,7 +8,11 @@ import {
   getStudyPathById,
   updateNodeStatus,
   deleteStudyPath,
-  regenerateStudyPathNode
+  regenerateStudyPathNode,
+  getChallenge,
+  submitChallenge,
+  retryChallenge,
+  generateStudyPathChallenge
 } from '../controllers/studyPathController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -15,6 +20,17 @@ const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
+});
+
+const challengeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: {
+    success: false,
+    message: 'Too many challenge requests. Please wait a short while before trying again.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 // Middleware to optionally extract user token without failing guests
@@ -39,6 +55,12 @@ router.post('/generate', optionalProtect, uploadFields, generateStudyPath);
 router.get('/active', optionalProtect, getActiveStudyPath);
 router.get('/all', optionalProtect, getUserStudyPaths);
 router.get('/user/all', optionalProtect, getUserStudyPaths);
+
+// Challenge endpoints
+router.get('/:topicId/challenge', optionalProtect, challengeLimiter, getChallenge);
+router.post('/:topicId/challenge', optionalProtect, challengeLimiter, getChallenge);
+router.post('/:topicId/challenge/submit', optionalProtect, submitChallenge);
+router.post('/:topicId/challenge/retry', optionalProtect, challengeLimiter, retryChallenge);
 
 // GET & PUT & DELETE for specific path
 router.get('/:topicId', optionalProtect, getStudyPathById);

@@ -176,3 +176,79 @@ export const studyPathPrompt = (textOrTitle = 'Study Material', title = 'Study M
   const resolvedTitle = typeof textOrTitle === 'string' && textOrTitle.length < 120 ? textOrTitle : title;
   return `Generate a comprehensive, sequential study path for "${resolvedTitle}" based strictly on the provided document content. Create as many nodes as the material needs — one node per coherent subtopic. Follow all system instructions. Return valid JSON only.`;
 };
+
+export const challengeResponseSchema = {
+  type: 'object',
+  required: ['questions'],
+  properties: {
+    questions: {
+      type: 'array',
+      minItems: 10,
+      maxItems: 10,
+      items: {
+        type: 'object',
+        required: ['question', 'options', 'correctAnswerIndex', 'explanation', 'sourceNodeIds', 'type'],
+        properties: {
+          question: { type: 'string', description: 'Question text, maximum 25 words.' },
+          options: {
+            type: 'array',
+            minItems: 4,
+            maxItems: 4,
+            items: { type: 'string', description: 'One of exactly 4 plausible options, maximum 10 words.' }
+          },
+          correctAnswerIndex: { type: 'integer', minimum: 0, maximum: 3, description: 'Index 0-3 of the correct option.' },
+          explanation: { type: 'string', description: 'Maximum 30 words explaining why the answer is correct.' },
+          sourceNodeIds: {
+            type: 'array',
+            items: { type: 'integer' },
+            description: '1 to 3 node IDs that supply facts for this question.'
+          },
+          type: {
+            type: 'string',
+            enum: ['recall', 'connect', 'compare', 'sequence', 'cause-effect'],
+            description: 'Cognitive type of question.'
+          }
+        }
+      }
+    }
+  }
+};
+
+export const challengePrompt = ({ topicTitle, nodesData, excludeQuestions = [], retryProblems = [] }) => {
+  let prompt = `You are designing the final Unit Challenge exam for "${topicTitle}".
+Create exactly 10 comprehensive overview multiple-choice questions grounded STRICTLY in the provided node summaries, key concepts, and source facts.
+
+EXAM DESIGN REQUIREMENTS:
+1. OVERVIEW & SYNTHESIS: Connect, compare, sequence, cause-and-effect, and big-picture questions across the entire unit.
+2. MULTI-NODE QUESTIONS: At least 4 of the 10 questions MUST synthesize ideas from 2 or more nodes (sourceNodeIds must list 2 or 3 node IDs).
+3. COVERAGE: Cover all nodes or units evenly across the 10 questions. If there are <= 10 nodes, every node id must appear in at least one question's sourceNodeIds.
+4. STRICT LENGTH LIMITS:
+   - question: at most 25 words
+   - options: exactly 4 options, each at most 10 words
+   - explanation: at most 30 words
+5. DISTRACTORS: Must be from the same category as the correct answer and drawn from other facts/nodes in the document.
+6. NO FILLER: Never use "all of the above", "none of the above", or generic filler phrases. Never reveal the answer in the question.
+7. VARY POSITIONS: Vary the correct option index across 0, 1, 2, and 3.
+8. ATOMICITY & NO DUPLICATION: Never ask about the exact same fact twice within the 10 questions.
+`;
+
+  if (excludeQuestions.length > 0) {
+    prompt += `\nALREADY USED: do not repeat or rephrase these questions or test the exact same facts as any of them:\n${excludeQuestions.map(q => `- ${q}`).join('\n')}\n`;
+  }
+
+  if (retryProblems.length > 0) {
+    prompt += `\nCRITICAL FIXES REQUIRED (previous attempt failed these validation rules):\n${retryProblems.map(p => `- ${p}`).join('\n')}\n`;
+  }
+
+  prompt += `\nNODE STUDY MATERIAL:\n`;
+  for (const n of nodesData) {
+    prompt += `Node ${n.id}: "${n.title}"${n.unit ? ` (Unit: ${n.unit})` : ''}
+  Summary: ${n.summary}
+  Key Concepts: ${Array.isArray(n.keyConcepts) ? n.keyConcepts.join('; ') : ''}
+  Source Facts: ${Array.isArray(n.sourceFacts) ? n.sourceFacts.join('; ') : ''}
+\n`;
+  }
+
+  prompt += `\nReturn JSON conforming strictly to the requested schema.`;
+  return prompt;
+};
