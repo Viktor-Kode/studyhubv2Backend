@@ -11,12 +11,19 @@ const extractTextFromPDF = (buffer) => {
     pdfParser.on('pdfParser_dataReady', (pdfData) => {
       const pages = pdfData.Pages || [];
       const text = pages
-        .map(page =>
-          (page.Texts || [])
-            .map(t => decodeURIComponent(t.R?.[0]?.T || ''))
-            .join(' ')
-        )
-        .join('\n');
+        .map((page, idx) => {
+          const pageText = (page.Texts || [])
+            .map(t => {
+              try {
+                return decodeURIComponent(t.R?.[0]?.T || '');
+              } catch {
+                return t.R?.[0]?.T || '';
+              }
+            })
+            .join(' ');
+          return `--- Page ${idx + 1} ---\n${pageText}`;
+        })
+        .join('\n\n');
       resolve({ text, numpages: pages.length });
     });
 

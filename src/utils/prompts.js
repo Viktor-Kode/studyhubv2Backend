@@ -77,29 +77,26 @@ Do NOT wrap output in markdown code blocks. Return raw markdown only.
 Text: ${text}`;
 };
 
-import { SchemaType } from '@google/generative-ai';
-
 export const studyPathSystemPrompt = `You are the lead AI instructor for StudyHelp. You receive an academic document (such as a lecture slide deck or textbook chapter). Turn it into a detailed, sequential study path that a student could use to pass an exam on this exact material.
 
 HOW TO READ THE DOCUMENT
-- Read page by page. Slides are fragments: titles, bullets, tables, labelled diagrams. Reassemble them into connected explanations.
+- Read page by page. Slides and sections are fragments: titles, bullets, tables, diagrams. Reassemble them into connected explanations.
 - Treat tables as relationships and keep every row together (e.g. item -> action/function -> supply/cause/effect).
-- Read labels and captions on diagrams, charts and images; they are primary source content.
-- Keep every clinical correlation, formula, value, classification, exception and mnemonic the lecturer included.
+- Keep every clinical correlation, formula, value, classification, exception and mnemonic included in the material.
 - Follow the lecture's own order and major sections.
 
 HOW TO BUILD NODES
 - Create as many nodes as the material needs so that every page with instructional content belongs to at least one node. One node = one coherent subtopic that can be studied in 5-9 minutes. As a guide, use roughly 1 node per 1-3 dense pages or 1 node per 3-5 light slides, and always split at the lecture's own section boundaries. Do not merge distinct subtopics to keep the list short. Do not split one subtopic into several nodes just to add count. Skip only pages with no study content (title, agenda, references, thank-you). Every node must cover a different part of the material; no repeats.
-- A node's title is the specific subject of its slides, in the lecture's own words.
-- For each node, fill fields strictly in propertyOrdering sequence:
+- A node's title is the specific subject of its slides/pages, in the source's own words.
+- For each node, fill fields strictly:
   1. "id": Sequential integer starting from 1.
-  2. "title": Specific subject in the lecture's own words.
-  3. "sourcePages": Array of 1-based page or slide numbers for this node.
+  2. "title": Specific subject in the source material's own words.
+  3. "sourcePages": Array of 1-based page numbers for this node (look for '--- Page X ---' markers if present).
   4. "sourceFacts": 6 to 12 short items copied from the pages, preserving exact terminology, names, numbers and table relationships.
   5. "summary": 2 to 3 sentences that connect the facts into one explanation (what it is, how it relates to neighbouring structures/ideas, why it matters). Written ONLY from sourceFacts.
   6. "keyConcepts": 4 to 6 items. Each must be a complete, specific, testable statement containing at least one term that appears in sourceFacts.
   7. "quiz": One multiple-choice question testing a specific fact, formula, or clinical correlation from this node.
-     - "options": 4 plausible options. Draw distractors from OTHER items in the same document (same category as the answer).
+     - "options": Array of 4 plausible options. Draw distractors from OTHER items in the same document (same category as the answer).
      - "correctAnswerIndex": Index (0-3) of the correct answer.
      - "explanation": Explain why the answer is correct and, briefly, why the closest distractor is not.
   8. "unit": (optional) Chapter or section heading from the document that this node belongs to, in the document's own words. Omit if the document has no clear headings.
@@ -112,82 +109,49 @@ SKIPPED PAGES
 - List in "skippedPages" every 1-based page number that you deliberately excluded because it has no study content (title slide, agenda, references list, blank page, thank-you slide).
 - Every other page must appear in at least one node's sourcePages.
 
-Subject area is unknown in advance: match the exact terminology of whatever the document covers (anatomy, pharmacology, law, engineering, etc.).`;
+Subject area is unknown in advance: match the exact terminology of whatever the document covers (anatomy, pharmacology, law, engineering, etc.).
 
-export const studyPathResponseSchema = {
-  type: SchemaType.OBJECT,
-  properties: {
-    title: {
-      type: SchemaType.STRING,
-      description: "Main topic or course title based on the document"
-    },
-    courseCode: {
-      type: SchemaType.STRING,
-      description: "Relevant course code e.g. 'PATH 101 · Interactive Study Path'"
-    },
-    skippedPages: {
-      type: SchemaType.ARRAY,
-      items: { type: SchemaType.INTEGER },
-      description: "1-based page numbers deliberately excluded because they have no study content (title, agenda, references, thank-you)"
-    },
-    nodes: {
-      type: SchemaType.ARRAY,
-      description: "Sequential learning nodes — one per coherent subtopic, covering all instructional pages",
-      items: {
-        type: SchemaType.OBJECT,
-        properties: {
-          id: { type: SchemaType.INTEGER },
-          title: { type: SchemaType.STRING },
-          unit: {
-            type: SchemaType.STRING,
-            description: "Chapter or section heading from the document this node belongs to. Omit if no clear headings."
-          },
-          sourcePages: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.INTEGER },
-            description: "1-based page/slide numbers for this node"
-          },
-          sourceFacts: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.STRING },
-            description: "6 to 12 short items copied from pages with exact terminology and numbers"
-          },
-          summary: {
-            type: SchemaType.STRING,
-            description: "2 to 3 sentences connecting facts into one explanation"
-          },
-          keyConcepts: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.STRING },
-            description: "4 to 6 specific, testable statements containing terms from sourceFacts"
-          },
-          quiz: {
-            type: SchemaType.OBJECT,
-            properties: {
-              question: { type: SchemaType.STRING },
-              options: {
-                type: SchemaType.ARRAY,
-                items: { type: SchemaType.STRING },
-                description: "4 plausible options with distractors from elsewhere in document"
-              },
-              correctAnswerIndex: { type: SchemaType.INTEGER },
-              explanation: {
-                type: SchemaType.STRING,
-                description: "Why answer is correct and why closest distractor is not"
-              }
-            },
-            required: ["question", "options", "correctAnswerIndex", "explanation"]
-          }
-        },
-        propertyOrdering: ["id", "title", "unit", "sourcePages", "sourceFacts", "summary", "keyConcepts", "quiz"],
-        required: ["id", "title", "sourcePages", "sourceFacts", "summary", "keyConcepts", "quiz"]
+OUTPUT FORMAT:
+Return a single valid JSON object with EXACTLY this structure:
+{
+  "title": "Main topic or course title based on the document",
+  "courseCode": "Relevant course code e.g. 'PATH 101 · Interactive Study Path'",
+  "skippedPages": [1, 2],
+  "nodes": [
+    {
+      "id": 1,
+      "title": "Subtopic Title",
+      "unit": "Section or Chapter Heading",
+      "sourcePages": [1, 2],
+      "sourceFacts": [
+        "Exact fact or definition from text",
+        "Second fact with exact terms",
+        "Third fact with formula or detail",
+        "Fourth fact with relationship",
+        "Fifth fact",
+        "Sixth fact"
+      ],
+      "summary": "2-3 connected sentences explaining this subtopic based only on sourceFacts.",
+      "keyConcepts": [
+        "First specific testable statement",
+        "Second specific testable statement",
+        "Third specific testable statement",
+        "Fourth specific testable statement"
+      ],
+      "quiz": {
+        "question": "Clear multiple choice question?",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "correctAnswerIndex": 0,
+        "explanation": "Why correct and why distractors are wrong."
       }
     }
-  },
-  required: ["title", "courseCode", "nodes"]
-};
+  ]
+}
+Return valid raw JSON only. Do not wrap in markdown or backticks.`;
+
+export const studyPathResponseSchema = null;
 
 export const studyPathPrompt = (textOrTitle = 'Study Material', title = 'Study Material') => {
   const resolvedTitle = typeof textOrTitle === 'string' && textOrTitle.length < 120 ? textOrTitle : title;
-  return `Generate a comprehensive, sequential study path for "${resolvedTitle}" based strictly on the provided document content. Create as many nodes as the material needs — one node per coherent subtopic. Follow all system instructions.`;
+  return `Generate a comprehensive, sequential study path for "${resolvedTitle}" based strictly on the provided document content. Create as many nodes as the material needs — one node per coherent subtopic. Follow all system instructions. Return valid JSON only.`;
 };

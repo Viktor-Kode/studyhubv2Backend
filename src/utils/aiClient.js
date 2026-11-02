@@ -8,7 +8,7 @@ const aiClient = {
      * Unified chat completion that handles multiple providers (DeepSeek, Hugging Face)
      */
     chatCompletion: async (params) => {
-        const { model: modelId, messages, max_tokens, temperature, stream = false } = params;
+        const { model: modelId, messages, max_tokens, temperature, stream = false, response_format } = params;
         const modelInfo = getModelById(modelId);
 
         if (!modelInfo) {
@@ -22,7 +22,7 @@ const aiClient = {
         }
 
         if (modelInfo.provider === "deepseek") {
-            return await handleDeepSeekRequest(modelId, messages, max_tokens, temperature, providerConfig, stream);
+            return await handleDeepSeekRequest(modelId, messages, max_tokens, temperature, providerConfig, stream, response_format);
         } else if (modelInfo.provider === "hf-inference") {
             if (stream) throw new Error("Streaming not yet implemented for HF provider.");
             return await handleHFRequest(modelId, messages, max_tokens, temperature, providerConfig);
@@ -45,7 +45,7 @@ const aiClient = {
 /**
  * Handle requests to DeepSeek AI (OpenAI Compatible)
  */
-async function handleDeepSeekRequest(modelId, messages, max_tokens, temperature, config, stream = false) {
+async function handleDeepSeekRequest(modelId, messages, max_tokens, temperature, config, stream = false, response_format = null) {
     console.log(`🚀 DEEPSEEK API CALL: model=${modelId} stream=${stream}`);
 
     try {
@@ -54,23 +54,23 @@ async function handleDeepSeekRequest(modelId, messages, max_tokens, temperature,
             apiKey: config.apiKey,
         });
 
-        if (stream) {
-            return await client.chat.completions.create({
-                model: modelId || "deepseek-chat",
-                messages: messages,
-                max_tokens: max_tokens || 2048,
-                temperature: temperature || 0.7,
-                stream: true,
-            });
-        }
-
-        const response = await client.chat.completions.create({
+        const requestParams = {
             model: modelId || "deepseek-chat",
             messages: messages, // DeepSeek maintains history by passing full array
-            max_tokens: max_tokens || 2048,
-            temperature: temperature || 0.7,
-            stream: false,
-        });
+            max_tokens: max_tokens || 4000,
+            temperature: temperature !== undefined ? temperature : 0.7,
+            stream: Boolean(stream),
+        };
+
+        if (response_format) {
+            requestParams.response_format = response_format;
+        }
+
+        if (stream) {
+            return await client.chat.completions.create(requestParams);
+        }
+
+        const response = await client.chat.completions.create(requestParams);
 
         return {
             choices: [{
