@@ -9,6 +9,33 @@ import { awardXP } from './progressController.js';
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
 const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
+const GROUNDING_STOP_WORDS = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'their', 'this', 'to', 'was', 'were', 'with']);
+
+function normalizeGroundingText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/([a-z0-9])-\s+(?=[a-z0-9])/g, '$1')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sourceFactMatches(fact, normalizedSource) {
+  const normalizedFact = normalizeGroundingText(fact);
+  if (!normalizedFact) return false;
+  if (` ${normalizedSource} `.includes(` ${normalizedFact} `)) return true;
+
+  // Extractors often split words at line endings or reflow text boxes. If
+  // punctuation-normalized exact matching fails, require most meaningful
+  // fact terms to occur in the extracted document.
+  const terms = normalizedFact.split(' ').filter((term) => term.length > 1 && !GROUNDING_STOP_WORDS.has(term));
+  if (terms.length === 0) return false;
+  const sourceTerms = new Set(normalizedSource.split(' '));
+  const matchedTerms = terms.filter((term) => sourceTerms.has(term)).length;
+  const requiredMatches = terms.length === 1 ? 1 : Math.max(2, Math.ceil(terms.length * 0.7));
+  return matchedTerms >= requiredMatches;
+}
 
 /**
  * Validates generated study path nodes against quality criteria.
@@ -21,7 +48,7 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
     return problems;
   }
 
-  const normExtracted = (extractedText || '').toLowerCase();
+  const normExtracted = normalizeGroundingText(extractedText);
 
   nodes.forEach((node, index) => {
     const nodeNum = node.id ?? (index + 1);
@@ -67,10 +94,7 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
         problems.push(`Node ${nodeNum} has 0 sourceFacts`);
       } else {
         let matchCount = 0;
-        for (const fact of facts) {
-          const prefix = String(fact).trim().slice(0, 25).toLowerCase();
-          if (prefix && normExtracted.includes(prefix)) matchCount++;
-        }
+        for (const fact of facts) if (sourceFactMatches(fact, normExtracted)) matchCount++;
         if (matchCount / facts.length < 0.5) {
           problems.push(`Node ${nodeNum} has under half of sourceFacts matching extracted document text (${matchCount}/${facts.length} matched)`);
         }
