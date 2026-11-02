@@ -7,10 +7,12 @@ import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
 
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
+const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
+const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
 
 /**
  * Validates generated study path nodes against quality criteria.
- * Enforces at least 1 node, minimum 4 keyConcepts, no banned filler, grounded sourceFacts.
+ * Enforces at least 1 node, 3-5 keyConcepts, concise fields, no banned filler, grounded sourceFacts.
  */
 export function validateStudyPathNodes(nodes, extractedText = '') {
   const problems = [];
@@ -38,9 +40,24 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
       }
     }
 
-    // 2. Fewer than 4 keyConcepts
-    if (!Array.isArray(node.keyConcepts) || node.keyConcepts.length < 4) {
-      problems.push(`Node ${nodeNum} has fewer than 4 keyConcepts (found ${node.keyConcepts?.length || 0})`);
+    // 2. keyConcepts count
+    if (!Array.isArray(node.keyConcepts) || node.keyConcepts.length < 3 || node.keyConcepts.length > 5) {
+      problems.push(`Node ${nodeNum} must have 3 to 5 keyConcepts (found ${node.keyConcepts?.length || 0})`);
+    }
+
+    const limits = [
+      ['summary', node.summary, 35],
+      ...((Array.isArray(node.keyConcepts) ? node.keyConcepts : []).map((text, i) => [`keyConcepts[${i}]`, text, 15])),
+      ['quiz.question', node.quiz?.question, 25],
+      ...((Array.isArray(node.quiz?.options) ? node.quiz.options : []).map((text, i) => [`quiz.options[${i}]`, text, 10])),
+      ['quiz.explanation', node.quiz?.explanation, 30]
+    ];
+    for (const [field, value, limit] of limits) {
+      const count = wordCount(value);
+      if (count > limit * 1.2) problems.push(`Node ${nodeNum} ${field} exceeds its ${limit}-word limit by more than 20% (${count} words)`);
+    }
+    if (QUIZ_TEMPLATE_REGEX.test(String(node.quiz?.question || ''))) {
+      problems.push(`Node ${nodeNum} quiz.question uses the prohibited mechanics-interaction template`);
     }
 
     // 3. sourceFacts grounding check (skip when extracted text is unavailable)
@@ -62,6 +79,21 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
   });
 
   return problems;
+}
+
+function parseModelJson(content) {
+  const text = String(content || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  return JSON.parse(text);
+}
+
+function getSourcePageText(source, requestedPages) {
+  const parts = String(source || '').split(/(?=---\s*Page\s+\d+\s*---)/i);
+  const wanted = new Set(requestedPages.map(Number));
+  const selected = parts.filter((part) => {
+    const match = part.match(/---\s*Page\s+(\d+)\s*---/i);
+    return match ? wanted.has(Number(match[1])) : wanted.has(1) && parts.length === 1;
+  });
+  return selected.join('\n\n').trim();
 }
 
 /** kebab-case helper */
@@ -291,7 +323,7 @@ function postProcessNodes(rawNodes, documentId) {
       quiz,
       lessonContent: {
         analogy: '',
-        paragraphs: summaryText ? [summaryText] : ['Key concepts from this lecture section.'],
+        paragraphs: summaryText ? [summaryText] : [],
         keyConcepts: Array.isArray(node.keyConcepts) ? node.keyConcepts : []
       }
     };
@@ -598,6 +630,44 @@ export const deleteStudyPath = async (req, res) => {
   } catch (error) {
     console.error('[deleteStudyPath] Error:', error.message);
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/** POST /api/study-path/:topicId/node/:nodeId/regenerate */
+export const regenerateStudyPathNode = async (req, res) => {
+  try {
+    const { topicId, nodeId } = req.params;
+    const pathRecord = await StudyPath.findOne({ topicId });
+    if (!pathRecord) return res.status(404).json({ success: false, message: 'Study path not found' });
+    const userId = req.user?._id?.toString() || req.user?.firebaseUid;
+    if (userId && userId !== pathRecord.userId) return res.status(403).json({ success: false, message: 'Not allowed to update this study path' });
+    const node = pathRecord.nodes.find((item) => item.id === Number(nodeId));
+    if (!node) return res.status(404).json({ success: false, message: 'Study path node not found' });
+    const sourceText = getSourcePageText(pathRecord.extractedText, node.sourcePages || []);
+    if (!sourceText) return res.status(422).json({ success: false, message: 'Source pages are unavailable for this node.' });
+    const apiKey = getEnv('GEMINI_API_KEY');
+    if (!apiKey) return res.status(503).json({ success: false, message: 'Gemini regeneration is not configured on the server.' });
+
+    const prompt = `Regenerate only summary, keyConcepts, and quiz for this study node using only the source pages below. Return JSON with exactly those three fields. summary: at most 35 words, one or two short sentences, what the topic is and why it matters, no list. keyConcepts: 3-5 items, each at most 15 words, starts with its key term in "Term: fact" form, adds details not in the summary, no duplicates. quiz.question: at most 25 words, direct question about one specific source fact; never ask how something interacts with the mechanics of the title. quiz.options: exactly four same-category options, each at most 10 words. quiz.correctAnswerIndex: correct option index 0-3. quiz.explanation: at most 30 words. If the source has more facts than fit, stay concise.\nTitle: ${node.title}\nExisting source facts: ${JSON.stringify(node.sourceFacts || [])}\nSource pages: ${sourceText}`;
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result?.error?.message || `Gemini request failed (${response.status})`);
+    const generated = parseModelJson(result?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join(''));
+    const problems = validateStudyPathNodes([{ ...node.toObject(), ...generated }], sourceText);
+    if (problems.length) return res.status(422).json({ success: false, message: 'Gemini returned content outside the lesson limits.', issues: problems });
+    node.summary = generated.summary;
+    node.keyConcepts = generated.keyConcepts;
+    node.lessonContent.paragraphs = generated.summary ? [generated.summary] : [];
+    node.lessonContent.keyConcepts = generated.keyConcepts;
+    node.quiz = generated.quiz;
+    await pathRecord.save();
+    return res.status(200).json({ success: true, node: node.toObject() });
+  } catch (error) {
+    console.error('[regenerateStudyPathNode] Error:', error.message);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to regenerate this lesson node.' });
   }
 };
 

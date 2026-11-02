@@ -6,7 +6,8 @@ import {
   getUserStudyPaths,
   getStudyPathById,
   updateNodeStatus,
-  deleteStudyPath
+  deleteStudyPath,
+  regenerateStudyPathNode
 } from '../controllers/studyPathController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
@@ -42,6 +43,7 @@ router.get('/user/all', optionalProtect, getUserStudyPaths);
 // GET & PUT & DELETE for specific path
 router.get('/:topicId', optionalProtect, getStudyPathById);
 router.put('/:topicId/node/:nodeId', optionalProtect, updateNodeStatus);
+router.post('/:topicId/node/:nodeId/regenerate', optionalProtect, regenerateStudyPathNode);
 router.delete('/:topicId', optionalProtect, deleteStudyPath);
 
 export default router;

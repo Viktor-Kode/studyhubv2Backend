@@ -93,12 +93,15 @@ HOW TO BUILD NODES
   2. "title": Specific subject in the source material's own words.
   3. "sourcePages": Array of 1-based page numbers for this node (look for '--- Page X ---' markers if present).
   4. "sourceFacts": 4 to 8 short, high-yield items copied from the pages, preserving exact terminology, names, numbers and relationships.
-  5. "summary": 2 concise sentences that connect the facts into one explanation (what it is, how it works, why it matters). Written ONLY from sourceFacts.
-  6. "keyConcepts": 4 items. Each must be a complete, specific, testable statement containing at least one term that appears in sourceFacts.
+  5. "summary": Maximum 35 words in ONE or TWO short sentences. Say what the topic is and why it matters. Do not list items. Use only sourceFacts.
+  6. "keyConcepts": 3 to 5 items. Each is a short fact of at most 15 words, starts with its key term in the form "Term: what it is / does", adds detail absent from the summary, and does not repeat another concept.
   7. "quiz": One multiple-choice question testing a specific fact, formula, or clinical correlation from this node.
+     - "question": At most 25 words; ask directly about one specific fact. Never use the pattern "how does X interact with the mechanics of <title>".
      - "options": Array of 4 plausible options. Draw distractors from OTHER items in the same document (same category as the answer).
+     - Each option is at most 10 words.
      - "correctAnswerIndex": Index (0-3) of the correct answer.
-     - "explanation": Brief explanation of why the answer is correct.
+     - "explanation": At most 30 words explaining why the answer is correct.
+  If more facts need explaining than these limits allow, create another node instead of lengthening the text.
   8. "unit": (optional) Chapter or section heading from the document that this node belongs to. Omit if no clear headings.
 
 IF THE SOURCE IS THIN
@@ -131,25 +134,43 @@ Return a single valid JSON object with EXACTLY this structure:
         "Fifth fact",
         "Sixth fact"
       ],
-      "summary": "2-3 connected sentences explaining this subtopic based only on sourceFacts.",
+      "summary": "At most 35 words, one or two short sentences, describing the topic and why it matters; no lists.",
       "keyConcepts": [
-        "First specific testable statement",
-        "Second specific testable statement",
-        "Third specific testable statement",
-        "Fourth specific testable statement"
+        "Term: concise fact of at most 15 words, adding detail absent from the summary",
+        "Term: another distinct fact of at most 15 words",
+        "Term: another distinct fact of at most 15 words"
       ],
       "quiz": {
-        "question": "Clear multiple choice question?",
+        "question": "Direct question about one specific fact, at most 25 words; never ask how a concept interacts with the mechanics of the node title.",
         "options": ["Option A", "Option B", "Option C", "Option D"],
         "correctAnswerIndex": 0,
-        "explanation": "Why correct and why distractors are wrong."
+        "explanation": "Explanation of at most 30 words."
       }
     }
   ]
 }
 Return valid raw JSON only. Do not wrap in markdown or backticks.`;
 
-export const studyPathResponseSchema = null;
+export const studyPathResponseSchema = {
+  type: 'object', required: ['title', 'nodes'], properties: {
+    title: { type: 'string', description: 'Main topic or course title.' },
+    courseCode: { type: 'string', description: 'Course code when present in the source.' },
+    skippedPages: { type: 'array', items: { type: 'integer' } },
+    nodes: { type: 'array', items: { type: 'object', required: ['id', 'title', 'sourcePages', 'sourceFacts', 'summary', 'keyConcepts', 'quiz'], properties: {
+      id: { type: 'integer', description: 'Sequential node number.' }, title: { type: 'string', description: 'Specific subject in source wording.' },
+      sourcePages: { type: 'array', items: { type: 'integer' }, description: '1-based pages covered by this node.' },
+      sourceFacts: { type: 'array', items: { type: 'string' }, description: '4 to 8 short source-grounded facts.' },
+      summary: { type: 'string', description: 'Maximum 35 words; one or two short sentences saying what the topic is and why it matters; no list.' },
+      keyConcepts: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string', description: 'At most 15 words; start with the key term (Term: what it is/does); add detail absent from summary and other concepts.' } },
+      quiz: { type: 'object', required: ['question', 'options', 'correctAnswerIndex', 'explanation'], properties: {
+        question: { type: 'string', description: 'Direct question on one specific fact, maximum 25 words. Never use the mechanics interaction template.' },
+        options: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string', description: 'One of exactly four same-category answer options, maximum 10 words.' } },
+        correctAnswerIndex: { type: 'integer', minimum: 0, maximum: 3, description: 'Index of the correct option.' },
+        explanation: { type: 'string', description: 'Maximum 30 words.' }
+      } }
+    } } }
+  }
+};
 
 export const studyPathPrompt = (textOrTitle = 'Study Material', title = 'Study Material') => {
   const resolvedTitle = typeof textOrTitle === 'string' && textOrTitle.length < 120 ? textOrTitle : title;
