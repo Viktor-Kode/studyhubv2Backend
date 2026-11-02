@@ -95,6 +95,59 @@ function coveragePct(totalPages, missing) {
 // ─── DeepSeek call ────────────────────────────────────────────────────────────
 
 /**
+ * Safely parses JSON response, with salvage recovery if response was truncated mid-stream.
+ */
+function safeParseJson(rawContent) {
+  let cleaned = (rawContent || '').trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  }
+
+  // 1. Direct parse attempt
+  try {
+    return JSON.parse(cleaned);
+  } catch (initialErr) {
+    console.warn('[generateStudyPath] Direct JSON parse failed, attempting truncation salvage:', initialErr.message);
+  }
+
+  // 2. Salvage truncated JSON (e.g. unterminated string / cut-off array)
+  let lastValidIdx = cleaned.lastIndexOf('}');
+  while (lastValidIdx > 0) {
+    const candidate = cleaned.slice(0, lastValidIdx + 1);
+    let inString = false;
+    let escaped = false;
+    const stack = [];
+    for (let i = 0; i < candidate.length; i++) {
+      const ch = candidate[i];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\') { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (!inString) {
+        if (ch === '{' || ch === '[') stack.push(ch);
+        else if (ch === '}' && stack[stack.length - 1] === '{') stack.pop();
+        else if (ch === ']' && stack[stack.length - 1] === '[') stack.pop();
+      }
+    }
+    if (!inString) {
+      let suffix = '';
+      for (let i = stack.length - 1; i >= 0; i--) {
+        suffix += stack[i] === '{' ? '}' : ']';
+      }
+      try {
+        const parsed = JSON.parse(candidate + suffix);
+        if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length > 0) {
+          console.log(`[generateStudyPath] Successfully salvaged truncated JSON with ${parsed.nodes.length} nodes.`);
+          return parsed;
+        }
+      } catch (_) {}
+    }
+    lastValidIdx = cleaned.lastIndexOf('}', lastValidIdx - 1);
+  }
+
+  throw new Error('AI output was truncated or contained invalid JSON. Please try again.');
+}
+
+/**
  * Calls DeepSeek with extracted document text and returns parsed JSON.
  */
 async function callDeepSeekForStudyPath({
@@ -129,18 +182,13 @@ async function callDeepSeekForStudyPath({
       { role: 'system', content: studyPathSystemPrompt },
       { role: 'user', content: userInstruction }
     ],
-    max_tokens: 4000,
+    max_tokens: 8192,
     temperature: 0.2,
     response_format: { type: 'json_object' }
   });
 
   const content = response.choices?.[0]?.message?.content || '{}';
-  let cleaned = content.trim();
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
-  }
-
-  return JSON.parse(cleaned);
+  return safeParseJson(content);
 }
 
 // ─── coverage-aware generation with retry ─────────────────────────────────────

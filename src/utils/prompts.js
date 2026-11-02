@@ -86,20 +86,20 @@ HOW TO READ THE DOCUMENT
 - Follow the lecture's own order and major sections.
 
 HOW TO BUILD NODES
-- Create as many nodes as the material needs so that every page with instructional content belongs to at least one node. One node = one coherent subtopic that can be studied in 5-9 minutes. As a guide, use roughly 1 node per 1-3 dense pages or 1 node per 3-5 light slides, and always split at the lecture's own section boundaries. Do not merge distinct subtopics to keep the list short. Do not split one subtopic into several nodes just to add count. Skip only pages with no study content (title, agenda, references, thank-you). Every node must cover a different part of the material; no repeats.
+- Group content into 5 to 10 coherent subtopics (nodes) so every instructional page is represented. Do not create excessive nodes; synthesize related slides into 1 node. Skip pages with no study content (title, agenda, thank-you).
 - A node's title is the specific subject of its slides/pages, in the source's own words.
-- For each node, fill fields strictly:
+- For each node, fill fields strictly and concisely:
   1. "id": Sequential integer starting from 1.
   2. "title": Specific subject in the source material's own words.
   3. "sourcePages": Array of 1-based page numbers for this node (look for '--- Page X ---' markers if present).
-  4. "sourceFacts": 6 to 12 short items copied from the pages, preserving exact terminology, names, numbers and table relationships.
-  5. "summary": 2 to 3 sentences that connect the facts into one explanation (what it is, how it relates to neighbouring structures/ideas, why it matters). Written ONLY from sourceFacts.
-  6. "keyConcepts": 4 to 6 items. Each must be a complete, specific, testable statement containing at least one term that appears in sourceFacts.
+  4. "sourceFacts": 4 to 8 short, high-yield items copied from the pages, preserving exact terminology, names, numbers and relationships.
+  5. "summary": 2 concise sentences that connect the facts into one explanation (what it is, how it works, why it matters). Written ONLY from sourceFacts.
+  6. "keyConcepts": 4 items. Each must be a complete, specific, testable statement containing at least one term that appears in sourceFacts.
   7. "quiz": One multiple-choice question testing a specific fact, formula, or clinical correlation from this node.
      - "options": Array of 4 plausible options. Draw distractors from OTHER items in the same document (same category as the answer).
      - "correctAnswerIndex": Index (0-3) of the correct answer.
-     - "explanation": Explain why the answer is correct and, briefly, why the closest distractor is not.
-  8. "unit": (optional) Chapter or section heading from the document that this node belongs to, in the document's own words. Omit if the document has no clear headings.
+     - "explanation": Brief explanation of why the answer is correct.
+  8. "unit": (optional) Chapter or section heading from the document that this node belongs to. Omit if no clear headings.
 
 IF THE SOURCE IS THIN
 - If a section has little content, merge it into a neighbouring node — but only within the same subtopic. Never merge across different subtopics. Never pad with generic filler. Never introduce facts that are not on the pages.

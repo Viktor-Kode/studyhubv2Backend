@@ -57,7 +57,7 @@ async function handleDeepSeekRequest(modelId, messages, max_tokens, temperature,
         const requestParams = {
             model: modelId || "deepseek-chat",
             messages: messages, // DeepSeek maintains history by passing full array
-            max_tokens: max_tokens || 4000,
+            max_tokens: max_tokens || 8192,
             temperature: temperature !== undefined ? temperature : 0.7,
             stream: Boolean(stream),
         };
