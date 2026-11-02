@@ -83,28 +83,72 @@ export const studyPathPrompt = (text, title = 'Study Material') => {
 Material Title: ${title}
 
 Rules:
-1. Break down the material into 4 to 6 sequential learning nodes (steps).
-2. The nodes must progress logically from foundational concepts to advanced application, with the final node being a review / unit assessment.
-3. Every node MUST have:
+1. Break down the material into sequential learning nodes. You MUST create EXACTLY this structure:
+   - Nodes 1 through N-2: Regular learning nodes covering foundational to advanced concepts (3 to 5 nodes)
+   - Node N-1 (second to last): A "Summary & Review" node that summarizes ALL key concepts from all previous nodes
+   - Node N (last): A "Final Assessment" node that contains a comprehensive quiz with 10 multiple-choice questions covering the entire material
+
+2. For regular learning nodes (nodes 1 through N-2), each MUST have:
    - "id": sequential number starting from 1
    - "title": clear, engaging concept title
-   - "xp": 20 for early nodes, up to 50 for the final assessment
-   - "duration": estimated time e.g. "5 min", "8 min", "10 min"
+   - "xp": 20-30 XP
+   - "duration": estimated time e.g. "5 min", "8 min"
    - "summary": 2-3 sentence overview of this node
    - "keyConcepts": array of 3-4 specific concept terms
    - "lessonContent": object with:
        - "analogy": a memorable real-world analogy explaining the concept
        - "paragraphs": array of 2-3 short, clear explanatory paragraphs
        - "keyConcepts": array of 3-4 key concept strings
-   - "quiz": object testing this node with:
-       - "question": realistic multiple-choice question testing the concept
+   - "quiz": object testing fundamental definition of this node with:
+       - "question": realistic multiple-choice question testing the core concept
        - "options": array of 4 distinct answer strings
        - "correctAnswerIndex": index (0-3) of the correct answer
        - "explanation": educational explanation of why the answer is correct
        - "hint": helpful hint without giving away the answer directly
-   - "nextNodeTitle": title of the next node (or null for the last node)
+   - "quiz2": second distinct object testing practical application, scenario, or deeper analysis of this node (MUST NOT repeat quiz 1) with:
+       - "question": realistic multiple-choice application question
+       - "options": array of 4 distinct answer strings
+       - "correctAnswerIndex": index (0-3) of the correct answer
+       - "explanation": educational explanation of why the answer is correct
+       - "hint": helpful hint
+   - "nextNodeTitle": title of the next node
 
-4. Overall structure:
+3. For the Summary & Review node (second to last), it MUST have:
+   - "id": sequential number
+   - "title": "Summary & Review"
+   - "xp": 35
+   - "duration": "8 min"
+   - "isSummary": true
+   - "summary": comprehensive 3-4 sentence summary of the entire topic
+   - "keyConcepts": array of ALL key concepts from every previous node combined
+   - "lessonContent": object with:
+       - "analogy": an overarching analogy tying all concepts together
+       - "paragraphs": array of 3-4 paragraphs reviewing ALL major points from the material
+       - "keyConcepts": combined array of all key concepts
+   - "quiz": single quiz question reviewing overall understanding
+   - "nextNodeTitle": title of the Final Assessment node
+
+4. For the Final Assessment node (last node), it MUST have:
+   - "id": last sequential number
+   - "title": "Final Assessment"
+   - "xp": 100
+   - "duration": "15 min"
+   - "isFinalQuiz": true
+   - "summary": "Complete this 10-question assessment to demonstrate mastery of all concepts."
+   - "keyConcepts": ["Comprehensive Review", "Applied Knowledge", "Critical Thinking"]
+   - "lessonContent": object with:
+       - "analogy": "This is your final exam — like the boss level in a game, it tests everything you have learned."
+       - "paragraphs": ["This assessment covers all concepts from the entire learning path.", "Answer all 10 questions to complete the map and earn maximum XP."]
+       - "keyConcepts": ["Full Mastery", "Comprehensive Assessment"]
+   - "finalQuiz": array of EXACTLY 10 quiz objects, each with:
+       - "question": a unique multiple-choice question covering a different concept from the material
+       - "options": array of 4 distinct answer strings
+       - "correctAnswerIndex": index (0-3) of the correct answer
+       - "explanation": educational explanation
+       - "hint": helpful hint
+   - "nextNodeTitle": null
+
+5. Overall structure:
    - "topicId": URL-safe slug e.g. "custom-topic-${Date.now()}"
    - "title": Main topic/course title based on content
    - "courseCode": Relevant subject/code e.g. "STUDY 101 · Interactive Study Path"
@@ -115,4 +159,4 @@ CRITICAL: Return ONLY raw valid JSON matching this schema. No markdown formattin
 
 Material:
 ${text}`;
-};
+};

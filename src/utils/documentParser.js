@@ -1,9 +1,10 @@
 import { parsePdfBuffer } from './parsePdf.js';
 import mammoth from 'mammoth';
+import { parseOffice } from 'officeparser';
 
 /**
  * Simplified document parser for the backend.
- * Focuses on PDF and DOCX, with robust error handling.
+ * Focuses on PDF, DOCX, PPTX/PPT, and TXT, with robust error handling.
  */
 export const parseDocumentBuffer = async (buffer, originalname, mimetype) => {
   const extension = originalname?.split('.').pop()?.toLowerCase();
@@ -21,9 +22,25 @@ export const parseDocumentBuffer = async (buffer, originalname, mimetype) => {
       return { text: result.value, numpages: 1 };
     }
 
-    // 3. TXT / MD
+    // 3. PPTX / PPT
+    if (extension === 'pptx' || extension === 'ppt' || mime?.includes('powerpoint') || mime?.includes('presentationml')) {
+      const text = await parseOffice(buffer);
+      return { text: text || '', numpages: 1 };
+    }
+
+    // 4. TXT / MD
     if (extension === 'txt' || extension === 'md' || mime?.startsWith('text/')) {
       return { text: buffer.toString('utf8'), numpages: 1 };
+    }
+
+    // Fallback attempt with officeparser for other office formats
+    try {
+      const text = await parseOffice(buffer);
+      if (text && text.trim().length > 0) {
+        return { text, numpages: 1 };
+      }
+    } catch {
+      // Continue to text fallback
     }
 
     // Fallback for everything else: Try to treat as text if small, or error out

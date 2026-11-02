@@ -15,7 +15,7 @@ export const generateNotesSchema = z.object({
 
 // POST /api/ai/generate-quiz
 export const generateQuizSchema = z.object({
-  text: z.string().trim().min(50, 'Text must be at least 50 characters').max(100000).optional(),
+  text: z.string().trim().min(30, 'Text must be at least 30 characters').max(100000).optional(),
   documentId: z.string().trim().optional(),
   subject: z.string().trim().max(100).optional(),
   modelId: z.string().trim().optional(),
@@ -26,6 +26,7 @@ export const generateQuizSchema = z.object({
     .default(5),
   questionType: z.enum(QUESTION_TYPES).optional().default('multiple-choice'),
   fileName: z.string().trim().max(255).optional(),
+  excludeQuestions: z.array(z.string()).optional(),
   forceNew: z.boolean().optional().default(false),
   stream: z.boolean().optional().default(false),
 }).refine((data) => data.text || data.documentId, {

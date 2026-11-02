@@ -1,5 +1,13 @@
 import mongoose from 'mongoose';
 
+const quizItemSchema = new mongoose.Schema({
+  question: { type: String, default: '' },
+  options: [{ type: String }],
+  correctAnswerIndex: { type: Number, default: 0 },
+  explanation: { type: String, default: '' },
+  hint: { type: String, default: '' }
+}, { _id: false });
+
 const learningNodeSchema = new mongoose.Schema({
   id: { type: Number, required: true },
   title: { type: String, required: true },
@@ -13,13 +21,11 @@ const learningNodeSchema = new mongoose.Schema({
     paragraphs: [{ type: String }],
     keyConcepts: [{ type: String }]
   },
-  quiz: {
-    question: { type: String, default: '' },
-    options: [{ type: String }],
-    correctAnswerIndex: { type: Number, default: 0 },
-    explanation: { type: String, default: '' },
-    hint: { type: String, default: '' }
-  },
+  quiz: quizItemSchema,
+  quiz2: quizItemSchema,
+  finalQuiz: [quizItemSchema],
+  isSummary: { type: Boolean, default: false },
+  isFinalQuiz: { type: Boolean, default: false },
   nextNodeTitle: { type: String }
 }, { _id: false });
 

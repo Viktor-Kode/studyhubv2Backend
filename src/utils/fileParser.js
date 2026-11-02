@@ -1,5 +1,6 @@
 import mammoth from 'mammoth';
 import fs from 'fs';
+import { parseOffice } from 'officeparser';
 import { parsePdfBuffer } from './parsePdf.js';
 
 export const parseFile = async (filePath, mimetype) => {
@@ -14,6 +15,11 @@ export const parseFile = async (filePath, mimetype) => {
             mimetype === 'application/msword') {
             const result = await mammoth.extractRawText({ path: filePath });
             return result.value;
+        }
+
+        if (mimetype?.includes('presentation') || mimetype?.includes('powerpoint') || filePath.endsWith('.pptx') || filePath.endsWith('.ppt')) {
+            const text = await parseOffice(filePath);
+            return text || '';
         }
 
         if (mimetype === 'text/plain') {

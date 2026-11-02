@@ -48,6 +48,10 @@ const questionSchema = new mongoose.Schema({
     type: String,
     enum: ['AI', 'manual', 'upload'],
     default: 'manual'
+  },
+  knowledgeDeepDive: {
+    type: String,
+    default: ''
   }
 }, {
   timestamps: true,

@@ -72,7 +72,7 @@ export const generateNotes = async (req, res) => {
     }
   }
 
-  if (!contentToUse || contentToUse.trim().length < 50) {
+  if (!contentToUse || contentToUse.trim().length < 30) {
     return res.status(400).json({
       success: false,
       message: 'Text is too short. Please provide at least 50 characters.'
@@ -245,7 +245,7 @@ export const updateStudyNote = async (req, res) => {
  * Controller to generate quiz questions.
  */
 export const generateQuiz = async (req, res) => {
-  const { text, documentId, subject, modelId, amount = 5, questionType = 'multiple-choice', fileName, forceNew = false, stream = false } = req.body;
+  const { text, documentId, subject, modelId, amount = 5, questionType = 'multiple-choice', fileName, excludeQuestions = [], forceNew = false, stream = false } = req.body;
   const userId = req.user._id;
 
   let cleanSubject = subject;
@@ -284,7 +284,7 @@ export const generateQuiz = async (req, res) => {
     cleanSubject = cleanSubject.substring(0, 57) + "...";
   }
 
-  if (!contentToUse || contentToUse.trim().length < 50) {
+  if (!contentToUse || contentToUse.trim().length < 30) {
     return res.status(400).json({
       success: false,
       message: 'Text is too short. Please provide at least 50 characters.'
@@ -294,7 +294,7 @@ export const generateQuiz = async (req, res) => {
   try {
     const textHash = crypto.createHash('sha256').update(contentToUse.trim().toLowerCase()).digest('hex');
     const existingDoc = await DocumentHash.findOne({ hash: textHash, userId });
-    let excludeQuestionContents = [];
+    let excludeQuestionContents = Array.isArray(excludeQuestions) ? [...excludeQuestions] : [];
 
     const questionCount = Math.min(Math.max(parseInt(amount) || 5, 1), 50);
 
