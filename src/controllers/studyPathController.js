@@ -14,7 +14,7 @@ const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mech
 const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
 const GROUNDING_STOP_WORDS = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'their', 'this', 'to', 'was', 'were', 'with']);
 const BREAKDOWN_FILLER_REGEX = /\b(includes?|covers?|discusses?|overview of|various|several)\b|with specific (?:actions|nerve supply|attachments)/i;
-const BREAKDOWN_CONNECTOR_REGEX = /\b(?:because|so|which means|therefore|by\s|when\s|causes|leads to|allows|results in)\b/i;
+const BREAKDOWN_CONNECTOR_REGEX = /\b(?:because|so|which means|therefore|by\s|when\s|causes|leads to|allows|results in|while|whereas|in contrast|so that|as a result|since)\b/i;
 
 function durationFromLessonText(summary, keyConcepts, breakdown) {
   const text = [summary || '', ...(Array.isArray(keyConcepts) ? keyConcepts : []), ...(Array.isArray(breakdown) ? breakdown.flatMap((slide) => [slide?.heading || '', slide?.body || '', slide?.memoryTip || '']) : [])].join(' ');
@@ -133,16 +133,16 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
     for (const [conceptIndex, concept] of (Array.isArray(node.keyConcepts) ? node.keyConcepts : []).entries()) {
       const text = String(concept || '').trim();
       if (!/^[^:]{1,40}:\s*\S/.test(text)) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must start with its key term in "Term: fact" form.`);
-      const terms = new Set(normalizedWords(text).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
       const detailText = text.includes(':') ? text.slice(text.indexOf(':') + 1) : text;
       const detailTerms = new Set(normalizedWords(detailText).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
       const newDetails = [...detailTerms].filter((term) => !summaryTerms.has(term));
       if (newDetails.length < 1) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must state at least one specific fact detail absent from the summary.`);
       if (conceptDetails.some((previous) => {
-        const shared = [...terms].filter((term) => previous.has(term)).length;
-        return shared / Math.max(1, Math.min(terms.size, previous.size)) >= 0.75;
+        const shared = [...detailTerms].filter((term) => previous.has(term)).length;
+        const union = new Set([...detailTerms, ...previous]).size;
+        return shared >= 3 && shared / Math.max(1, union) >= 0.8;
       })) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] repeats another key concept.`);
-      conceptDetails.push(terms);
+      conceptDetails.push(detailTerms);
     }
 
     const breakdown = Array.isArray(node.breakdown) ? node.breakdown : [];
@@ -392,7 +392,7 @@ async function callDeepSeekForStudyPath({
   userInstruction += `Generate a sequential study path strictly following all system instructions and return as JSON.\n\n`;
 
   if (retryProblems && retryProblems.length > 0) {
-    userInstruction += `Fix these validation issues from previous attempt:\n${retryProblems.map(p => `- ${p}`).join('\n')}\n\n`;
+    userInstruction += `REPAIR THE PREVIOUS STUDY PATH. Return the complete corrected JSON in the same schema. Fix every issue below in the named node and field; do not merely explain the correction. Preserve valid nodes, source facts, source pages, units, and document coverage.\n${retryProblems.map(p => `- ${p}`).join('\n')}\n\nREPAIR RULES:\n- For a short breakdown[0].body, rewrite it to 60-70 words (never below 55), with 3-4 explanatory sentences. Aim comfortably inside the range rather than at its boundary.\n- Slide 1 must explain a mechanism, cause, purpose, or consequence. Include a clear reasoning link in the body such as because, so, which means, while, whereas, or as a result; a bare definition or list of structures is not enough.\n- If key concepts repeat, give each a different fact after the colon; keep overlap between their detail phrases low. Each detail must add information absent from the summary.\n- For copied source wording, paraphrase the sentence from scratch and do not reuse 13 consecutive words from any sourceFact.\n- Every breakdown body must contain 1-3 literal **bold technical terms** and at least four specific terms grounded in that node's sourceFacts. Avoid phrases that introduce lists; explain how structures act or relate.\n- Keep both quiz and quiz2 complete: each needs a distinct question, four options, correctAnswerIndex, and explanation. Never omit quiz2.\n\n`;
   }
 
   // DeepSeek-V3 context window is 64k tokens (~180,000 characters)
@@ -425,40 +425,27 @@ async function callDeepSeekForStudyPath({
 async function generateAndVerify({ rawText, title, totalPages }) {
   let parsedData = await callDeepSeekForStudyPath({ rawText, title, totalPages });
   let validationProblems = validateStudyPathNodes(parsedData?.nodes, rawText);
-
-  const skipped = parsedData?.skippedPages || [];
-  let missing = totalPages > 0
-    ? uncoveredPages(totalPages, parsedData?.nodes || [], skipped)
+  const getMissing = (data) => totalPages > 0
+    ? uncoveredPages(totalPages, data?.nodes || [], data?.skippedPages || [])
     : [];
+  let missing = getMissing(parsedData);
+  let repairIssues = [...validationProblems];
+  if (missing.length) repairIssues.push(`These pages are not covered by any node: ${missing.join(', ')}. Add nodes for them or list them in skippedPages if they have no study content.`);
 
-  const allProblems = [...validationProblems];
-  if (missing.length > 0) {
-    allProblems.push(
-      `These pages are not covered by any node: ${missing.join(', ')}. Add nodes for them or list them in skippedPages if they have no study content.`
-    );
-  }
-
-  if (allProblems.length > 0) {
-    console.warn('[generateStudyPath] Validation issues on initial attempt:', allProblems);
+  for (let attempt = 1; repairIssues.length && attempt <= 2; attempt++) {
+    console.warn(`[generateStudyPath] Validation issues before repair ${attempt}:`, repairIssues);
     try {
-      const retryData = await callDeepSeekForStudyPath({
-        rawText,
-        title,
-        totalPages,
-        retryProblems: allProblems
-      });
-      const retryValidation = validateStudyPathNodes(retryData?.nodes, rawText);
-      const retrySkipped = retryData?.skippedPages || [];
-      const retryMissing = totalPages > 0
-        ? uncoveredPages(totalPages, retryData?.nodes || [], retrySkipped)
-        : [];
-
-      return { parsedData: retryData, validationProblems: retryValidation, uncovered: retryMissing };
+      parsedData = await callDeepSeekForStudyPath({ rawText, title, totalPages, retryProblems: repairIssues });
+      validationProblems = validateStudyPathNodes(parsedData?.nodes, rawText);
+      missing = getMissing(parsedData);
+      repairIssues = [...validationProblems];
+      if (missing.length) repairIssues.push(`These pages are not covered by any node: ${missing.join(', ')}. Add nodes for them or list them in skippedPages if they have no study content.`);
     } catch (retryErr) {
-      console.warn('[generateStudyPath] Retry failed, falling back to initial data:', retryErr.message);
+      console.warn(`[generateStudyPath] Repair ${attempt} failed:`, retryErr.message);
+      repairIssues.push(`Repair ${attempt} failed: ${retryErr.message}`);
+      break;
     }
   }
-
   return { parsedData, validationProblems, uncovered: missing };
 }
 
