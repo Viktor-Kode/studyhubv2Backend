@@ -86,24 +86,38 @@ HOW TO READ THE DOCUMENT
 - Follow the lecture's own order and major sections.
 
 HOW TO BUILD NODES
-- Group content into 5 to 10 coherent subtopics (nodes) so every instructional page is represented. Do not create excessive nodes; synthesize related slides into 1 node. Skip pages with no study content (title, agenda, thank-you).
-- A node's title is the specific subject of its slides/pages, in the source's own words.
+- Make each node ONE narrow subtopic. Split broad sections into separate nodes with distinct, specific titles; do not combine several subtopics in a comma-separated or "A, B and C" title. Keep titles to at most 12 words.
+- Group content so every instructional page is represented. Skip pages with no study content (title, agenda, thank-you).
 - For each node, fill fields strictly and concisely:
   1. "id": Sequential integer starting from 1.
   2. "title": Specific subject in the source material's own words.
   3. "sourcePages": Array of 1-based page numbers for this node (look for '--- Page X ---' markers if present).
   4. "sourceFacts": 4 to 8 short, high-yield items copied from the pages, preserving exact terminology, names, numbers and relationships.
-  5. "summary": Maximum 35 words in ONE or TWO short sentences. Say what the topic is and why it matters. Do not list items. Use only sourceFacts.
-  6. "keyConcepts": 3 to 5 items. Each is a short fact of at most 15 words, starts with its key term in the form "Term: what it is / does", adds detail absent from the summary, and does not repeat another concept.
-  7. "quiz": One multiple-choice question testing a specific fact, formula, or clinical correlation from this node.
+  5. "summary": ONE sentence, at most 25 words. Say what the topic is and why it matters. Do not list items. Use only sourceFacts.
+  6. "breakdown": exactly two explanatory slides that teach this one subtopic, following the TEACHING RULES below.
+  7. "keyConcepts": 3 to 5 recap items. Each is at most 15 words, starts with its key term in the form "Term: what it is / does", and does not copy breakdown sentences word for word.
+  8. "quiz": One multiple-choice question testing a specific fact, formula, or clinical correlation from this node. It must be answerable from the breakdown.
      - "question": At most 25 words; ask directly about one specific fact. Never use the pattern "how does X interact with the mechanics of <title>".
      - "options": Array of 4 plausible options. Draw distractors from OTHER items in the same document (same category as the answer).
      - Each option is at most 10 words.
      - "correctAnswerIndex": Index (0-3) of the correct answer.
      - "explanation": At most 30 words explaining why the answer is correct.
-  8. "quiz2": A second multiple-choice question testing a different specific fact from the same node. Follow all the same question, option, answer-index, and explanation limits as "quiz". Do not repeat or rephrase quiz 1.
+  9. "quiz2": A second multiple-choice question testing a different specific fact from the same node. Follow all the same question, option, answer-index, and explanation limits as "quiz". Do not repeat or rephrase quiz 1.
   If more facts need explaining than these limits allow, create another node instead of lengthening the text.
-  9. "unit": (optional) Chapter or section heading from the document that this node belongs to. Omit if no clear headings.
+  10. "unit": (optional) Chapter or section heading from the document that this node belongs to. Omit if no clear headings.
+
+TEACHING RULES FOR breakdown
+- Write as a patient tutor explaining the topic to a student meeting it for the first time. Explain; do not list facts.
+- Every sentence must add understanding: what it is, how it works, why it happens, or what follows from it.
+- Define each technical term in plain words the first time it appears, using a short clause or parentheses.
+- Show relationships with connecting logic such as because, so, which means, therefore, when X happens Y follows.
+- Use simple everyday words around technical terms and short sentences.
+- Wrap 1 to 3 important technical terms in each body in **double asterisks**. These markers are rendered as emphasis in the lesson UI.
+- You may use a brief plain-language analogy, but never add a fact, number, name, or clinical claim absent from sourceFacts. If unsure, leave it out.
+- Do not use "includes", "covers", "discusses", "overview of", "various", or "several" as the substance. State the actual action, nerve, reason, or consequence.
+- breakdown[0] is the "Understand it" slide: {"heading": specific title of at most 8 words, "body": 3-4 short sentences, 50-80 words}. Explain what the topic is, how it works, and why.
+- breakdown[1] is the "Apply and remember it" slide: {"heading": specific title of at most 8 words, "body": 3-4 short sentences, 40-70 words, "memoryTip": one line of at most 20 words}. Explain a grounded practical consequence, example, or common mistake. The memoryTip is a source-provided mnemonic or, if absent, a simple analogy or memory hook using no new facts.
+- Use at most 8 sourceFacts per node. If more are needed, split the material into separate nodes with distinct specific titles.
 
 IF THE SOURCE IS THIN
 - If a section has little content, merge it into a neighbouring node — but only within the same subtopic. Never merge across different subtopics. Never pad with generic filler. Never introduce facts that are not on the pages.
@@ -135,7 +149,11 @@ Return a single valid JSON object with EXACTLY this structure:
         "Fifth fact",
         "Sixth fact"
       ],
-      "summary": "At most 35 words, one or two short sentences, describing the topic and why it matters; no lists.",
+      "summary": "One sentence, at most 25 words, saying what the topic is and why it matters; no list.",
+      "breakdown": [
+        { "heading": "Specific explanation heading", "body": "Three or four short teaching sentences, 50 to 80 words, explaining what, how, and why. Bold one to three key terms with **markers**." },
+        { "heading": "Specific practical heading", "body": "Three or four short teaching sentences, 40 to 70 words, explaining a source-grounded consequence or example. Bold one to three key terms with **markers**.", "memoryTip": "One short source-grounded memory hook." }
+      ],
       "keyConcepts": [
         "Term: concise fact of at most 15 words, adding detail absent from the summary",
         "Term: another distinct fact of at most 15 words",
@@ -163,12 +181,17 @@ export const studyPathResponseSchema = {
     title: { type: 'string', description: 'Main topic or course title.' },
     courseCode: { type: 'string', description: 'Course code when present in the source.' },
     skippedPages: { type: 'array', items: { type: 'integer' } },
-    nodes: { type: 'array', items: { type: 'object', required: ['id', 'title', 'sourcePages', 'sourceFacts', 'summary', 'keyConcepts', 'quiz', 'quiz2'], properties: {
-      id: { type: 'integer', description: 'Sequential node number.' }, title: { type: 'string', description: 'Specific subject in source wording.' },
+    nodes: { type: 'array', items: { type: 'object', required: ['id', 'title', 'sourcePages', 'sourceFacts', 'summary', 'breakdown', 'keyConcepts', 'quiz', 'quiz2'], properties: {
+      id: { type: 'integer', description: 'Sequential node number.' }, title: { type: 'string', description: 'One narrow, specific subtopic in source wording; at most 12 words; do not combine several subtopics.' },
       sourcePages: { type: 'array', items: { type: 'integer' }, description: '1-based pages covered by this node.' },
-      sourceFacts: { type: 'array', items: { type: 'string' }, description: '4 to 8 short source-grounded facts.' },
-      summary: { type: 'string', description: 'Maximum 35 words; one or two short sentences saying what the topic is and why it matters; no list.' },
-      keyConcepts: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string', description: 'At most 15 words; start with the key term (Term: what it is/does); add detail absent from summary and other concepts.' } },
+      sourceFacts: { type: 'array', maxItems: 8, items: { type: 'string' }, description: 'At most 8 short source-grounded facts for this one narrow subtopic.' },
+      summary: { type: 'string', description: 'Exactly one sentence, maximum 25 words, saying what the topic is and why it matters; no list.' },
+      breakdown: { type: 'array', minItems: 2, maxItems: 2, description: 'Exactly two distinct tutor-like teaching slides, grounded only in sourceFacts.', items: { type: 'object', required: ['heading', 'body'], properties: {
+        heading: { type: 'string', description: 'Specific slide heading, maximum 8 words.' },
+        body: { type: 'string', description: 'Slide 1: 3-4 short sentences, 50-80 words. Slide 2: 3-4 short sentences, 40-70 words. Explain what/how/why or real-world consequence, define technical terms plainly, connect reasoning, use 1-3 **bold** key terms, and do not list facts.' },
+        memoryTip: { type: 'string', description: 'Slide 2 only: one source-grounded mnemonic or analogy/memory hook, maximum 20 words; omit on slide 1.' }
+      } } },
+      keyConcepts: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string', description: 'At most 15 words; start with the key term (Term: what it is/does); add specific detail absent from summary and not repeated by another concept.' } },
       quiz: { type: 'object', required: ['question', 'options', 'correctAnswerIndex', 'explanation'], properties: {
         question: { type: 'string', description: 'Direct question on one specific fact, maximum 25 words. Never use the mechanics interaction template.' },
         options: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string', description: 'One of exactly four same-category answer options, maximum 10 words.' } },

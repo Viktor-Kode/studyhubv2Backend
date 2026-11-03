@@ -3,6 +3,7 @@ import multer from 'multer';
 import rateLimit from 'express-rate-limit';
 import {
   generateStudyPath,
+  getStudyPathJobStatus,
   getActiveStudyPath,
   getUserStudyPaths,
   getStudyPathById,
@@ -52,6 +53,9 @@ const uploadFields = upload.fields([
 // POST /api/generate-path (and /api/study-path)
 router.post('/', optionalProtect, uploadFields, generateStudyPath);
 router.post('/generate', optionalProtect, uploadFields, generateStudyPath);
+
+// Poll a queued/background study path generation.
+router.get('/jobs/:jobId', optionalProtect, getStudyPathJobStatus);
 
 // GET /api/generate-path/active or /api/study-path/active
 router.get('/active', optionalProtect, getActiveStudyPath);

@@ -6,11 +6,21 @@ import { getEnv } from '../config/env.js';
 import aiClient from '../utils/aiClient.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
+import { buildPdfStudyPath } from '../services/studyPathPdfPipeline.js';
+import { createStudyPathJob, getStudyPathJob, serializeStudyPathJob, updateStudyPathJob } from '../services/studyPathJobs.js';
 
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
 const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
 const GROUNDING_STOP_WORDS = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'their', 'this', 'to', 'was', 'were', 'with']);
+const BREAKDOWN_FILLER_REGEX = /\b(includes?|covers?|discusses?|overview of|various|several)\b|with specific (?:actions|nerve supply|attachments)/i;
+const BREAKDOWN_CONNECTOR_REGEX = /\b(?:because|so|which means|therefore|by\s|when\s|causes|leads to|allows|results in)\b/i;
+
+function durationFromLessonText(summary, keyConcepts, breakdown) {
+  const text = [summary || '', ...(Array.isArray(keyConcepts) ? keyConcepts : []), ...(Array.isArray(breakdown) ? breakdown.flatMap((slide) => [slide?.heading || '', slide?.body || '', slide?.memoryTip || '']) : [])].join(' ');
+  const readingWords = wordCount(text);
+  return `${Math.min(9, Math.max(5, Math.ceil(readingWords / 200)))} min`;
+}
 
 function normalizeGroundingText(value) {
   return String(value || '')
@@ -38,6 +48,30 @@ function sourceFactMatches(fact, normalizedSource) {
   return matchedTerms >= requiredMatches;
 }
 
+function normalizedWords(value) {
+  return normalizeGroundingText(String(value || '').replace(/\*\*/g, '')).split(' ').filter(Boolean);
+}
+
+function firstSentence(value) {
+  return String(value || '').trim().split(/(?<=[.!?])\s+/)[0] || '';
+}
+
+function longestSharedRun(left, right) {
+  let longest = 0;
+  let previous = new Array(right.length + 1).fill(0);
+  for (let i = 1; i <= left.length; i++) {
+    const current = new Array(right.length + 1).fill(0);
+    for (let j = 1; j <= right.length; j++) {
+      if (left[i - 1] === right[j - 1]) {
+        current[j] = previous[j - 1] + 1;
+        longest = Math.max(longest, current[j]);
+      }
+    }
+    previous = current;
+  }
+  return longest;
+}
+
 /**
  * Validates generated study path nodes against quality criteria.
  * Enforces at least 1 node, 3-5 keyConcepts, concise fields, no banned filler, grounded sourceFacts.
@@ -53,6 +87,11 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
 
   nodes.forEach((node, index) => {
     const nodeNum = node.id ?? (index + 1);
+    const titleText = String(node.title || '').trim();
+    const sourceFacts = Array.isArray(node.sourceFacts) ? node.sourceFacts : [];
+    if (wordCount(titleText) > 12) problems.push(`Node ${nodeNum} title exceeds 12 words: "${titleText}"`);
+    if (/,\s*[^,]+\s+(?:and|&)\s+/i.test(titleText)) problems.push(`Node ${nodeNum} title appears to combine multiple subtopics: "${titleText}". Split them into distinct nodes.`);
+    if (sourceFacts.length > 8) problems.push(`Node ${nodeNum} has ${sourceFacts.length} sourceFacts; split this broad subtopic into nodes with at most 8 facts.`);
 
     // 1. Banned filler
     const textsToCheck = [
@@ -74,7 +113,6 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
     }
 
     const limits = [
-      ['summary', node.summary, 35],
       ...((Array.isArray(node.keyConcepts) ? node.keyConcepts : []).map((text, i) => [`keyConcepts[${i}]`, text, 15])),
       ['quiz.question', node.quiz?.question, 25],
       ...((Array.isArray(node.quiz?.options) ? node.quiz.options : []).map((text, i) => [`quiz.options[${i}]`, text, 10])),
@@ -86,6 +124,73 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
     for (const [field, value, limit] of limits) {
       const count = wordCount(value);
       if (count > limit * 1.2) problems.push(`Node ${nodeNum} ${field} exceeds its ${limit}-word limit by more than 20% (${count} words)`);
+    }
+    if (wordCount(node.summary) > 25) problems.push(`Node ${nodeNum} summary exceeds its 25-word limit (${wordCount(node.summary)} words).`);
+    const summarySentences = String(node.summary || '').trim().split(/(?<=[.!?])\s+/).filter(Boolean);
+    if (summarySentences.length !== 1) problems.push(`Node ${nodeNum} summary must be one sentence of at most 25 words.`);
+    const summaryTerms = new Set(normalizedWords(node.summary).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
+    const conceptDetails = [];
+    for (const [conceptIndex, concept] of (Array.isArray(node.keyConcepts) ? node.keyConcepts : []).entries()) {
+      const text = String(concept || '').trim();
+      if (!/^[^:]{1,40}:\s*\S/.test(text)) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must start with its key term in "Term: fact" form.`);
+      const terms = new Set(normalizedWords(text).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
+      const newDetails = [...terms].filter((term) => !summaryTerms.has(term));
+      if (newDetails.length < 2) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must add detail absent from the summary.`);
+      if (conceptDetails.some((previous) => {
+        const shared = [...terms].filter((term) => previous.has(term)).length;
+        return shared / Math.max(1, Math.min(terms.size, previous.size)) >= 0.75;
+      })) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] repeats another key concept.`);
+      conceptDetails.push(terms);
+    }
+
+    const breakdown = Array.isArray(node.breakdown) ? node.breakdown : [];
+    if (breakdown.length !== 2) {
+      problems.push(`Node ${nodeNum} breakdown must contain exactly 2 teaching slides.`);
+    } else {
+      const sentenceSets = breakdown.map((slide, slideIndex) => {
+        const label = `breakdown[${slideIndex}]`;
+        const heading = String(slide?.heading || '').trim();
+        const body = String(slide?.body || '').trim();
+        const minWords = slideIndex === 0 ? 50 : 40;
+        const maxWordsWithTolerance = slideIndex === 0 ? 96 : 84;
+        const count = wordCount(body);
+        if (!heading || wordCount(heading) > 8) problems.push(`Node ${nodeNum} ${label}.heading must be specific and at most 8 words.`);
+        if (count < minWords || count > maxWordsWithTolerance) {
+          const sentence = firstSentence(body);
+          problems.push(`Node ${nodeNum} ${label}.body must be ${minWords}-${slideIndex === 0 ? 80 : 70} words (allowing +20% over the maximum); found ${count}. Offending sentence: "${sentence}"`);
+        }
+        if (BREAKDOWN_FILLER_REGEX.test(body)) {
+          const sentence = body.split(/(?<=[.!?])\s+/).find((item) => BREAKDOWN_FILLER_REGEX.test(item)) || body;
+          problems.push(`Node ${nodeNum} ${label}.body uses prohibited listing filler. State the actual explanation. Offending sentence: "${sentence}"`);
+        }
+        if (!/\*\*[^*]+\*\*/.test(body)) {
+          problems.push(`Node ${nodeNum} ${label}.body needs at least one **bold** technical term. Offending sentence: "${firstSentence(body)}"`);
+        }
+        const factTerms = new Set(sourceFacts.flatMap((fact) => normalizedWords(fact)));
+        const groundedTerms = new Set(normalizedWords(body).filter((term) => term.length > 4 && !GROUNDING_STOP_WORDS.has(term) && factTerms.has(term)));
+        if (groundedTerms.size < 4) {
+          problems.push(`Node ${nodeNum} ${label}.body has only ${groundedTerms.size} distinct content words grounded in sourceFacts; at least 4 are required. Offending sentence: "${firstSentence(body)}"`);
+        }
+        const bodyWords = normalizedWords(body);
+        const copiedFact = sourceFacts.find((fact) => longestSharedRun(bodyWords, normalizedWords(fact)) > 12);
+        if (copiedFact) {
+          problems.push(`Node ${nodeNum} ${label}.body copies more than 12 consecutive words from a sourceFact. Rewrite the explanation. Offending sentence: "${firstSentence(body)}"`);
+        }
+        if (slideIndex === 0 && !BREAKDOWN_CONNECTOR_REGEX.test(body)) {
+          problems.push(`Node ${nodeNum} slide 1 only lists facts. Explain how and why with a reasoning connector. Offending sentence: "${firstSentence(body)}"`);
+        }
+        if (slideIndex === 1) {
+          const memoryTip = String(slide?.memoryTip || '').trim();
+          if (!memoryTip || wordCount(memoryTip) > 20) problems.push(`Node ${nodeNum} breakdown[1].memoryTip must be one line of at most 20 words. Offending sentence: "${memoryTip}"`);
+        }
+        return new Set(body.split(/(?<=[.!?])\s+/).map((sentence) => normalizeGroundingText(sentence.replace(/\*\*/g, ''))).filter(Boolean));
+      });
+      for (const sentence of sentenceSets[1]) {
+        if (sentenceSets[0].has(sentence)) {
+          problems.push(`Node ${nodeNum} slide 2 repeats a slide 1 sentence: "${sentence}"`);
+          break;
+        }
+      }
     }
     for (const field of ['quiz', 'quiz2']) {
       const quiz = node[field];
@@ -103,8 +208,10 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
         problems.push(`Node ${nodeNum} ${field}.explanation is missing`);
       }
     }
-    if (QUIZ_TEMPLATE_REGEX.test(String(node.quiz?.question || ''))) {
-      problems.push(`Node ${nodeNum} quiz.question uses the prohibited mechanics-interaction template`);
+    for (const field of ['quiz', 'quiz2']) {
+      if (QUIZ_TEMPLATE_REGEX.test(String(node[field]?.question || ''))) {
+        problems.push(`Node ${nodeNum} ${field}.question uses the prohibited mechanics-interaction template`);
+      }
     }
     if (QUIZ_TEMPLATE_REGEX.test(String(node.quiz2?.question || ''))) {
       problems.push(`Node ${nodeNum} quiz2.question uses the prohibited mechanics-interaction template`);
@@ -115,7 +222,7 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
 
     // 3. sourceFacts grounding check (skip when extracted text is unavailable)
     if (normExtracted.length > 0) {
-      const facts = Array.isArray(node.sourceFacts) ? node.sourceFacts : [];
+        const facts = sourceFacts;
       if (facts.length === 0) {
         problems.push(`Node ${nodeNum} has 0 sourceFacts`);
       } else {
@@ -365,10 +472,13 @@ function postProcessNodes(rawNodes, documentId) {
     const xp = 20 + Math.min(15, sourceFacts.length);
 
     const summaryText = node.summary || '';
-    const keyConceptsText = Array.isArray(node.keyConcepts) ? node.keyConcepts.join(' ') : '';
-    const totalChars = summaryText.length + keyConceptsText.length;
-    const clampedMinutes = Math.min(9, Math.max(5, Math.round(5 + totalChars / 250)));
-    const duration = `${clampedMinutes} min`;
+    const keyConcepts = Array.isArray(node.keyConcepts) ? node.keyConcepts : [];
+    const breakdown = Array.isArray(node.breakdown) ? node.breakdown.map((slide) => ({
+      heading: String(slide?.heading || ''),
+      body: String(slide?.body || ''),
+      ...(slide?.memoryTip ? { memoryTip: String(slide.memoryTip) } : {})
+    })) : [];
+    const duration = durationFromLessonText(summaryText, keyConcepts, breakdown);
 
     const firstPage = sourcePages[0] || 1;
     const slideImage = `/api/slides/${documentId}/page-${firstPage}.png`;
@@ -409,7 +519,8 @@ function postProcessNodes(rawNodes, documentId) {
       sourcePages,
       sourceFacts,
       summary: summaryText,
-      keyConcepts: Array.isArray(node.keyConcepts) ? node.keyConcepts : [],
+      breakdown,
+      keyConcepts,
       quiz,
       quiz2,
       lessonContent: {
@@ -434,7 +545,7 @@ function postProcessNodes(rawNodes, documentId) {
  * POST /api/generate-path
  * Accepts multipart/form-data with a PDF/document or JSON with text
  */
-export const generateStudyPath = async (req, res) => {
+const generateStudyPathLegacy = async (req, res) => {
   try {
     let rawText = '';
     let fileName = '';
@@ -564,10 +675,10 @@ export const generateStudyPath = async (req, res) => {
     }
 
     // Response formatting
-    const isDebug = String(req.query?.debug) === '1';
     const responseNodes = processedNodes.map(node => {
       const nodeCopy = { ...node };
-      if (!isDebug) delete nodeCopy.sourceFacts;
+      // sourceFacts power the collapsed "From your notes" drawer in the lesson.
+      // Keep them in the client payload; they are already part of each node.
       return nodeCopy;
     });
 
@@ -594,6 +705,107 @@ export const generateStudyPath = async (req, res) => {
       message: error.message || 'Failed to process document and generate study path'
     });
   }
+};
+
+function resolveRequestFile(req) {
+  return req.file || (req.files && (req.files.pdf?.[0] || req.files.file?.[0] || req.files.document?.[0]));
+}
+
+async function persistGeneratedPdfPath(req, file, generation) {
+  const fileName = file.originalname || 'document.pdf';
+  const finalTitle = String(generation.title || req.body?.title || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Study Material').trim();
+  const topicId = toKebabCase(finalTitle);
+  const documentId = req.body?.documentId || req.body?.docId || topicId;
+  const processedNodes = postProcessNodes(generation.nodes, documentId);
+  const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
+  const courseCode = generation.courseCode || `${finalTitle.slice(0, 6).toUpperCase()} 101 · Interactive Study Path`;
+  const pathData = {
+    userId,
+    topicId,
+    title: finalTitle,
+    courseCode,
+    currentProgress: 0,
+    nodes: processedNodes,
+    challenge: {},
+    isActive: true,
+    sourceFileName: fileName,
+    extractedText: generation.rawText
+  };
+  const savedRecord = await StudyPath.findOneAndUpdate({ topicId }, { $set: pathData }, {
+    new: true,
+    upsert: true,
+    runValidators: true,
+    setDefaultsOnInsert: true
+  });
+  if (userId && userId !== 'anonymous-user') {
+    await StudyPath.updateMany({ userId, isActive: true, topicId: { $ne: topicId } }, { $set: { isActive: false } }).catch((error) => {
+      console.warn('[studyPathJob] Could not deactivate prior maps:', error.message);
+    });
+    await incrementAIUsage(req.user?._id || userId).catch(() => {});
+    await awardXP(req.user?._id || userId, 'ai_study_path').catch(() => {});
+  }
+  return { topicId, studyPath: formatStudyPathResponse(savedRecord.toObject()) };
+}
+
+async function runPdfStudyPathJob(req, file, job) {
+  try {
+    updateStudyPathJob(job.jobId, { status: 'outline', stage: 'Reading slides... inspecting PDF pages' });
+    const generation = await buildPdfStudyPath({
+      buffer: file.buffer,
+      title: req.body?.title?.trim() || file.originalname?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Study Material',
+      validateNodes: validateStudyPathNodes,
+      onProgress: (progress) => updateStudyPathJob(job.jobId, progress)
+    });
+    updateStudyPathJob(job.jobId, { status: 'writing', stage: 'Saving completed study map...', done: generation.nodes.length, total: generation.nodes.length });
+    const saved = await persistGeneratedPdfPath(req, file, generation);
+    updateStudyPathJob(job.jobId, { status: 'done', stage: 'Study map ready', done: generation.nodes.length, total: generation.nodes.length, topicId: saved.topicId, studyPath: saved.studyPath });
+    console.log(`[studyPathJob] Saved ${saved.topicId}: ${generation.nodes.length} nodes, ${generation.coverage}% page coverage.`);
+  } catch (error) {
+    console.error(`[studyPathJob] PDF generation failed (${job.jobId}):`, error.message);
+    updateStudyPathJob(job.jobId, { status: 'error', stage: 'Study path generation failed', message: error.message || 'Failed to generate a study path.' });
+  }
+}
+
+async function runLegacyStudyPathJob(req, job) {
+  try {
+    updateStudyPathJob(job.jobId, { status: 'writing', stage: 'Building map... generating lesson nodes' });
+    const response = {
+      statusCode: 200,
+      payload: null,
+      status(code) { this.statusCode = code; return this; },
+      json(data) { this.payload = data; return this; }
+    };
+    await generateStudyPathLegacy(req, response);
+    if (response.statusCode >= 400 || !response.payload?.success) {
+      throw new Error(response.payload?.message || 'Failed to generate a study path.');
+    }
+    updateStudyPathJob(job.jobId, {
+      status: 'done', stage: 'Study map ready', done: 1, total: 1,
+      topicId: response.payload.topicId || response.payload.studyPath?.topicId,
+      studyPath: response.payload.studyPath || response.payload.path
+    });
+  } catch (error) {
+    console.error(`[studyPathJob] Legacy generation failed (${job.jobId}):`, error.message);
+    updateStudyPathJob(job.jobId, { status: 'error', stage: 'Study path generation failed', message: error.message || 'Failed to generate a study path.' });
+  }
+}
+
+export const generateStudyPath = async (req, res) => {
+  const file = resolveRequestFile(req);
+  const ownerId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
+  const job = createStudyPathJob(ownerId);
+  res.status(202).json({ success: true, jobId: job.jobId });
+  const isPdf = Boolean(file?.buffer && (file.mimetype?.toLowerCase().includes('pdf') || file.originalname?.toLowerCase().endsWith('.pdf')));
+  if (isPdf) void runPdfStudyPathJob(req, file, job);
+  else void runLegacyStudyPathJob(req, job);
+};
+
+export const getStudyPathJobStatus = async (req, res) => {
+  const job = getStudyPathJob(req.params.jobId);
+  if (!job) return res.status(404).json({ success: false, message: 'Study path job was not found or has expired.' });
+  const requesterId = req.user?._id?.toString() || req.user?.firebaseUid;
+  if (job.ownerId !== 'anonymous-user' && requesterId !== job.ownerId) return res.status(403).json({ success: false, message: 'You are not allowed to view this study path job.' });
+  return res.status(200).json({ success: true, ...serializeStudyPathJob(job) });
 };
 
 /**
@@ -738,12 +950,19 @@ export const regenerateStudyPathNode = async (req, res) => {
     if (!sourceText) return res.status(422).json({ success: false, message: 'Source pages are unavailable for this node.' });
     if (!getEnv('DEEPSEEK_API_KEY')) return res.status(503).json({ success: false, message: 'DeepSeek is not configured on the server.' });
 
-    const prompt = `Regenerate only summary, keyConcepts, quiz, and quiz2 for this study node using only the source pages below. Return JSON with exactly those four fields. summary: at most 35 words, one or two short sentences, what the topic is and why it matters, no list. keyConcepts: 3-5 items, each at most 15 words, starts with its key term in "Term: fact" form, adds details not in the summary, no duplicates. Create two distinct quiz questions on different specific source facts. For each quiz, question: at most 25 words, direct question; never ask how something interacts with the mechanics of the title. options: exactly four same-category options, each at most 10 words. correctAnswerIndex: correct option index 0-3. explanation: at most 30 words. If the source has more facts than fit, stay concise.\nTitle: ${node.title}\nExisting source facts: ${JSON.stringify(node.sourceFacts || [])}\nSource pages: ${sourceText}`;
-    const generated = await callDeepSeekForJson(prompt, { maxTokens: 3000 });
-    const problems = validateStudyPathNodes([{ ...node.toObject(), ...generated }], sourceText);
-    if (problems.length) return res.status(422).json({ success: false, message: 'DeepSeek returned content outside the lesson limits.', issues: problems });
+    const prompt = `Regenerate only summary, breakdown, keyConcepts, quiz, and quiz2 for this node, using only the source pages and sourceFacts below. Return JSON with exactly those five fields. Keep the node to this one narrow subtopic. summary: exactly one sentence, maximum 25 words, what the topic is and why it matters. breakdown: exactly two slides. Slide 1 has heading (maximum 8 words) and body (3-4 short sentences, 50-80 words) explaining what it is, how it works, and why; include a reasoning connector (because, so, which means, therefore, by, when, causes, leads to, allows, or results in). Slide 2 has heading (maximum 8 words), body (3-4 short sentences, 40-70 words) explaining a source-grounded practical consequence, example, or common mistake, and memoryTip (one line, maximum 20 words). Both bodies must teach rather than list, define technical terms plainly the first time, use simple language and short sentences, and mark 1-3 important terms with **double asterisks**. At least four distinct content words over four letters in each body must occur in sourceFacts. Do not copy more than 12 consecutive words from any sourceFact. Slide 2 must not repeat any slide 1 sentence. Never use includes, covers, discusses, overview of, various, several, or "with specific actions/nerve supply/attachments" as the substance. Never add facts, names, numbers, or clinical claims beyond sourceFacts. keyConcepts: 3-5 recap items of at most 15 words each, starting "Term: fact" and not copying breakdown sentences. Create two distinct quiz questions answerable from breakdown and grounded in different source facts. For each quiz, question at most 25 words, four same-category options at most 10 words each, correctAnswerIndex 0-3, explanation at most 30 words.\nTitle: ${node.title}\nExisting source facts: ${JSON.stringify(node.sourceFacts || [])}\nSource pages: ${sourceText}`;
+    let generated = await callDeepSeekForJson(prompt, { maxTokens: 4000 });
+    let problems = validateStudyPathNodes([{ ...node.toObject(), ...generated }], sourceText);
+    if (problems.length) {
+      const retryPrompt = `${prompt}\n\nYour previous answer failed these validation checks. Fix every issue, especially any quoted offending sentence, and return the same JSON fields only:\n${problems.map((problem) => `- ${problem}`).join('\n')}`;
+      generated = await callDeepSeekForJson(retryPrompt, { maxTokens: 4000 });
+      problems = validateStudyPathNodes([{ ...node.toObject(), ...generated }], sourceText);
+    }
+    if (problems.length) return res.status(422).json({ success: false, message: 'DeepSeek returned content outside the lesson limits after retry.', issues: problems });
     node.summary = generated.summary;
+    node.breakdown = generated.breakdown;
     node.keyConcepts = generated.keyConcepts;
+    node.duration = durationFromLessonText(generated.summary, generated.keyConcepts, generated.breakdown);
     node.lessonContent.paragraphs = generated.summary ? [generated.summary] : [];
     node.lessonContent.keyConcepts = generated.keyConcepts;
     node.quiz = generated.quiz;

@@ -8,6 +8,12 @@ const quizItemSchema = new mongoose.Schema({
   hint: { type: String, default: '' }
 }, { _id: false });
 
+const breakdownSlideSchema = new mongoose.Schema({
+  heading: { type: String, default: '' },
+  body: { type: String, default: '' },
+  memoryTip: { type: String, default: '' }
+}, { _id: false });
+
 const learningNodeSchema = new mongoose.Schema({
   id: { type: Number, required: true },
   title: { type: String, required: true },
@@ -19,6 +25,7 @@ const learningNodeSchema = new mongoose.Schema({
   sourcePages: [{ type: Number }],
   sourceFacts: [{ type: String }],
   summary: { type: String, default: '' },
+  breakdown: { type: [breakdownSlideSchema], default: [] },
   keyConcepts: [{ type: String }],
   lessonContent: {
     analogy: { type: String, default: '' },
