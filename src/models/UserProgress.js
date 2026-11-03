@@ -20,6 +20,8 @@ const userProgressSchema = new mongoose.Schema({
     weekStart: { type: String, default: null },
     dailyXP: { type: Number, default: 0 },
     dayStart: { type: String, default: null },
+    dailyGoalTarget: { type: Number, default: 50 },
+    weekDaysActive: { type: [Number], default: [] },
     totalCBTDone: { type: Number, default: 0 },
     totalQuestionsAnswered: { type: Number, default: 0 },
     totalTopicsStudied: { type: Number, default: 0 },

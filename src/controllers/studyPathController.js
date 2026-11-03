@@ -1748,6 +1748,7 @@ export const updateNodeStatus = async (req, res) => {
 
     const nodeIndex = pathRecord.nodes.findIndex(n => n.id === targetId);
     if (nodeIndex !== -1) {
+      const prevStatus = pathRecord.nodes[nodeIndex].status;
       pathRecord.nodes[nodeIndex].status = status;
 
       if (status === 'completed' && nodeIndex + 1 < pathRecord.nodes.length) {
@@ -1758,6 +1759,14 @@ export const updateNodeStatus = async (req, res) => {
 
       pathRecord.currentProgress = pathRecord.nodes.filter(n => n.status === 'completed').length;
       await pathRecord.save();
+
+      if (status === 'completed' && prevStatus !== 'completed') {
+        const userId = req.user?._id || pathRecord.userId;
+        if (userId && userId !== 'anonymous-user') {
+          const xpAmt = pathRecord.nodes[nodeIndex]?.xp || 15;
+          await awardXP(userId, xpAmt).catch(() => {});
+        }
+      }
     }
 
     return res.status(200).json({

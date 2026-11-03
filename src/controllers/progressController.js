@@ -74,12 +74,23 @@ export const awardXP = async (userId, action, metadata = {}) => {
         if (progress.weekStart !== weekStart) {
             progress.weeklyXP = 0;
             progress.weekStart = weekStart;
+            progress.weekDaysActive = [];
         }
 
         const todayStr = now.toISOString().split('T')[0];
         if (progress.dayStart !== todayStr) {
             progress.dailyXP = 0;
             progress.dayStart = todayStr;
+        }
+
+        // Track active day of week (0=Mon ... 6=Sun)
+        const jsDay = now.getDay();
+        const dayIndex = (jsDay + 6) % 7;
+        if (!Array.isArray(progress.weekDaysActive)) {
+            progress.weekDaysActive = [];
+        }
+        if (!progress.weekDaysActive.includes(dayIndex)) {
+            progress.weekDaysActive.push(dayIndex);
         }
 
         if (action === 'daily_login') {
@@ -141,8 +152,60 @@ export const getMyProgress = async (req, res) => {
             progress = new UserProgress({ userId });
             await progress.save();
         }
+
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        const weekStart = getWeekStart(now);
+        let modified = false;
+
+        if (progress.weekStart !== weekStart) {
+            progress.weeklyXP = 0;
+            progress.weekStart = weekStart;
+            progress.weekDaysActive = [];
+            modified = true;
+        }
+
+        if (progress.dayStart !== todayStr) {
+            progress.dailyXP = 0;
+            progress.dayStart = todayStr;
+            modified = true;
+        }
+
+        // If user already has streak active or login recorded today, ensure today is marked active
+        const jsDay = now.getDay();
+        const dayIndex = (jsDay + 6) % 7;
+        if (!Array.isArray(progress.weekDaysActive)) {
+            progress.weekDaysActive = [];
+            modified = true;
+        }
+        if (progress.lastLoginDate === todayStr && !progress.weekDaysActive.includes(dayIndex)) {
+            progress.weekDaysActive.push(dayIndex);
+            modified = true;
+        }
+
+        if (modified) {
+            await progress.save();
+        }
+
         const levelInfo = getLevelFromXP(progress.xp);
         res.json({ ...progress.toObject(), levelInfo });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+export const updateDailyGoalTarget = async (req, res) => {
+    try {
+        const userId = String(req.user._id);
+        const { dailyGoalTarget } = req.body;
+        const target = Math.max(10, Math.min(500, Number(dailyGoalTarget) || 50));
+        let progress = await UserProgress.findOne({ userId });
+        if (!progress) {
+            progress = new UserProgress({ userId });
+        }
+        progress.dailyGoalTarget = target;
+        await progress.save();
+        res.json({ success: true, dailyGoalTarget: progress.dailyGoalTarget });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -211,8 +274,6 @@ export const getLeaderboard = async (req, res) => {
             const u = userMap[p.userId];
             if (!u) continue;
             if (u.role === 'admin') continue;
-
-
 
             rows.push({
                 userId: p.userId,
