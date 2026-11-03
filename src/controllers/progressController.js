@@ -66,8 +66,21 @@ export const awardXP = async (userId, action, metadata = {}) => {
         let xpToAdd = typeof action === 'number' ? action : (metadata?.amount != null ? metadata.amount : (XP_REWARDS[action] || 0));
         if (!xpToAdd) return null;
 
-        let progress = await UserProgress.findOne({ userId });
-        if (!progress) progress = new UserProgress({ userId });
+        let targetUserId = String(userId);
+        let progress = await UserProgress.findOne({ userId: targetUserId });
+        if (!progress) {
+            const userDoc = await User.findOne({
+                $or: [
+                    { firebaseUid: targetUserId },
+                    ...(mongoose.Types.ObjectId.isValid(targetUserId) ? [{ _id: targetUserId }] : [])
+                ]
+            });
+            if (userDoc) {
+                targetUserId = String(userDoc._id);
+                progress = await UserProgress.findOne({ userId: targetUserId });
+            }
+        }
+        if (!progress) progress = new UserProgress({ userId: targetUserId });
 
         const now = new Date();
         const weekStart = getWeekStart(now);
@@ -148,6 +161,13 @@ export const getMyProgress = async (req, res) => {
     try {
         const userId = String(req.user._id);
         let progress = await UserProgress.findOne({ userId });
+        if (!progress && req.user?.firebaseUid) {
+            progress = await UserProgress.findOne({ userId: req.user.firebaseUid });
+            if (progress) {
+                progress.userId = userId;
+                await progress.save();
+            }
+        }
         if (!progress) {
             progress = new UserProgress({ userId });
             await progress.save();
@@ -227,7 +247,8 @@ export const awardXPEndpoint = async (req, res) => {
 
 export const getLeaderboard = async (req, res) => {
     try {
-        const { timeframe = 'today' } = req.query;
+        const requestedTimeframe = String(req.query.timeframe || 'today');
+        const timeframe = ['today', 'lifetime'].includes(requestedTimeframe) ? requestedTimeframe : 'today';
         let sortField = 'dailyXP';
         let query = {};
         let limit = 80;
@@ -281,6 +302,9 @@ export const getLeaderboard = async (req, res) => {
                 name: u.name || 'Anonymous',
                 avatar: u.avatar || u.profile?.avatar || null,
                 displayXP: p[sortField] || 0,
+                dailyXP: p.dailyXP || 0,
+                weeklyXP: p.weeklyXP || 0,
+                totalXP: p.xp || 0,
                 level: p.level,
                 levelName: p.levelName,
                 badges: (p.badges || []).slice(-3),
@@ -296,18 +320,38 @@ export const getLeaderboard = async (req, res) => {
         }));
 
         const myEntry = leaderboard.find((l) => l.userId === userId);
-        const myRank = myEntry ? myEntry.rank : 0;
+
+        const myProgress = await UserProgress.findOne({ userId });
+        const todayStr = new Date().toISOString().split('T')[0];
+        const progressIsCurrent = timeframe === 'today'
+            ? myProgress?.dayStart === todayStr
+            : true;
+        const myDisplayXP = progressIsCurrent ? (myProgress?.[sortField] || 0) : 0;
+
+        let myRank = myEntry?.rank || 0;
+        if (myProgress && myRank === 0) {
+            const higherProgress = await UserProgress.find({ ...query, [sortField]: { $gt: myDisplayXP } })
+                .select('userId')
+                .lean();
+            const higherIds = [...new Set(higherProgress.map((p) => p.userId).filter(Boolean))]
+                .map((id) => {
+                    try { return new mongoose.Types.ObjectId(id); } catch { return null; }
+                })
+                .filter(Boolean);
+            const higherStudents = higherIds.length
+                ? await User.countDocuments({ _id: { $in: higherIds }, role: { $ne: 'admin' } })
+                : 0;
+            myRank = higherStudents + 1;
+        }
 
         if (myRank > 0 && myRank <= 10) {
             await tryGrantTop10Badge(userId, myRank);
         }
 
-        const myProgress = await UserProgress.findOne({ userId });
-
         res.json({
             leaderboard,
             myRank,
-            myDisplayXP: myProgress?.[sortField] || 0,
+            myDisplayXP,
         });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -1102,26 +1102,23 @@ export const getStudyPathJobStatus = async (req, res) => {
  */
 export const getActiveStudyPath = async (req, res) => {
   try {
-    const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.query?.userId;
+    const userMongoId = req.user?._id?.toString();
+    const userFirebaseId = req.user?.firebaseUid;
+    const userQueryId = req.query?.userId;
+    const userIds = [userMongoId, userFirebaseId, userQueryId].filter(id => id && id !== 'anonymous-user');
 
-    if (!userId || userId === 'anonymous-user') {
+    if (userIds.length === 0) {
       return res.status(200).json({ success: true, studyPath: null, message: 'No authenticated user session' });
     }
 
-    const activeRecord = await StudyPath.findOne({ userId, isActive: true }).sort({ updatedAt: -1 }).lean();
+    const activeRecord = await StudyPath.findOne({ userId: { $in: userIds }, isActive: true }).sort({ updatedAt: -1 }).lean();
 
     if (!activeRecord) {
-      const recent = await StudyPath.findOne({ userId }).sort({ updatedAt: -1 }).lean();
+      const recent = await StudyPath.findOne({ userId: { $in: userIds } }).sort({ updatedAt: -1 }).lean();
       if (recent) {
         return res.status(200).json({
           success: true,
-          studyPath: {
-            topicId: recent.topicId,
-            title: recent.title,
-            courseCode: recent.courseCode,
-            currentProgress: recent.currentProgress || 0,
-            nodes: recent.nodes
-          }
+          studyPath: formatStudyPathResponse(recent)
         });
       }
       return res.status(200).json({ success: true, studyPath: null });
@@ -1129,13 +1126,7 @@ export const getActiveStudyPath = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      studyPath: {
-        topicId: activeRecord.topicId,
-        title: activeRecord.title,
-        courseCode: activeRecord.courseCode,
-        currentProgress: activeRecord.currentProgress || 0,
-        nodes: activeRecord.nodes
-      }
+      studyPath: formatStudyPathResponse(activeRecord)
     });
 
   } catch (error) {
@@ -1158,13 +1149,7 @@ export const getStudyPathById = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      studyPath: {
-        topicId: pathRecord.topicId,
-        title: pathRecord.title,
-        courseCode: pathRecord.courseCode,
-        currentProgress: pathRecord.currentProgress || 0,
-        nodes: pathRecord.nodes
-      }
+      studyPath: formatStudyPathResponse(pathRecord)
     });
 
   } catch (error) {
@@ -1178,23 +1163,20 @@ export const getStudyPathById = async (req, res) => {
  */
 export const getUserStudyPaths = async (req, res) => {
   try {
-    const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.query?.userId;
+    const userMongoId = req.user?._id?.toString();
+    const userFirebaseId = req.user?.firebaseUid;
+    const userQueryId = req.query?.userId;
+    const userIds = [userMongoId, userFirebaseId, userQueryId].filter(id => id && id !== 'anonymous-user');
 
-    if (!userId || userId === 'anonymous-user') {
+    if (userIds.length === 0) {
       return res.status(200).json({ success: true, studyPaths: [] });
     }
 
-    const paths = await StudyPath.find({ userId }).sort({ updatedAt: -1 }).lean();
+    const paths = await StudyPath.find({ userId: { $in: userIds } }).sort({ updatedAt: -1 }).lean();
 
     return res.status(200).json({
       success: true,
-      studyPaths: paths.map(p => ({
-        topicId: p.topicId,
-        title: p.title,
-        courseCode: p.courseCode,
-        currentProgress: p.currentProgress || 0,
-        nodes: p.nodes
-      }))
+      studyPaths: paths.map(p => formatStudyPathResponse(p))
     });
   } catch (error) {
     console.error('[getUserStudyPaths] Error:', error.message);
@@ -1714,10 +1696,19 @@ export const submitChallenge = async (req, res) => {
     const pathRecord = await StudyPath.findOne({ topicId });
     if (!pathRecord) return res.status(404).json({ success: false, message: "Study path not found" });
 
-    const userId = req.user?._id?.toString() || req.user?.firebaseUid;
-    if (userId && userId !== "anonymous-user" && pathRecord.userId && pathRecord.userId !== "anonymous-user" && userId !== pathRecord.userId) {
+    const userMongoId = req.user?._id?.toString();
+    const userFirebaseId = req.user?.firebaseUid;
+    const isOwner = !pathRecord.userId ||
+      pathRecord.userId === "anonymous-user" ||
+      (!userMongoId && !userFirebaseId) ||
+      pathRecord.userId === userMongoId ||
+      pathRecord.userId === userFirebaseId;
+
+    if (!isOwner) {
       return res.status(403).json({ success: false, message: "Not allowed to submit this challenge" });
     }
+
+    const effectiveUserId = userMongoId || userFirebaseId || (pathRecord.userId !== "anonymous-user" ? pathRecord.userId : null);
 
     const storedQuestions = pathRecord.challenge?.questions;
     if (!Array.isArray(storedQuestions) || storedQuestions.length !== TOTAL_CHALLENGE_QUESTIONS) {
@@ -1794,9 +1785,9 @@ export const submitChallenge = async (req, res) => {
 
     await pathRecord.save();
 
-    if (xpAwarded > 0 && userId && userId !== "anonymous-user") {
+    if (xpAwarded > 0 && effectiveUserId && effectiveUserId !== "anonymous-user") {
       try {
-        await awardXP(userId, "unit_challenge", { amount: xpAwarded });
+        await awardXP(userMongoId || effectiveUserId, "unit_challenge", { amount: xpAwarded });
       } catch (xpErr) {
         console.warn("[submitChallenge] Failed to award XP:", xpErr.message);
       }
@@ -1812,7 +1803,8 @@ export const submitChallenge = async (req, res) => {
       xpAwarded,
       maxXp: MAX_CHALLENGE_XP,
       missedNodeIds,
-      perQuestion
+      perQuestion,
+      studyPath: formatStudyPathResponse(pathRecord.toObject())
     });
   } catch (error) {
     console.error("[submitChallenge] Error:", error.message);
@@ -1826,8 +1818,15 @@ export const retryChallenge = async (req, res) => {
     const pathRecord = await StudyPath.findOne({ topicId });
     if (!pathRecord) return res.status(404).json({ success: false, message: "Study path not found" });
 
-    const userId = req.user?._id?.toString() || req.user?.firebaseUid;
-    if (userId && userId !== "anonymous-user" && pathRecord.userId && pathRecord.userId !== "anonymous-user" && userId !== pathRecord.userId) {
+    const userMongoId = req.user?._id?.toString();
+    const userFirebaseId = req.user?.firebaseUid;
+    const isOwner = !pathRecord.userId ||
+      pathRecord.userId === "anonymous-user" ||
+      (!userMongoId && !userFirebaseId) ||
+      pathRecord.userId === userMongoId ||
+      pathRecord.userId === userFirebaseId;
+
+    if (!isOwner) {
       return res.status(403).json({ success: false, message: "Not allowed to retry this challenge" });
     }
 
@@ -1919,13 +1918,7 @@ export const updateNodeStatus = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      studyPath: {
-        topicId: pathRecord.topicId,
-        title: pathRecord.title,
-        courseCode: pathRecord.courseCode,
-        currentProgress: pathRecord.currentProgress,
-        nodes: pathRecord.nodes
-      }
+      studyPath: formatStudyPathResponse(pathRecord.toObject ? pathRecord.toObject() : pathRecord)
     });
 
   } catch (error) {
