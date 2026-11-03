@@ -78,14 +78,39 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
       ...((Array.isArray(node.keyConcepts) ? node.keyConcepts : []).map((text, i) => [`keyConcepts[${i}]`, text, 15])),
       ['quiz.question', node.quiz?.question, 25],
       ...((Array.isArray(node.quiz?.options) ? node.quiz.options : []).map((text, i) => [`quiz.options[${i}]`, text, 10])),
-      ['quiz.explanation', node.quiz?.explanation, 30]
+      ['quiz.explanation', node.quiz?.explanation, 30],
+      ['quiz2.question', node.quiz2?.question, 25],
+      ...((Array.isArray(node.quiz2?.options) ? node.quiz2.options : []).map((text, i) => [`quiz2.options[${i}]`, text, 10])),
+      ['quiz2.explanation', node.quiz2?.explanation, 30]
     ];
     for (const [field, value, limit] of limits) {
       const count = wordCount(value);
       if (count > limit * 1.2) problems.push(`Node ${nodeNum} ${field} exceeds its ${limit}-word limit by more than 20% (${count} words)`);
     }
+    for (const field of ['quiz', 'quiz2']) {
+      const quiz = node[field];
+      if (!quiz || typeof quiz.question !== 'string' || !quiz.question.trim()) {
+        problems.push(`Node ${nodeNum} is missing ${field}.question`);
+        continue;
+      }
+      if (!Array.isArray(quiz.options) || quiz.options.length !== 4 || quiz.options.some((option) => typeof option !== 'string' || !option.trim())) {
+        problems.push(`Node ${nodeNum} ${field}.options must contain exactly 4 non-empty options`);
+      }
+      if (!Number.isInteger(quiz.correctAnswerIndex) || quiz.correctAnswerIndex < 0 || quiz.correctAnswerIndex > 3) {
+        problems.push(`Node ${nodeNum} ${field}.correctAnswerIndex must be from 0 to 3`);
+      }
+      if (typeof quiz.explanation !== 'string' || !quiz.explanation.trim()) {
+        problems.push(`Node ${nodeNum} ${field}.explanation is missing`);
+      }
+    }
     if (QUIZ_TEMPLATE_REGEX.test(String(node.quiz?.question || ''))) {
       problems.push(`Node ${nodeNum} quiz.question uses the prohibited mechanics-interaction template`);
+    }
+    if (QUIZ_TEMPLATE_REGEX.test(String(node.quiz2?.question || ''))) {
+      problems.push(`Node ${nodeNum} quiz2.question uses the prohibited mechanics-interaction template`);
+    }
+    if (node.quiz?.question && node.quiz2?.question && tokenJaccardSimilarity(node.quiz.question, node.quiz2.question) > 0.55) {
+      problems.push(`Node ${nodeNum} quiz2 repeats quiz.question`);
     }
 
     // 3. sourceFacts grounding check (skip when extracted text is unavailable)
@@ -341,27 +366,29 @@ function postProcessNodes(rawNodes, documentId) {
 
     const status = index === 0 ? 'active' : 'locked';
 
-    // Shuffle quiz options
-    const rawQuiz = node.quiz || {};
-    let options = Array.isArray(rawQuiz.options) ? [...rawQuiz.options] : [];
-    let correctIdx = typeof rawQuiz.correctAnswerIndex === 'number' ? rawQuiz.correctAnswerIndex : 0;
-    if (options.length > 0) {
-      if (correctIdx < 0 || correctIdx >= options.length) correctIdx = 0;
-      const targetOption = options[correctIdx];
-      for (let i = options.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [options[i], options[j]] = [options[j], options[i]];
+    const formatQuiz = (rawQuiz = {}) => {
+      let options = Array.isArray(rawQuiz.options) ? [...rawQuiz.options] : [];
+      let correctIdx = typeof rawQuiz.correctAnswerIndex === 'number' ? rawQuiz.correctAnswerIndex : 0;
+      if (options.length > 0) {
+        if (correctIdx < 0 || correctIdx >= options.length) correctIdx = 0;
+        const targetOption = options[correctIdx];
+        for (let i = options.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [options[i], options[j]] = [options[j], options[i]];
+        }
+        const newIdx = options.indexOf(targetOption);
+        correctIdx = newIdx >= 0 ? newIdx : 0;
       }
-      const newIdx = options.indexOf(targetOption);
-      correctIdx = newIdx >= 0 ? newIdx : 0;
-    }
-
-    const quiz = {
-      question: rawQuiz.question || '',
-      options,
-      correctAnswerIndex: correctIdx,
-      explanation: rawQuiz.explanation || ''
+      return {
+        question: rawQuiz.question || '',
+        options,
+        correctAnswerIndex: correctIdx,
+        explanation: rawQuiz.explanation || ''
+      };
     };
+
+    const quiz = formatQuiz(node.quiz);
+    const quiz2 = formatQuiz(node.quiz2);
 
     const result = {
       id: typeof node.id === 'number' ? node.id : index + 1,
@@ -375,6 +402,7 @@ function postProcessNodes(rawNodes, documentId) {
       summary: summaryText,
       keyConcepts: Array.isArray(node.keyConcepts) ? node.keyConcepts : [],
       quiz,
+      quiz2,
       lessonContent: {
         analogy: '',
         paragraphs: summaryText ? [summaryText] : [],
@@ -701,7 +729,7 @@ export const regenerateStudyPathNode = async (req, res) => {
     if (!sourceText) return res.status(422).json({ success: false, message: 'Source pages are unavailable for this node.' });
     if (!getEnv('DEEPSEEK_API_KEY')) return res.status(503).json({ success: false, message: 'DeepSeek is not configured on the server.' });
 
-    const prompt = `Regenerate only summary, keyConcepts, and quiz for this study node using only the source pages below. Return JSON with exactly those three fields. summary: at most 35 words, one or two short sentences, what the topic is and why it matters, no list. keyConcepts: 3-5 items, each at most 15 words, starts with its key term in "Term: fact" form, adds details not in the summary, no duplicates. quiz.question: at most 25 words, direct question about one specific source fact; never ask how something interacts with the mechanics of the title. quiz.options: exactly four same-category options, each at most 10 words. quiz.correctAnswerIndex: correct option index 0-3. quiz.explanation: at most 30 words. If the source has more facts than fit, stay concise.\nTitle: ${node.title}\nExisting source facts: ${JSON.stringify(node.sourceFacts || [])}\nSource pages: ${sourceText}`;
+    const prompt = `Regenerate only summary, keyConcepts, quiz, and quiz2 for this study node using only the source pages below. Return JSON with exactly those four fields. summary: at most 35 words, one or two short sentences, what the topic is and why it matters, no list. keyConcepts: 3-5 items, each at most 15 words, starts with its key term in "Term: fact" form, adds details not in the summary, no duplicates. Create two distinct quiz questions on different specific source facts. For each quiz, question: at most 25 words, direct question; never ask how something interacts with the mechanics of the title. options: exactly four same-category options, each at most 10 words. correctAnswerIndex: correct option index 0-3. explanation: at most 30 words. If the source has more facts than fit, stay concise.\nTitle: ${node.title}\nExisting source facts: ${JSON.stringify(node.sourceFacts || [])}\nSource pages: ${sourceText}`;
     const generated = await callDeepSeekForJson(prompt, { maxTokens: 3000 });
     const problems = validateStudyPathNodes([{ ...node.toObject(), ...generated }], sourceText);
     if (problems.length) return res.status(422).json({ success: false, message: 'DeepSeek returned content outside the lesson limits.', issues: problems });
@@ -710,6 +738,7 @@ export const regenerateStudyPathNode = async (req, res) => {
     node.lessonContent.paragraphs = generated.summary ? [generated.summary] : [];
     node.lessonContent.keyConcepts = generated.keyConcepts;
     node.quiz = generated.quiz;
+    node.quiz2 = generated.quiz2;
     if (pathRecord.challenge) pathRecord.challenge.stale = true;
     await pathRecord.save();
     return res.status(200).json({ success: true, node: node.toObject() });

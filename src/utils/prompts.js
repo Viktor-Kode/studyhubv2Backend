@@ -101,8 +101,9 @@ HOW TO BUILD NODES
      - Each option is at most 10 words.
      - "correctAnswerIndex": Index (0-3) of the correct answer.
      - "explanation": At most 30 words explaining why the answer is correct.
+  8. "quiz2": A second multiple-choice question testing a different specific fact from the same node. Follow all the same question, option, answer-index, and explanation limits as "quiz". Do not repeat or rephrase quiz 1.
   If more facts need explaining than these limits allow, create another node instead of lengthening the text.
-  8. "unit": (optional) Chapter or section heading from the document that this node belongs to. Omit if no clear headings.
+  9. "unit": (optional) Chapter or section heading from the document that this node belongs to. Omit if no clear headings.
 
 IF THE SOURCE IS THIN
 - If a section has little content, merge it into a neighbouring node — but only within the same subtopic. Never merge across different subtopics. Never pad with generic filler. Never introduce facts that are not on the pages.
@@ -145,6 +146,12 @@ Return a single valid JSON object with EXACTLY this structure:
         "options": ["Option A", "Option B", "Option C", "Option D"],
         "correctAnswerIndex": 0,
         "explanation": "Explanation of at most 30 words."
+      },
+      "quiz2": {
+        "question": "A different direct question about another specific fact.",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "correctAnswerIndex": 0,
+        "explanation": "Explanation of at most 30 words."
       }
     }
   ]
@@ -156,7 +163,7 @@ export const studyPathResponseSchema = {
     title: { type: 'string', description: 'Main topic or course title.' },
     courseCode: { type: 'string', description: 'Course code when present in the source.' },
     skippedPages: { type: 'array', items: { type: 'integer' } },
-    nodes: { type: 'array', items: { type: 'object', required: ['id', 'title', 'sourcePages', 'sourceFacts', 'summary', 'keyConcepts', 'quiz'], properties: {
+    nodes: { type: 'array', items: { type: 'object', required: ['id', 'title', 'sourcePages', 'sourceFacts', 'summary', 'keyConcepts', 'quiz', 'quiz2'], properties: {
       id: { type: 'integer', description: 'Sequential node number.' }, title: { type: 'string', description: 'Specific subject in source wording.' },
       sourcePages: { type: 'array', items: { type: 'integer' }, description: '1-based pages covered by this node.' },
       sourceFacts: { type: 'array', items: { type: 'string' }, description: '4 to 8 short source-grounded facts.' },
@@ -164,6 +171,12 @@ export const studyPathResponseSchema = {
       keyConcepts: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string', description: 'At most 15 words; start with the key term (Term: what it is/does); add detail absent from summary and other concepts.' } },
       quiz: { type: 'object', required: ['question', 'options', 'correctAnswerIndex', 'explanation'], properties: {
         question: { type: 'string', description: 'Direct question on one specific fact, maximum 25 words. Never use the mechanics interaction template.' },
+        options: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string', description: 'One of exactly four same-category answer options, maximum 10 words.' } },
+        correctAnswerIndex: { type: 'integer', minimum: 0, maximum: 3, description: 'Index of the correct option.' },
+        explanation: { type: 'string', description: 'Maximum 30 words.' }
+      } },
+      quiz2: { type: 'object', required: ['question', 'options', 'correctAnswerIndex', 'explanation'], properties: {
+        question: { type: 'string', description: 'Second distinct direct question on a different specific fact, maximum 25 words.' },
         options: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string', description: 'One of exactly four same-category answer options, maximum 10 words.' } },
         correctAnswerIndex: { type: 'integer', minimum: 0, maximum: 3, description: 'Index of the correct option.' },
         explanation: { type: 'string', description: 'Maximum 30 words.' }
