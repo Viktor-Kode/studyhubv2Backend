@@ -177,43 +177,6 @@ export const studyPathPrompt = (textOrTitle = 'Study Material', title = 'Study M
   return `Generate a comprehensive, sequential study path for "${resolvedTitle}" based strictly on the provided document content. Create as many nodes as the material needs — one node per coherent subtopic. Follow all system instructions. Return valid JSON only.`;
 };
 
-export const challengeResponseSchema = {
-  type: 'object',
-  required: ['questions'],
-  properties: {
-    questions: {
-      type: 'array',
-      minItems: 10,
-      maxItems: 10,
-      items: {
-        type: 'object',
-        required: ['question', 'options', 'correctAnswerIndex', 'explanation', 'sourceNodeIds', 'type'],
-        properties: {
-          question: { type: 'string', description: 'Question text, maximum 25 words.' },
-          options: {
-            type: 'array',
-            minItems: 4,
-            maxItems: 4,
-            items: { type: 'string', description: 'One of exactly 4 plausible options, maximum 10 words.' }
-          },
-          correctAnswerIndex: { type: 'integer', minimum: 0, maximum: 3, description: 'Index 0-3 of the correct option.' },
-          explanation: { type: 'string', description: 'Maximum 30 words explaining why the answer is correct.' },
-          sourceNodeIds: {
-            type: 'array',
-            items: { type: 'integer' },
-            description: '1 to 3 node IDs that supply facts for this question.'
-          },
-          type: {
-            type: 'string',
-            enum: ['recall', 'connect', 'compare', 'sequence', 'cause-effect'],
-            description: 'Cognitive type of question.'
-          }
-        }
-      }
-    }
-  }
-};
-
 export const challengePrompt = ({ topicTitle, nodesData, excludeQuestions = [], retryProblems = [] }) => {
   let prompt = `You are designing the final Unit Challenge exam for "${topicTitle}".
 Create exactly 10 comprehensive overview multiple-choice questions grounded STRICTLY in the provided node summaries, key concepts, and source facts.

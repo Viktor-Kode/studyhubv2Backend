@@ -1,7 +1,10 @@
 import fs from 'fs';
 import axios from 'axios';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const outputDir = 'C:/Users/User/.gemini/antigravity-ide/brain/e5694c19-694b-4a72-bbd1-188a02eabef5/scratch/waec_cache';
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const outputDir = path.join(scriptDir, 'waec_cache');
 if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
 }

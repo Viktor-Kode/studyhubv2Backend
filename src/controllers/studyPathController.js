@@ -1,6 +1,6 @@
 import StudyPath from '../models/StudyPath.js';
 import { parseDocumentBuffer } from '../utils/documentParser.js';
-import { studyPathSystemPrompt, challengePrompt, challengeResponseSchema } from '../utils/prompts.js';
+import { studyPathSystemPrompt, challengePrompt } from '../utils/prompts.js';
 import { PASS_MARK, CHALLENGE_XP_PER_QUESTION, TOTAL_CHALLENGE_QUESTIONS, MAX_CHALLENGE_XP } from '../config/challengeConfig.js';
 import { getEnv } from '../config/env.js';
 import aiClient from '../utils/aiClient.js';
@@ -699,19 +699,12 @@ export const regenerateStudyPathNode = async (req, res) => {
     if (!node) return res.status(404).json({ success: false, message: 'Study path node not found' });
     const sourceText = getSourcePageText(pathRecord.extractedText, node.sourcePages || []);
     if (!sourceText) return res.status(422).json({ success: false, message: 'Source pages are unavailable for this node.' });
-    const apiKey = getEnv('GEMINI_API_KEY');
-    if (!apiKey) return res.status(503).json({ success: false, message: 'Gemini regeneration is not configured on the server.' });
+    if (!getEnv('DEEPSEEK_API_KEY')) return res.status(503).json({ success: false, message: 'DeepSeek is not configured on the server.' });
 
     const prompt = `Regenerate only summary, keyConcepts, and quiz for this study node using only the source pages below. Return JSON with exactly those three fields. summary: at most 35 words, one or two short sentences, what the topic is and why it matters, no list. keyConcepts: 3-5 items, each at most 15 words, starts with its key term in "Term: fact" form, adds details not in the summary, no duplicates. quiz.question: at most 25 words, direct question about one specific source fact; never ask how something interacts with the mechanics of the title. quiz.options: exactly four same-category options, each at most 10 words. quiz.correctAnswerIndex: correct option index 0-3. quiz.explanation: at most 30 words. If the source has more facts than fit, stay concise.\nTitle: ${node.title}\nExisting source facts: ${JSON.stringify(node.sourceFacts || [])}\nSource pages: ${sourceText}`;
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } })
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result?.error?.message || `Gemini request failed (${response.status})`);
-    const generated = parseModelJson(result?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join(''));
+    const generated = await callDeepSeekForJson(prompt, { maxTokens: 3000 });
     const problems = validateStudyPathNodes([{ ...node.toObject(), ...generated }], sourceText);
-    if (problems.length) return res.status(422).json({ success: false, message: 'Gemini returned content outside the lesson limits.', issues: problems });
+    if (problems.length) return res.status(422).json({ success: false, message: 'DeepSeek returned content outside the lesson limits.', issues: problems });
     node.summary = generated.summary;
     node.keyConcepts = generated.keyConcepts;
     node.lessonContent.paragraphs = generated.summary ? [generated.summary] : [];
@@ -886,9 +879,39 @@ function shuffleQuestionOptions(question) {
   };
 }
 
-async function callGeminiForChallenge({ pathRecord, excludeQuestions = [], retryProblems = [] }) {
-  const apiKey = getEnv("GEMINI_API_KEY");
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured on the server");
+async function callDeepSeekForJson(prompt, { maxTokens = 6000 } = {}) {
+  if (!getEnv('DEEPSEEK_API_KEY')) {
+    const error = new Error('DeepSeek is not configured on the server.');
+    error.status = 503;
+    throw error;
+  }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await aiClient.chatCompletion({
+        model: 'deepseek-chat',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: maxTokens,
+        temperature: 0.2,
+        response_format: { type: 'json_object' }
+      });
+      const content = response.choices?.[0]?.message?.content;
+      if (!content) throw new Error('DeepSeek returned an empty response.');
+      return parseModelJson(content);
+    } catch (cause) {
+      const status = Number(cause?.status || cause?.statusCode || 0);
+      const transient = status === 429 || status >= 500 || !status;
+      if (!transient || attempt === 1) {
+        const error = new Error(cause?.message || 'DeepSeek could not generate the requested questions.');
+        error.status = transient ? 503 : 502;
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+}
+
+async function callDeepSeekForChallenge({ pathRecord, excludeQuestions = [], retryProblems = [] }) {
 
   const nodesData = pathRecord.nodes.map(n => ({
     id: n.id,
@@ -906,46 +929,7 @@ async function callGeminiForChallenge({ pathRecord, excludeQuestions = [], retry
     retryProblems
   });
 
-  const requestOptions = {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: promptText }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: challengeResponseSchema,
-        temperature: 0.2
-      }
-    })
-  };
-  let response;
-  let result;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      response = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(apiKey),
-        requestOptions
-      );
-      result = await response.json().catch(() => ({}));
-      if (response.ok) break;
-      const transient = response.status === 429 || response.status >= 500;
-      if (!transient || attempt === 1) {
-        const error = new Error(result?.error?.message || "The question service could not generate the overview.");
-        error.status = transient ? 503 : 502;
-        throw error;
-      }
-    } catch (error) {
-      if (error.status) throw error;
-      if (attempt === 1) {
-        const wrapped = new Error("The question service could not be reached. Please try again.");
-        wrapped.status = 503;
-        throw wrapped;
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-
-  const generated = parseModelJson(result?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join(""));
+  const generated = await callDeepSeekForJson(promptText, { maxTokens: 8192 });
   return generated?.questions || [];
 }
 
@@ -978,7 +962,7 @@ export async function generateChallenge(pathRecord, additionalExclusions = []) {
 
   console.log("[generateChallenge] Generating 10 overview questions for \"" + pathRecord.title + "\" (excluding " + excludeQuestionsStrings.length + " questions)...");
 
-  let rawQuestions = await callGeminiForChallenge({
+  let rawQuestions = await callDeepSeekForChallenge({
     pathRecord,
     excludeQuestions: excludeQuestionsStrings,
     retryProblems: []
@@ -988,7 +972,7 @@ export async function generateChallenge(pathRecord, additionalExclusions = []) {
 
   if (problems.length > 0) {
     console.warn("[generateChallenge] Validation failed on attempt 1. Retrying with feedback:", problems);
-    rawQuestions = await callGeminiForChallenge({
+    rawQuestions = await callDeepSeekForChallenge({
       pathRecord,
       excludeQuestions: excludeQuestionsStrings,
       retryProblems: problems
