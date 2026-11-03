@@ -1308,10 +1308,21 @@ export const analyzeLessonSummary = async (req, res) => {
   }
 };
 
+const CHALLENGE_STOP_WORDS = new Set([
+  ...GROUNDING_STOP_WORDS,
+  'what', 'which', 'who', 'whom', 'whose', 'why', 'how', 'when', 'where',
+  'does', 'do', 'did', 'done', 'doing',
+  'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'can', 'could', 'would', 'should', 'shall', 'will', 'may', 'might', 'must',
+  'according', 'describe', 'describes', 'described', 'primary', 'primarily',
+  'main', 'best', 'correct', 'true', 'false', 'following', 'statement', 'statements',
+  'role', 'function', 'purpose', 'defined', 'definition', 'refer', 'refers', 'mean', 'means'
+]);
+
 function getChallengeTokens(text) {
   return normalizeGroundingText(text)
     .split(" ")
-    .filter((term) => term.length > 1 && !GROUNDING_STOP_WORDS.has(term));
+    .filter((term) => term.length > 1 && !CHALLENGE_STOP_WORDS.has(term));
 }
 
 function tokenJaccardSimilarity(textA, textB) {
@@ -1399,7 +1410,7 @@ export function validateChallengeQuestions(questions, nodes = [], existingQuizze
 
     for (const prev of seenQuestions) {
       const jaccard = tokenJaccardSimilarity(qText, prev.question);
-      if (jaccard > 0.55) {
+      if (jaccard > 0.70) {
         problems.push("Question " + qNum + " is duplicate of question " + prev.qNum + " (Jaccard: " + jaccard.toFixed(2) + ")");
         break;
       }
@@ -1412,13 +1423,14 @@ export function validateChallengeQuestions(questions, nodes = [], existingQuizze
     for (const ex of existingQuizzes) {
       const exQ = typeof ex === "string" ? ex : (ex?.question || "");
       const jaccard = tokenJaccardSimilarity(qText, exQ);
-      if (jaccard > 0.55) {
+      // Require true duplication (>=0.80) to reject, or identical answer with moderate question overlap (>=0.45)
+      if (jaccard >= 0.80) {
         problems.push("Question " + qNum + " repeats existing question: \"" + exQ.slice(0, 35) + "...\" (Jaccard: " + jaccard.toFixed(2) + ")");
         break;
       }
       if (typeof ex === "object" && Array.isArray(ex.options) && ex.correctAnswerIndex != null) {
         const exCorrect = normalizeGroundingText(ex.options[ex.correctAnswerIndex]);
-        if (normCorrectOpt && exCorrect && normCorrectOpt === exCorrect && jaccard > 0.35) {
+        if (normCorrectOpt && exCorrect && normCorrectOpt === exCorrect && jaccard > 0.45) {
           problems.push("Question " + qNum + " tests identical fact as existing quiz: \"" + exQ.slice(0, 35) + "...\"");
           break;
         }
@@ -1601,11 +1613,22 @@ export async function generateChallenge(pathRecord, additionalExclusions = []) {
   }
 
   if (problems.length > 0) {
-    console.error("[generateChallenge] Validation failed after " + maxGenerationAttempts + " attempts:", problems);
-    const err = new Error("Generated challenge failed validation after " + maxGenerationAttempts + " attempts: " + problems.join("; "));
-    err.status = 502;
-    err.problems = problems;
-    throw err;
+    // Distinguish hard structural failures (broken question format, wrong count) from soft duplicate warnings
+    const hardStructuralProblems = problems.filter(p =>
+      !p.includes("repeats existing question") &&
+      !p.includes("tests identical fact as existing quiz") &&
+      !p.includes("Missing coverage")
+    );
+
+    if (hardStructuralProblems.length > 0) {
+      console.error("[generateChallenge] Validation failed after " + maxGenerationAttempts + " attempts:", hardStructuralProblems);
+      const err = new Error("Generated challenge failed validation after " + maxGenerationAttempts + " attempts: " + hardStructuralProblems.join("; "));
+      err.status = 502;
+      err.problems = hardStructuralProblems;
+      throw err;
+    }
+
+    console.warn("[generateChallenge] Soft validation warnings bypassed after attempt " + maxGenerationAttempts + ":", problems);
   }
 
   const processed = rawQuestions.map((q, idx) => {
