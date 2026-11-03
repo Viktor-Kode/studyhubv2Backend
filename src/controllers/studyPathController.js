@@ -1617,7 +1617,7 @@ export async function generateChallenge(pathRecord, additionalExclusions = []) {
       correctAnswerIndex: shuffled.correctAnswerIndex,
       explanation: shuffled.explanation,
       sourceNodeIds: Array.isArray(shuffled.sourceNodeIds) ? shuffled.sourceNodeIds.map(Number).filter(Boolean) : [],
-      type: shuffled.type || "recall",
+      type: (['recall', 'connect', 'compare', 'sequence', 'cause-effect', 'synthesis'].includes(shuffled.type?.toLowerCase?.()) ? shuffled.type.toLowerCase() : (Array.isArray(shuffled.sourceNodeIds) && shuffled.sourceNodeIds.length >= 2 ? 'synthesis' : 'recall')),
       xp: CHALLENGE_XP_PER_QUESTION
     };
   });

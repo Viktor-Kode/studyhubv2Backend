@@ -56,7 +56,7 @@ const challengeQuestionSchema = new mongoose.Schema({
   sourceNodeIds: [{ type: Number }],
   type: {
     type: String,
-    enum: ['recall', 'connect', 'compare', 'sequence', 'cause-effect'],
+    enum: ['recall', 'connect', 'compare', 'sequence', 'cause-effect', 'synthesis'],
     default: 'recall'
   },
   xp: { type: Number, default: 5 }
