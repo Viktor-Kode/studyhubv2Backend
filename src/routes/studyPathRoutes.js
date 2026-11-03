@@ -9,12 +9,14 @@ import {
   updateNodeStatus,
   deleteStudyPath,
   regenerateStudyPathNode,
+  analyzeLessonSummary,
   getChallenge,
   submitChallenge,
   retryChallenge,
   generateStudyPathChallenge
 } from '../controllers/studyPathController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import { checkAIUsage } from '../middleware/usageMiddleware.js';
 
 const router = express.Router();
 const upload = multer({
@@ -66,6 +68,7 @@ router.post('/:topicId/challenge/retry', optionalProtect, challengeLimiter, retr
 router.get('/:topicId', optionalProtect, getStudyPathById);
 router.put('/:topicId/node/:nodeId', optionalProtect, updateNodeStatus);
 router.post('/:topicId/node/:nodeId/regenerate', optionalProtect, regenerateStudyPathNode);
+router.post('/:topicId/node/:nodeId/analyze-summary', protect, checkAIUsage, analyzeLessonSummary);
 router.delete('/:topicId', optionalProtect, deleteStudyPath);
 
 export default router;

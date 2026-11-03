@@ -757,6 +757,49 @@ export const regenerateStudyPathNode = async (req, res) => {
   }
 };
 
+/** POST /api/study-path/:topicId/node/:nodeId/analyze-summary */
+export const analyzeLessonSummary = async (req, res) => {
+  try {
+    const { topicId, nodeId } = req.params;
+    const submittedSummary = String(req.body?.summary || '').trim();
+    if (submittedSummary.length < 10) {
+      return res.status(400).json({ success: false, message: 'Write a little more before asking for feedback.' });
+    }
+    if (submittedSummary.length > 10000) {
+      return res.status(400).json({ success: false, message: 'Summary is too long. Keep it under 10,000 characters.' });
+    }
+
+    const pathRecord = await StudyPath.findOne({ topicId });
+    if (!pathRecord) return res.status(404).json({ success: false, message: 'Study path not found' });
+    const userId = req.user?._id?.toString() || req.user?.firebaseUid;
+    if (!userId) return res.status(401).json({ success: false, message: 'Please sign in to analyze your summary.' });
+    if (userId !== pathRecord.userId) return res.status(403).json({ success: false, message: 'Not allowed to access this study path.' });
+
+    const node = pathRecord.nodes.find((item) => item.id === Number(nodeId));
+    if (!node) return res.status(404).json({ success: false, message: 'Study path node not found' });
+    const keyConcepts = Array.isArray(node.keyConcepts) ? node.keyConcepts : [];
+    const referenceSummary = String(node.summary || node.lessonContent?.paragraphs?.join('\n') || '').trim();
+    const prompt = `Assess a student's summary of one lesson. Compare it with the reference summary and key concepts. Credit accurate paraphrases. Do not require exact wording. Do not give credit for unrelated claims. Return only JSON with exactly these fields: {"covered": ["specific idea the student correctly included"], "missing": ["important idea the student omitted or misstated"], "feedback": "one brief encouraging sentence"}. Keep each list to at most 5 short items. If all major ideas are covered, return an empty missing list.\nLesson title: ${node.title}\nReference summary: ${referenceSummary}\nKey concepts: ${JSON.stringify(keyConcepts)}\nStudent summary: ${submittedSummary}`;
+    const analysis = await callDeepSeekForJson(prompt, { maxTokens: 800 });
+    if (!Array.isArray(analysis?.covered) || !Array.isArray(analysis?.missing) || typeof analysis?.feedback !== 'string') {
+      return res.status(502).json({ success: false, message: 'The AI returned an invalid summary review. Please try again.' });
+    }
+
+    await incrementAIUsage(req.user._id);
+    return res.status(200).json({
+      success: true,
+      analysis: {
+        covered: analysis.covered.slice(0, 5).map((item) => String(item).slice(0, 300)),
+        missing: analysis.missing.slice(0, 5).map((item) => String(item).slice(0, 300)),
+        feedback: analysis.feedback.slice(0, 500)
+      }
+    });
+  } catch (error) {
+    console.error('[analyzeLessonSummary] Error:', error.message);
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'Could not analyze this lesson summary.' });
+  }
+};
+
 function getChallengeTokens(text) {
   return normalizeGroundingText(text)
     .split(" ")
