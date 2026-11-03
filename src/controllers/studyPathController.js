@@ -906,25 +906,43 @@ async function callGeminiForChallenge({ pathRecord, excludeQuestions = [], retry
     retryProblems
   });
 
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(apiKey),
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: challengeResponseSchema,
-          temperature: 0.2
-        }
-      })
+  const requestOptions = {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: promptText }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: challengeResponseSchema,
+        temperature: 0.2
+      }
+    })
+  };
+  let response;
+  let result;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" + encodeURIComponent(apiKey),
+        requestOptions
+      );
+      result = await response.json().catch(() => ({}));
+      if (response.ok) break;
+      const transient = response.status === 429 || response.status >= 500;
+      if (!transient || attempt === 1) {
+        const error = new Error(result?.error?.message || "The question service could not generate the overview.");
+        error.status = transient ? 503 : 502;
+        throw error;
+      }
+    } catch (error) {
+      if (error.status) throw error;
+      if (attempt === 1) {
+        const wrapped = new Error("The question service could not be reached. Please try again.");
+        wrapped.status = 503;
+        throw wrapped;
+      }
     }
-  );
-
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error(result?.error?.message || ("Gemini request failed (" + response.status + ")"));
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
   const generated = parseModelJson(result?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join(""));
