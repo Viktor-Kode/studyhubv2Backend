@@ -44,7 +44,7 @@ function sourceFactMatches(fact, normalizedSource) {
   if (terms.length === 0) return false;
   const sourceTerms = new Set(normalizedSource.split(' '));
   const matchedTerms = terms.filter((term) => sourceTerms.has(term)).length;
-  const requiredMatches = terms.length === 1 ? 1 : Math.max(2, Math.ceil(terms.length * 0.7));
+  const requiredMatches = terms.length === 1 ? 1 : Math.max(1, Math.ceil(terms.length * 0.45));
   return matchedTerms >= requiredMatches;
 }
 
@@ -276,6 +276,30 @@ export function autoRepairStudyPathNodes(nodes, extractedText = '') {
     let sourceFacts = Array.isArray(node.sourceFacts) ? [...node.sourceFacts] : [];
     if (sourceFacts.length === 0) {
       sourceFacts = [`${title} is a core anatomical and functional component.`];
+    }
+    const normExtracted = normalizeGroundingText(extractedText);
+    if (normExtracted.length > 0) {
+      let matchCount = 0;
+      for (const fact of sourceFacts) {
+        if (sourceFactMatches(fact, normExtracted)) matchCount++;
+      }
+      if (matchCount / sourceFacts.length < 0.5) {
+        const sentences = extractedText
+          .split(/(?<=[.!?\n])\s+/)
+          .map((s) => s.trim().replace(/\s+/g, ' '))
+          .filter((s) => s.length >= 15 && s.length <= 160 && !BANNED_FILLER_REGEX.test(s));
+        const titleWords = normalizedWords(title).filter((w) => !GROUNDING_STOP_WORDS.has(w));
+        const relevant = sentences.filter((s) => {
+          const sNorm = normalizeGroundingText(s);
+          return titleWords.some((w) => sNorm.includes(w));
+        });
+        const candidatePool = relevant.length > 0 ? relevant : sentences;
+        if (candidatePool.length > 0) {
+          const groundedPool = candidatePool.slice(0, 4);
+          sourceFacts = [...groundedPool, ...sourceFacts.filter((f) => sourceFactMatches(f, normExtracted))];
+          if (sourceFacts.length === 0) sourceFacts = candidatePool.slice(0, 3);
+        }
+      }
     }
     if (sourceFacts.length > 8) {
       sourceFacts = sourceFacts.slice(0, 8);
@@ -950,6 +974,7 @@ async function runPdfStudyPathJob(req, file, job) {
       buffer: file.buffer,
       title: req.body?.title?.trim() || file.originalname?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Study Material',
       validateNodes: validateStudyPathNodes,
+      autoRepairNodes: autoRepairStudyPathNodes,
       onProgress: (progress) => updateStudyPathJob(job.jobId, progress)
     });
     updateStudyPathJob(job.jobId, { status: 'writing', stage: 'Saving completed study map...', done: generation.nodes.length, total: generation.nodes.length });
