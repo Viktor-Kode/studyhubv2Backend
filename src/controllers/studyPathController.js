@@ -1551,29 +1551,35 @@ export async function generateChallenge(pathRecord, additionalExclusions = []) {
 
   console.log("[generateChallenge] Generating 10 overview questions for \"" + pathRecord.title + "\" (excluding " + excludeQuestionsStrings.length + " questions)...");
 
-  let rawQuestions = await callDeepSeekForChallenge({
-    pathRecord,
-    excludeQuestions: excludeQuestionsStrings,
-    retryProblems: []
-  });
+  let rawQuestions = [];
+  let problems = [];
+  const excludedQuestions = [...excludeQuestionsStrings];
+  const maxGenerationAttempts = 3;
 
-  let problems = validateChallengeQuestions(rawQuestions, pathRecord.nodes, existingQuizzes);
-
-  if (problems.length > 0) {
-    console.warn("[generateChallenge] Validation failed on attempt 1. Retrying with feedback:", problems);
+  for (let attempt = 1; attempt <= maxGenerationAttempts; attempt++) {
     rawQuestions = await callDeepSeekForChallenge({
       pathRecord,
-      excludeQuestions: excludeQuestionsStrings,
+      excludeQuestions: excludedQuestions,
       retryProblems: problems
     });
     problems = validateChallengeQuestions(rawQuestions, pathRecord.nodes, existingQuizzes);
-    if (problems.length > 0) {
-      console.error("[generateChallenge] Validation failed on attempt 2:", problems);
-      const err = new Error("Generated challenge failed validation: " + problems.join("; "));
-      err.status = 502;
-      err.problems = problems;
-      throw err;
+    if (problems.length === 0) break;
+
+    console.warn("[generateChallenge] Validation failed on attempt " + attempt + ". Retrying with feedback:", problems);
+    // Give the model concrete failed examples to avoid reproducing the same
+    // overlap or one-node questions on its next generation attempt.
+    for (const question of rawQuestions) {
+      const text = String(question?.question || "").trim();
+      if (text && !excludedQuestions.includes(text)) excludedQuestions.push(text);
     }
+  }
+
+  if (problems.length > 0) {
+    console.error("[generateChallenge] Validation failed after " + maxGenerationAttempts + " attempts:", problems);
+    const err = new Error("Generated challenge failed validation after " + maxGenerationAttempts + " attempts: " + problems.join("; "));
+    err.status = 502;
+    err.problems = problems;
+    throw err;
   }
 
   const processed = rawQuestions.map((q, idx) => {

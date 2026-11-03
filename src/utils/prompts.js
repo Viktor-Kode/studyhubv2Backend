@@ -222,7 +222,7 @@ Create exactly 10 comprehensive overview multiple-choice questions grounded STRI
 
 EXAM DESIGN REQUIREMENTS:
 1. OVERVIEW & SYNTHESIS: Connect, compare, sequence, cause-and-effect, and big-picture questions across the entire unit.
-2. MULTI-NODE QUESTIONS: At least 4 of the 10 questions MUST synthesize ideas from 2 or more nodes (sourceNodeIds must list 2 or 3 node IDs).
+2. MULTI-NODE QUESTIONS: Questions 1–4 MUST each synthesize a relationship between facts from at least 2 different nodes. For each, sourceNodeIds must list the 2 or 3 node IDs actually needed to answer it. Merely listing multiple source nodes for a question answerable from one node does not count. Questions 5–10 should test distinct important facts, preferably from nodes not used by questions 1–4.
 3. COVERAGE: Cover all nodes or units evenly across the 10 questions. If there are <= 10 nodes, every node id must appear in at least one question's sourceNodeIds.
 4. STRICT LENGTH LIMITS:
    - question: at most 25 words
@@ -231,7 +231,8 @@ EXAM DESIGN REQUIREMENTS:
 5. DISTRACTORS: Must be from the same category as the correct answer and drawn from other facts/nodes in the document.
 6. NO FILLER: Never use "all of the above", "none of the above", or generic filler phrases. Never reveal the answer in the question.
 7. VARY POSITIONS: Vary the correct option index across 0, 1, 2, and 3.
-8. ATOMICITY & NO DUPLICATION: Never ask about the exact same fact twice within the 10 questions.
+8. ATOMICITY & NO DUPLICATION: Never ask about the exact same fact twice within the 10 questions or repeat/rephrase any excluded lesson quiz/challenge question. Each question must test a different fact or relationship.
+9. SOURCE MAPPING: Every question must include sourceNodeIds using the exact numeric IDs below. For synthesis questions, use IDs from both facts in the question; do not guess or invent IDs.
 `;
 
   if (excludeQuestions.length > 0) {
