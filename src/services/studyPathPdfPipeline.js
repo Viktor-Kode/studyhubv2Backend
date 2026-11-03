@@ -1,38 +1,11 @@
-import { PDFDocument } from 'pdf-lib';
-import { studyPathSystemPrompt, studyPathResponseSchema } from '../utils/prompts.js';
+import { studyPathSystemPrompt } from '../utils/prompts.js';
 import { inventoryPdfPages, parsePdfBuffer } from '../utils/parsePdf.js';
-import { deleteGeminiFile, generateGeminiJson, getStudyPathNodeGeminiSchema, uploadGeminiPdf } from './geminiStudyPath.js';
+import { generateDeepSeekVisionJson, renderPdfPagesToImages } from './deepseekStudyPathVision.js';
 import { MAX_NODES, MAX_SKIPPED_PAGE_RATIO, NODE_CONTENT_CONCURRENCY, OUTLINE_CHUNK_OVERLAP, OUTLINE_CHUNK_PAGES } from '../config/studyPathConfig.js';
 
-const OUTLINE_SCHEMA = {
-  type: 'OBJECT', required: ['units', 'skippedPages'], properties: {
-    units: { type: 'ARRAY', items: { type: 'OBJECT', required: ['title', 'nodes'], properties: {
-      title: { type: 'STRING', description: 'Source unit, section, or chapter heading.' },
-      nodes: { type: 'ARRAY', items: { type: 'OBJECT', required: ['title', 'pages'], properties: {
-        title: { type: 'STRING', description: 'One specific narrow subtopic, maximum 12 words.' },
-        pages: { type: 'ARRAY', items: { type: 'INTEGER' }, description: 'Original PDF page numbers assigned to this subtopic.' }
-      } } }
-    } } },
-    skippedPages: { type: 'ARRAY', items: { type: 'OBJECT', required: ['page', 'reason'], properties: {
-      page: { type: 'INTEGER' }, reason: { type: 'STRING', enum: ['title', 'thanks', 'agenda', 'references', 'blank'] }
-    } } }
-  }
-};
-
-const TITLE_SCHEMA = { type: 'OBJECT', required: ['title'], properties: { title: { type: 'STRING', description: 'A specific subtopic title of at most 12 words.' } } };
 const wordCount = (text) => String(text || '').trim().split(/\s+/).filter(Boolean).length;
 const normalizeTitle = (text) => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const allowedSkipReasons = new Set(['title', 'thanks', 'agenda', 'references', 'blank']);
-
-async function slicePdf(buffer, originalPages) {
-  const source = await PDFDocument.load(buffer, { ignoreEncryption: false });
-  const result = await PDFDocument.create();
-  const indexes = [...new Set(originalPages.map(Number))].sort((a, b) => a - b).map((page) => page - 1);
-  if (!indexes.length || indexes.some((index) => index < 0 || index >= source.getPageCount())) throw new Error('Cannot create a PDF slice for invalid source pages.');
-  const copied = await result.copyPages(source, indexes);
-  copied.forEach((page) => result.addPage(page));
-  return Buffer.from(await result.save());
-}
 
 function pageChunks(pageNumbers, maxPages = OUTLINE_CHUNK_PAGES) {
   const result = [];
@@ -91,7 +64,7 @@ function outlinePrompt({ totalPages, pages, inventory, retryPages = [] }) {
     const item = inventory[page - 1];
     return `Page ${page}: ${item.wordCount} extractable words${item.visual ? ' (VISUAL PAGE: inspect the attached slide image; do not skip it)' : ''}`;
   }).join('\n');
-  return `Read the attached native PDF pages visually and as text. Produce ONLY a structural outline, with no summaries or teaching content.
+  return `Read the attached slide images visually and the supplied per-page text inventory. Produce ONLY a structural outline, with no summaries or teaching content.
 Return JSON exactly as {"units":[{"title":"...","nodes":[{"title":"...","pages":[1,2]}]}],"skippedPages":[{"page":1,"reason":"title"}]}.
 
 DOCUMENT HAS ${totalPages} ORIGINAL PAGES. The attached PDF's page-to-original mapping is:
@@ -113,14 +86,10 @@ ${retryPages.length ? `\nCOVERAGE RETRY: These original pages are not covered: $
 }
 
 async function requestOutline(buffer, pages, title, totalPages, inventory, retryPages = []) {
-  const chunk = await slicePdf(buffer, pages);
-  const file = await uploadGeminiPdf(chunk, `${title}-outline-${pages[0]}-${pages.at(-1)}.pdf`);
-  try {
-    const result = await generateGeminiJson({ prompt: outlinePrompt({ totalPages, pages, inventory, retryPages }), file, schema: OUTLINE_SCHEMA });
-    return flattenOutline(result, pages);
-  } finally {
-    await deleteGeminiFile(file.name);
-  }
+  const images = await renderPdfPagesToImages(buffer, pages);
+  const text = outlinePrompt({ totalPages, pages, inventory, retryPages });
+  const result = await generateDeepSeekVisionJson({ prompt: `${text}\n\nDocument title: ${title}`, images });
+  return flattenOutline(result, pages);
 }
 
 function validateSkippedPages(skippedPages, totalPages, inventory, nodePages) {
@@ -162,36 +131,31 @@ function contiguousRuns(pages) {
 }
 
 async function titleUncoveredRun(buffer, pages, title, inventory) {
-  const slice = await slicePdf(buffer, pages);
-  const file = await uploadGeminiPdf(slice, `${title}-coverage-${pages[0]}-${pages.at(-1)}.pdf`);
-  try {
-    const result = await generateGeminiJson({
-      prompt: `Inspect the attached PDF pages and return one specific narrow subtopic title (maximum 12 words) that accurately covers their main teachable content. Do not list subtopics. Original pages: ${pages.join(', ')}. Page word counts: ${pages.map((page) => `${page}=${inventory[page - 1].wordCount}`).join(', ')}.`,
-      file,
-      schema: TITLE_SCHEMA
-    });
-    const nodeTitle = String(result?.title || '').trim();
-    if (!nodeTitle || wordCount(nodeTitle) > 12) throw new Error(`Gemini could not title uncovered pages ${pages.join(', ')} within the title limit.`);
-    return { title: nodeTitle, unit: '', sourcePages: pages };
-  } finally { await deleteGeminiFile(file.name); }
+  const images = await renderPdfPagesToImages(buffer, pages);
+  const result = await generateDeepSeekVisionJson({
+    prompt: `Inspect these slide images and return JSON {"title":"..."} with one specific narrow subtopic title (maximum 12 words) covering their main teachable content. Do not list subtopics. Original pages: ${pages.join(', ')}. Page word counts: ${pages.map((page) => `${page}=${inventory[page - 1].wordCount}`).join(', ')}.`,
+    images
+  });
+  const nodeTitle = String(result?.title || '').trim();
+  if (!nodeTitle || wordCount(nodeTitle) > 12) throw new Error(`DeepSeek could not title uncovered pages ${pages.join(', ')} within the title limit.`);
+  return { title: nodeTitle, unit: '', sourcePages: pages };
 }
 
 function nodeContentPrompt(outlineNode, allPages) {
-  return `${studyPathSystemPrompt}\n\nCreate content for EXACTLY ONE node from the attached mini-PDF. The mini-PDF contains only original pages ${outlineNode.sourcePages.join(', ')}. Return JSON as {"node": { ... }} using the existing node schema.
-Use this fixed outline title exactly: "${outlineNode.title}". Unit: "${outlineNode.unit || ''}". sourcePages must be the original page numbers [${outlineNode.sourcePages.join(', ')}], not mini-PDF page numbers. Read labels, diagrams, and image-only slide content directly from the native PDF. Use only these pages; do not import outside facts. Keep this node narrowly focused on the stated subtopic.
+  return `${studyPathSystemPrompt}\n\nCreate content for EXACTLY ONE node from the attached slide images and supplied page text. Return JSON as {"node": { ... }} using the existing node schema.
+Use this fixed outline title exactly: "${outlineNode.title}". Unit: "${outlineNode.unit || ''}". sourcePages must be the original page numbers [${outlineNode.sourcePages.join(', ')}]. Read labels, diagrams, and image-only slide content directly from the attached images. Use only these pages; do not import outside facts. Keep this node narrowly focused on the stated subtopic.
 The full document contains ${allPages} pages. Do not create other nodes.
 Before returning, self-check every field: both breakdown bodies must be tutor explanations, not slide bullets rewritten as sentences. Each must contain at least one technical term wrapped literally in **double asterisks**, and slide 1 must explain a cause, mechanism, or consequence using a reasoning connector. Paraphrase sourceFacts in the breakdown; never copy 13 consecutive words from a sourceFact. Do not use listing filler such as "includes" to introduce a list; explain what the structures do or how they relate. Every keyConcept must have the form "Term: new specific fact"; the fact after the colon must add information the summary does not state. Keep each concept distinct from the other concepts.`;
 }
 
 async function generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes) {
-  const miniPdf = await slicePdf(buffer, outlineNode.sourcePages);
-  const file = await uploadGeminiPdf(miniPdf, `node-${outlineNode.sourcePages[0]}-${outlineNode.title.slice(0, 40)}.pdf`);
-  try {
-    let lastError;
-    for (let attempt = 0; attempt < 2; attempt++) {
+  const images = await renderPdfPagesToImages(buffer, outlineNode.sourcePages);
+  const pageText = outlineNode.sourcePages.map((page) => `--- Original page ${page} ---\n${inventory[page - 1].groundingText || inventory[page - 1].text || '[No extractable text; inspect the slide image.]'}`).join('\n\n');
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const retryText = attempt && lastError ? `\n\nREPAIR THE PREVIOUS RESPONSE. Return the complete corrected JSON node in the same schema, fixing every issue below. Rewrite the named field or sentence; do not merely explain the change.\n${lastError}\n\nREPAIR CHECKLIST:\n- For a missing bold term, wrap an actual technical term in that slide body with literal Markdown markers, for example **term**.\n- For a list-only sentence, explain the mechanism or relationship and why it produces the stated result; connect the reasoning with because, so, which means, when, or therefore.\n- For copied source wording, paraphrase the explanation from scratch. Do not reuse a run of 13 or more words from any sourceFact.\n- For a keyConcept detail issue, keep the key term before the colon and add a concrete fact after it that the summary does not state.\n- For prohibited filler, replace the phrase with the actual action, structure, or relationship.\n- Keep slide 1 body between 50 and 80 words and slide 2 body between 40 and 70 words; aim near the middle of each range. Each body needs 3-4 explanatory sentences, 1-3 bold technical terms, and at least four specific terms grounded in sourceFacts.\n- Check both keyConcepts and both quiz questions against the summary and source material before returning.` : '';
-        const result = await generateGeminiJson({ prompt: `${nodeContentPrompt(outlineNode, totalPages)}${retryText}`, file, schema: getStudyPathNodeGeminiSchema(studyPathResponseSchema) });
+        const result = await generateDeepSeekVisionJson({ prompt: `${nodeContentPrompt(outlineNode, totalPages)}\n\nExtracted text from the assigned original pages (visual labels may also appear in the images):\n${pageText}${retryText}`, images });
         const generated = result?.node || result?.nodes?.[0] || result;
         const returnedPages = Array.isArray(generated.sourcePages) ? generated.sourcePages.map(Number) : [];
         if (!returnedPages.length) throw new Error('Returned node is missing its original sourcePages.');
@@ -206,7 +170,7 @@ async function generateNodeContent(buffer, outlineNode, inventory, totalPages, v
           sourceFacts: Array.isArray(generated.sourceFacts) ? generated.sourceFacts : []
         };
         // A sourceFact may have come from a diagram on any page assigned to
-        // this node. Text-match only text-only nodes; Gemini reads visual pages.
+        // this node. Text-match only text-only nodes; DeepSeek reads visual pages.
         const nodeHasVisualPages = outlineNode.sourcePages.some((page) => inventory[page - 1].visual);
         const textForTextPages = nodeHasVisualPages ? '' : outlineNode.sourcePages.map((page) => inventory[page - 1].groundingText || inventory[page - 1].text).join('\n');
         const issues = validateNodes([node], textForTextPages);
@@ -216,9 +180,8 @@ async function generateNodeContent(buffer, outlineNode, inventory, totalPages, v
         lastError = error.message || 'Node content validation failed.';
         if (attempt === 1) throw new Error(`Node "${outlineNode.title}" failed after retry: ${lastError}`);
       }
-    }
-    throw new Error(`Node "${outlineNode.title}" could not be generated.`);
-  } finally { await deleteGeminiFile(file.name); }
+  }
+  throw new Error(`Node "${outlineNode.title}" could not be generated.`);
 }
 
 async function runPool(items, concurrency, worker) {

@@ -14,6 +14,7 @@
   "type": "module",
   "dependencies": {
     "@huggingface/inference": "^4.13.12",
+    "@napi-rs/canvas": "^0.1.97",
     "@supabase/supabase-js": "^2.96.0",
     "axios": "^1.15.0",
     "bcryptjs": "^3.0.3",
@@ -38,8 +39,8 @@
     "officeparser": "^6.0.4",
     "openai": "^4.85.4",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^5.6.205",
     "pdf2json": "^4.0.3",
+    "pdfjs-dist": "^5.6.205",
     "resend": "^6.12.0",
     "textract": "^2.5.0",
     "twilio": "^5.12.1",

@@ -26,6 +26,13 @@ export const MODEL_REGISTRY = [
         task: "chat-completion"
     },
     {
+        id: "deepseek-flash",
+        name: "DeepSeek Flash (Vision)",
+        provider: "deepseek",
+        recommended: false,
+        task: "chat-completion"
+    },
+    {
         id: "mistralai/Mistral-7B-Instruct-v0.3",
         name: "Mistral 7B (HF Free)",
         provider: "hf-inference",
