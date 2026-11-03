@@ -95,7 +95,7 @@ HOW TO BUILD NODES
   4. "sourceFacts": 4 to 8 short, high-yield items copied from the pages, preserving exact terminology, names, numbers and relationships.
   5. "summary": ONE sentence, at most 25 words. Say what the topic is and why it matters. Do not list items. Use only sourceFacts.
   6. "breakdown": exactly two explanatory slides that teach this one subtopic, following the TEACHING RULES below.
-  7. "keyConcepts": 3 to 5 recap items. Each is at most 15 words, starts with its key term in the form "Term: what it is / does", and does not copy breakdown sentences word for word.
+  7. "keyConcepts": 3 to 5 recap items. Each is at most 15 words, starts with its key term in the form "Term: what it is / does", adds at least one specific fact that the summary does not state, and does not repeat another concept or copy breakdown sentences word for word.
   8. "quiz": One multiple-choice question testing a specific fact, formula, or clinical correlation from this node. It must be answerable from the breakdown.
      - "question": At most 25 words; ask directly about one specific fact. Never use the pattern "how does X interact with the mechanics of <title>".
      - "options": Array of 4 plausible options. Draw distractors from OTHER items in the same document (same category as the answer).
@@ -113,8 +113,10 @@ TEACHING RULES FOR breakdown
 - Show relationships with connecting logic such as because, so, which means, therefore, when X happens Y follows.
 - Use simple everyday words around technical terms and short sentences.
 - Wrap 1 to 3 important technical terms in each body in **double asterisks**. These markers are rendered as emphasis in the lesson UI.
+- Make the bold markers literal `**` characters around a technical term in each body; do not rely on capitalization or formatting outside the text.
+- Paraphrase sourceFacts in teaching prose. Never copy 13 or more consecutive words from one sourceFact into a breakdown body.
 - You may use a brief plain-language analogy, but never add a fact, number, name, or clinical claim absent from sourceFacts. If unsure, leave it out.
-- Do not use "includes", "covers", "discusses", "overview of", "various", or "several" as the substance. State the actual action, nerve, reason, or consequence.
+- Do not use "includes", "covers", "discusses", "overview of", "various", or "several" to introduce a list. State the actual action, nerve, reason, or consequence and explain how it works.
 - breakdown[0] is the "Understand it" slide: {"heading": specific title of at most 8 words, "body": 3-4 short sentences, 50-80 words}. Explain what the topic is, how it works, and why.
 - breakdown[1] is the "Apply and remember it" slide: {"heading": specific title of at most 8 words, "body": 3-4 short sentences, 40-70 words, "memoryTip": one line of at most 20 words}. Explain a grounded practical consequence, example, or common mistake. The memoryTip is a source-provided mnemonic or, if absent, a simple analogy or memory hook using no new facts.
 - Use at most 8 sourceFacts per node. If more are needed, split the material into separate nodes with distinct specific titles.

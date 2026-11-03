@@ -134,8 +134,10 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
       const text = String(concept || '').trim();
       if (!/^[^:]{1,40}:\s*\S/.test(text)) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must start with its key term in "Term: fact" form.`);
       const terms = new Set(normalizedWords(text).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
-      const newDetails = [...terms].filter((term) => !summaryTerms.has(term));
-      if (newDetails.length < 2) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must add detail absent from the summary.`);
+      const detailText = text.includes(':') ? text.slice(text.indexOf(':') + 1) : text;
+      const detailTerms = new Set(normalizedWords(detailText).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
+      const newDetails = [...detailTerms].filter((term) => !summaryTerms.has(term));
+      if (newDetails.length < 1) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must state at least one specific fact detail absent from the summary.`);
       if (conceptDetails.some((previous) => {
         const shared = [...terms].filter((term) => previous.has(term)).length;
         return shared / Math.max(1, Math.min(terms.size, previous.size)) >= 0.75;
