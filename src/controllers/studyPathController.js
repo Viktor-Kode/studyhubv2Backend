@@ -137,11 +137,20 @@ function parseModelJson(content) {
 }
 
 function getSourcePageText(source, requestedPages) {
-  const parts = String(source || '').split(/(?=---\s*Page\s+\d+\s*---)/i);
+  const sourceText = String(source || '').trim();
+  if (!sourceText) return '';
+
+  const pageMarker = /---\s*Page\s+\d+\s*---/i;
+  // Text, DOCX, and slide extraction may provide one unpaginated text block.
+  // In that case sourcePages cannot be used to slice it, so ground regeneration
+  // in the complete extracted document instead of treating it as unavailable.
+  if (!pageMarker.test(sourceText)) return sourceText;
+
+  const parts = sourceText.split(/(?=---\s*Page\s+\d+\s*---)/i);
   const wanted = new Set(requestedPages.map(Number));
   const selected = parts.filter((part) => {
     const match = part.match(/---\s*Page\s+(\d+)\s*---/i);
-    return match ? wanted.has(Number(match[1])) : wanted.has(1) && parts.length === 1;
+    return match ? wanted.has(Number(match[1])) : false;
   });
   return selected.join('\n\n').trim();
 }
