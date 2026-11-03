@@ -14,7 +14,10 @@ import {
   getChallenge,
   submitChallenge,
   retryChallenge,
-  generateStudyPathChallenge
+  generateStudyPathChallenge,
+  getNodeStatusesController,
+  prepareNodeController,
+  retryNodeController
 } from '../controllers/studyPathController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { checkAIUsage } from '../middleware/usageMiddleware.js';
@@ -67,6 +70,11 @@ router.get('/:topicId/challenge', optionalProtect, challengeLimiter, getChalleng
 router.post('/:topicId/challenge', optionalProtect, challengeLimiter, getChallenge);
 router.post('/:topicId/challenge/submit', optionalProtect, submitChallenge);
 router.post('/:topicId/challenge/retry', optionalProtect, challengeLimiter, retryChallenge);
+
+// Progressive node streaming & rolling buffer endpoints
+router.get('/:topicId/nodes/status', optionalProtect, getNodeStatusesController);
+router.post('/:topicId/nodes/:nodeId/prepare', optionalProtect, prepareNodeController);
+router.post('/:topicId/nodes/:nodeId/retry', optionalProtect, retryNodeController);
 
 // GET & PUT & DELETE for specific path
 router.get('/:topicId', optionalProtect, getStudyPathById);

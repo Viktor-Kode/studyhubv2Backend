@@ -19,6 +19,13 @@ const learningNodeSchema = new mongoose.Schema({
   title: { type: String, required: true },
   unit: { type: String },                   // optional chapter/section heading
   status: { type: String, enum: ['completed', 'active', 'locked'], default: 'locked' },
+  contentStatus: {
+    type: String,
+    enum: ['pending', 'generating', 'ready', 'failed'],
+    default: 'ready'
+  },
+  generationError: { type: String, default: null },
+  generationStartedAt: { type: Date, default: null },
   xp: { type: Number, default: 20 },
   duration: { type: String, default: '5 min' },
   slideImage: { type: String },
@@ -93,7 +100,10 @@ const studyPathSchema = new mongoose.Schema({
   nodes: [learningNodeSchema],
   isActive: { type: Boolean, default: true, index: true },
   sourceFileName: { type: String },
-  extractedText: { type: String }
+  extractedText: { type: String },
+  inventory: { type: Array, default: [] },
+  totalPages: { type: Number, default: 0 },
+  pdfStoragePath: { type: String, default: null }
 }, { timestamps: true });
 
 export default mongoose.model('StudyPath', studyPathSchema);

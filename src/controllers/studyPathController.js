@@ -6,8 +6,9 @@ import { getEnv } from '../config/env.js';
 import aiClient from '../utils/aiClient.js';
 import { incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
-import { buildPdfStudyPath } from '../services/studyPathPdfPipeline.js';
+import { buildPdfStudyPath, generatePdfOutline } from '../services/studyPathPdfPipeline.js';
 import { createStudyPathJob, getStudyPathJob, serializeStudyPathJob, updateStudyPathJob } from '../services/studyPathJobs.js';
+import { cachePdfBuffer, triggerNodeGenerations, prepareNode, getNodeStatuses } from '../services/studyPathNodeService.js';
 
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
@@ -931,6 +932,61 @@ function resolveRequestFile(req) {
   return req.file || (req.files && (req.files.pdf?.[0] || req.files.file?.[0] || req.files.document?.[0]));
 }
 
+async function persistSkeletonPdfPath(req, file, outlineResult) {
+  const fileName = file.originalname || 'document.pdf';
+  const finalTitle = String(outlineResult.title || req.body?.title || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Study Material').trim();
+  const topicId = toKebabCase(finalTitle);
+  const documentId = req.body?.documentId || req.body?.docId || topicId;
+
+  // Persist PDF buffer to disk and cache in memory for background/rolling generation
+  const pdfStoragePath = await cachePdfBuffer(topicId, file.buffer);
+
+  const skeletonNodes = (outlineResult.skeletonNodes || []).map((node, index) => {
+    const firstPage = node.sourcePages?.[0] || index + 1;
+    const slideImage = `/api/slides/${documentId}/page-${firstPage}.png`;
+    return {
+      ...node,
+      slideImage,
+      contentStatus: index < 3 ? 'generating' : 'pending'
+    };
+  });
+
+  const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
+  const courseCode = outlineResult.courseCode || `${finalTitle.slice(0, 6).toUpperCase()} 101 · Interactive Study Path`;
+  const pathData = {
+    userId,
+    topicId,
+    title: finalTitle,
+    courseCode,
+    currentProgress: 0,
+    nodes: skeletonNodes,
+    challenge: {},
+    isActive: true,
+    sourceFileName: fileName,
+    extractedText: outlineResult.rawText,
+    inventory: outlineResult.inventory || [],
+    totalPages: outlineResult.totalPages || 0,
+    pdfStoragePath
+  };
+
+  const savedRecord = await StudyPath.findOneAndUpdate({ topicId }, { $set: pathData }, {
+    new: true,
+    upsert: true,
+    runValidators: true,
+    setDefaultsOnInsert: true
+  });
+
+  if (userId && userId !== 'anonymous-user') {
+    await StudyPath.updateMany({ userId, isActive: true, topicId: { $ne: topicId } }, { $set: { isActive: false } }).catch((error) => {
+      console.warn('[studyPathJob] Could not deactivate prior maps:', error.message);
+    });
+    await incrementAIUsage(req.user?._id || userId).catch(() => {});
+    await awardXP(req.user?._id || userId, 'ai_study_path').catch(() => {});
+  }
+
+  return { topicId, studyPath: formatStudyPathResponse(savedRecord.toObject()) };
+}
+
 async function persistGeneratedPdfPath(req, file, generation) {
   const fileName = file.originalname || 'document.pdf';
   const finalTitle = String(generation.title || req.body?.title || fileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Study Material').trim();
@@ -969,18 +1025,30 @@ async function persistGeneratedPdfPath(req, file, generation) {
 
 async function runPdfStudyPathJob(req, file, job) {
   try {
-    updateStudyPathJob(job.jobId, { status: 'outline', stage: 'Reading slides... inspecting PDF pages' });
-    const generation = await buildPdfStudyPath({
+    updateStudyPathJob(job.jobId, { status: 'outline', stage: 'Reading slides... extracting outline (~15s)' });
+    const outlineResult = await generatePdfOutline({
       buffer: file.buffer,
       title: req.body?.title?.trim() || file.originalname?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') || 'Study Material',
-      validateNodes: validateStudyPathNodes,
-      autoRepairNodes: autoRepairStudyPathNodes,
       onProgress: (progress) => updateStudyPathJob(job.jobId, progress)
     });
-    updateStudyPathJob(job.jobId, { status: 'writing', stage: 'Saving completed study map...', done: generation.nodes.length, total: generation.nodes.length });
-    const saved = await persistGeneratedPdfPath(req, file, generation);
-    updateStudyPathJob(job.jobId, { status: 'done', stage: 'Study map ready', done: generation.nodes.length, total: generation.nodes.length, topicId: saved.topicId, studyPath: saved.studyPath });
-    console.log(`[studyPathJob] Saved ${saved.topicId}: ${generation.nodes.length} nodes, ${generation.coverage}% page coverage.`);
+
+    updateStudyPathJob(job.jobId, { status: 'writing', stage: 'Saving study map skeleton...', done: 0, total: outlineResult.skeletonNodes.length });
+    const saved = await persistSkeletonPdfPath(req, file, outlineResult);
+
+    // Job completes in 15-20s! Frontend unblocks and opens map immediately!
+    updateStudyPathJob(job.jobId, {
+      status: 'done',
+      stage: 'Study map ready',
+      done: 0,
+      total: outlineResult.skeletonNodes.length,
+      topicId: saved.topicId,
+      studyPath: saved.studyPath
+    });
+    console.log(`[studyPathJob] Outline saved ${saved.topicId}: ${outlineResult.skeletonNodes.length} nodes (${outlineResult.coverage}% coverage). Client unblocked.`);
+
+    // Initial burst: generate Nodes 1 to 3 in parallel (concurrency 3)
+    const initialNodeIds = outlineResult.skeletonNodes.slice(0, 3).map((n) => n.id);
+    void triggerNodeGenerations(saved.topicId, initialNodeIds, 3);
   } catch (error) {
     console.error(`[studyPathJob] PDF generation failed (${job.jobId}):`, error.message);
     updateStudyPathJob(job.jobId, { status: 'error', stage: 'Study path generation failed', message: error.message || 'Failed to generate a study path.' });
@@ -1810,3 +1878,62 @@ export const updateNodeStatus = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+/**
+ * GET /api/study-paths/:topicId/nodes/status
+ */
+export const getNodeStatusesController = async (req, res) => {
+  try {
+    const topicId = req.params.topicId;
+    const result = await getNodeStatuses(topicId);
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'Study path not found' });
+    }
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error('[getNodeStatuses] Error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * POST /api/study-paths/:topicId/nodes/:nodeId/prepare
+ */
+export const prepareNodeController = async (req, res) => {
+  try {
+    const topicId = req.params.topicId;
+    const nodeId = parseInt(req.params.nodeId, 10);
+    if (isNaN(nodeId)) {
+      return res.status(400).json({ success: false, message: 'Invalid node ID' });
+    }
+    const bufferNext = req.body?.bufferNext !== false;
+    const node = await prepareNode({ topicId, nodeId, bufferNext });
+    return res.status(200).json({ success: true, node });
+  } catch (error) {
+    console.error(`[prepareNode] Error for ${req.params.topicId} node ${req.params.nodeId}:`, error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * POST /api/study-paths/:topicId/nodes/:nodeId/retry
+ */
+export const retryNodeController = async (req, res) => {
+  try {
+    const topicId = req.params.topicId;
+    const nodeId = parseInt(req.params.nodeId, 10);
+    if (isNaN(nodeId)) {
+      return res.status(400).json({ success: false, message: 'Invalid node ID' });
+    }
+    await StudyPath.updateOne(
+      { topicId, 'nodes.id': nodeId },
+      { $set: { 'nodes.$.contentStatus': 'pending', 'nodes.$.generationError': null } }
+    );
+    const node = await prepareNode({ topicId, nodeId, bufferNext: true });
+    return res.status(200).json({ success: true, node });
+  } catch (error) {
+    console.error(`[retryNode] Error for ${req.params.topicId} node ${req.params.nodeId}:`, error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

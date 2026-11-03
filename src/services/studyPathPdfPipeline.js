@@ -148,7 +148,7 @@ The full document contains ${allPages} pages. Do not create other nodes.
 Before returning, self-check every field: both breakdown bodies must be tutor explanations, not slide bullets rewritten as sentences. Each must contain at least one technical term wrapped literally in **double asterisks**, and slide 1 must explain a cause, mechanism, or consequence using a reasoning connector. Paraphrase sourceFacts in the breakdown; never copy 13 consecutive words from a sourceFact. Do not use listing filler such as "includes" to introduce a list; explain what the structures do or how they relate. Every keyConcept must have the form "Term: new specific fact"; the fact after the colon must add information the summary does not state. Keep each concept distinct from the other concepts.`;
 }
 
-async function generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes) {
+export async function generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes) {
   const images = await renderPdfPagesToImages(buffer, outlineNode.sourcePages);
   const pageText = outlineNode.sourcePages.map((page) => `--- Original page ${page} ---\n${inventory[page - 1].groundingText || inventory[page - 1].text || '[No extractable text; inspect the slide image.]'}`).join('\n\n');
   let lastError;
@@ -244,7 +244,7 @@ async function runPool(items, concurrency, worker) {
   return results;
 }
 
-export async function buildPdfStudyPath({ buffer, title, validateNodes, autoRepairNodes, onProgress = () => {} }) {
+export async function generatePdfOutline({ buffer, title, onProgress = () => {} }) {
   const inventoryResult = await inventoryPdfPages(buffer);
   const { numpages: totalPages } = inventoryResult;
   const extracted = await parsePdfBuffer(buffer);
@@ -274,8 +274,6 @@ export async function buildPdfStudyPath({ buffer, title, validateNodes, autoRepa
     missing = getMissingPages(totalPages, outline.nodes, validSkippedPages);
   }
 
-  // Invalid skip records are discarded; if their pages remain uncovered, they
-  // are restored with explicit, page-specific nodes below.
   const stillInvalid = validateSkippedPages(outline.skippedPages, totalPages, inventory, outline.nodes.flatMap((node) => node.sourcePages)).issues;
   if (stillInvalid.length) console.warn('[studyPathJob] Rejected invalid skippedPages:', stillInvalid);
   if (missing.length) {
@@ -291,13 +289,51 @@ export async function buildPdfStudyPath({ buffer, title, validateNodes, autoRepa
 
   const coverage = Math.round(((totalPages - missing.length) / totalPages) * 100);
   console.log(`[studyPathJob] PDF pages=${totalPages}; visual pages=${visualPages.join(', ') || 'none'}; outline chunks=${pageGroups.length}; nodes=${outline.nodes.length}; coverage=${coverage}%.`);
-  onProgress({ status: 'writing', stage: `Writing node 0 of ${outline.nodes.length}`, done: 0, total: outline.nodes.length });
+
+  const rawText = inventory.map((page) => `--- Page ${page.page} ---\n${page.groundingText || page.text}`).join('\n\n');
+
+  const skeletonNodes = outline.nodes.map((node, index) => {
+    const sourcePages = Array.isArray(node.sourcePages) && node.sourcePages.length > 0 ? node.sourcePages : [index + 1];
+    return {
+      id: index + 1,
+      title: node.title,
+      unit: node.unit || '',
+      sourcePages,
+      duration: '5 min',
+      status: index === 0 ? 'active' : 'locked',
+      contentStatus: 'pending',
+      xp: 20,
+      summary: '',
+      breakdown: [],
+      keyConcepts: [],
+      sourceFacts: []
+    };
+  });
+
+  return {
+    title,
+    courseCode: '',
+    outlineNodes: outline.nodes,
+    skeletonNodes,
+    rawText,
+    totalPages,
+    skippedPages: validSkippedPages,
+    inventory,
+    coverage
+  };
+}
+
+export async function buildPdfStudyPath({ buffer, title, validateNodes, autoRepairNodes, onProgress = () => {} }) {
+  const outlineResult = await generatePdfOutline({ buffer, title, onProgress });
+  const { totalPages, inventory, rawText, validSkippedPages, coverage, outlineNodes } = outlineResult;
+
+  onProgress({ status: 'writing', stage: `Writing node 0 of ${outlineNodes.length}`, done: 0, total: outlineNodes.length });
 
   let completed = 0;
-  const nodes = await runPool(outline.nodes, NODE_CONTENT_CONCURRENCY, async (outlineNode) => {
+  const nodes = await runPool(outlineNodes, NODE_CONTENT_CONCURRENCY, async (outlineNode) => {
     const node = await generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes);
     completed++;
-    onProgress({ status: 'writing', stage: `Writing node ${completed} of ${outline.nodes.length}`, done: completed, total: outline.nodes.length });
+    onProgress({ status: 'writing', stage: `Writing node ${completed} of ${outlineNodes.length}`, done: completed, total: outlineNodes.length });
     return node;
   });
   nodes.sort((a, b) => a.sourcePages[0] - b.sourcePages[0]);
@@ -306,7 +342,6 @@ export async function buildPdfStudyPath({ buffer, title, validateNodes, autoRepa
     node.status = index === 0 ? 'active' : 'locked';
   });
 
-  const rawText = inventory.map((page) => `--- Page ${page.page} ---\n${page.groundingText || page.text}`).join('\n\n');
   return {
     title,
     courseCode: '',

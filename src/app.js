@@ -282,6 +282,7 @@ app.use('/api/pdf-cbt', cbtAILimiter, pdfCbtRoutes);
 app.use('/api/study-plan', studyPlanRoutes);
 app.use('/api/generate-path', studyPathRoutes);
 app.use('/api/study-path', studyPathRoutes);
+app.use('/api/study-paths', studyPathRoutes);
 app.use('/api/jobs', studyPathJobRoutes);
 app.use('/api/topics', studyPathRoutes);
 app.use('/api/referral', referralRoutes);
