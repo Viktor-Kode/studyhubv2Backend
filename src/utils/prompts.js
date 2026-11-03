@@ -252,6 +252,8 @@ EXAM DESIGN REQUIREMENTS:
 \n`;
   }
 
-  prompt += `\nReturn JSON conforming strictly to the requested schema.`;
+  prompt += `\nRETURN FORMAT (required): Return one JSON object with a "questions" array containing exactly 10 objects. Every question object MUST have these exact fields:
+{"question":"question text","options":["option A","option B","option C","option D"],"correctAnswerIndex":0,"explanation":"brief explanation","sourceNodeIds":[1,2],"type":"synthesis"}
+correctAnswerIndex is a zero-based integer from 0 to 3 and must point to the one correct option in options. Do not use "answer", "correctAnswer", or letter labels in place of correctAnswerIndex. Use type "synthesis" for questions 1–4 and "recall" for questions 5–10. Return JSON only, with no markdown or extra fields.`;
   return prompt;
 };

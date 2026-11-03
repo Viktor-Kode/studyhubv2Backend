@@ -1500,6 +1500,32 @@ async function callDeepSeekForJson(prompt, { maxTokens = 6000 } = {}) {
   }
 }
 
+function normalizeChallengeAnswerIndex(question) {
+  if (!question || typeof question !== "object") return question;
+  const options = Array.isArray(question.options) ? question.options : [];
+  const indexFields = [question.correctAnswerIndex, question.correctIndex, question.answerIndex];
+  for (const value of indexFields) {
+    const index = typeof value === "number" ? value : (typeof value === "string" && /^\d+$/.test(value.trim()) ? Number(value) : NaN);
+    if (Number.isInteger(index) && index >= 0 && index < options.length) {
+      return { ...question, correctAnswerIndex: index };
+    }
+  }
+
+  const answer = question.answer ?? question.correctAnswer ?? question.correctOption ?? question.correctAnswerText;
+  if (typeof answer === "number" && Number.isInteger(answer) && answer >= 0 && answer < options.length) {
+    return { ...question, correctAnswerIndex: answer };
+  }
+  if (typeof answer === "string") {
+    const normalizedAnswer = normalizeGroundingText(answer);
+    const matchingOption = options.findIndex(option => normalizeGroundingText(option) === normalizedAnswer);
+    if (matchingOption >= 0) return { ...question, correctAnswerIndex: matchingOption };
+
+    const letter = answer.trim().match(/^(?:option\s*)?([a-d])(?:[).:]?\s*)$/i);
+    if (letter) return { ...question, correctAnswerIndex: letter[1].toUpperCase().charCodeAt(0) - 65 };
+  }
+  return question;
+}
+
 async function callDeepSeekForChallenge({ pathRecord, excludeQuestions = [], retryProblems = [] }) {
 
   const nodesData = pathRecord.nodes.map(n => ({
@@ -1519,7 +1545,7 @@ async function callDeepSeekForChallenge({ pathRecord, excludeQuestions = [], ret
   });
 
   const generated = await callDeepSeekForJson(promptText, { maxTokens: 8192 });
-  return generated?.questions || [];
+  return Array.isArray(generated?.questions) ? generated.questions.map(normalizeChallengeAnswerIndex) : [];
 }
 
 export async function generateChallenge(pathRecord, additionalExclusions = []) {
