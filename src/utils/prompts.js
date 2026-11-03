@@ -116,7 +116,7 @@ TEACHING RULES FOR breakdown
 - Make the bold markers literal double-asterisk characters around a technical term in each body; do not rely on capitalization or formatting outside the text.
 - Paraphrase sourceFacts in teaching prose. Never copy 13 or more consecutive words from one sourceFact into a breakdown body.
 - You may use a brief plain-language analogy, but never add a fact, number, name, or clinical claim absent from sourceFacts. If unsure, leave it out.
-- Do not use "includes", "covers", "discusses", "overview of", "various", or "several" to introduce a list. State the actual action, nerve, reason, or consequence and explain how it works.
+- Do not use vague fillers such as "and others", "etc.", "various muscles", or "several joints" instead of teaching the actual action or relationship. Words like "includes" and "covers" are allowed when they accurately describe a structure or function; explain why that fact matters.
 - breakdown[0] is the "Understand it" slide: {"heading": specific title of at most 8 words, "body": 3-4 short sentences, 50-80 words}. Explain what the topic is, how it works, and why.
 - Aim for 60-70 words in breakdown[0] (never stop just above 50); the first sentence must explain a relationship or mechanism, not only define or name structures. Include a clear cause, purpose, contrast, or consequence.
 - breakdown[1] is the "Apply and remember it" slide: {"heading": specific title of at most 8 words, "body": 3-4 short sentences, 40-70 words, "memoryTip": one line of at most 20 words}. Explain a grounded practical consequence, example, or common mistake. The memoryTip is a source-provided mnemonic or, if absent, a simple analogy or memory hook using no new facts.

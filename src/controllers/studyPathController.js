@@ -13,7 +13,7 @@ const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas 
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
 const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Boolean).length;
 const GROUNDING_STOP_WORDS = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'their', 'this', 'to', 'was', 'were', 'with']);
-const BREAKDOWN_FILLER_REGEX = /\b(includes?|covers?|discusses?|overview of|various|several)\b|with specific (?:actions|nerve supply|attachments)/i;
+const BREAKDOWN_FILLER_REGEX = /\b(?:overview of|discusses?)\b|\b(?:include|includes|including|contain|contains|cover|covers|covering)\b[^.!?]{0,180}\b(?:and others|etcetera|etc\.|various|several|many)\b|\b(?:various|several|many)\s+(?:[a-z]+\s+){0,2}(?:muscles?|joints?|structures?|regions?|functions?|features?|parts?)\b|with specific (?:actions|nerve supply|attachments)/i;
 const BREAKDOWN_CONNECTOR_REGEX = /\b(?:because|so|which means|therefore|by\s|when\s|causes|leads to|allows|results in|while|whereas|in contrast|so that|as a result|since)\b/i;
 
 function durationFromLessonText(summary, keyConcepts, breakdown) {
@@ -128,19 +128,24 @@ export function validateStudyPathNodes(nodes, extractedText = '') {
     if (wordCount(node.summary) > 25) problems.push(`Node ${nodeNum} summary exceeds its 25-word limit (${wordCount(node.summary)} words).`);
     const summarySentences = String(node.summary || '').trim().split(/(?<=[.!?])\s+/).filter(Boolean);
     if (summarySentences.length !== 1) problems.push(`Node ${nodeNum} summary must be one sentence of at most 25 words.`);
-    const summaryTerms = new Set(normalizedWords(node.summary).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
+    const normalizedSummary = normalizeGroundingText(node.summary);
     const conceptDetails = [];
     for (const [conceptIndex, concept] of (Array.isArray(node.keyConcepts) ? node.keyConcepts : []).entries()) {
       const text = String(concept || '').trim();
       if (!/^[^:]{1,40}:\s*\S/.test(text)) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must start with its key term in "Term: fact" form.`);
       const detailText = text.includes(':') ? text.slice(text.indexOf(':') + 1) : text;
       const detailTerms = new Set(normalizedWords(detailText).filter((term) => term.length > 3 && !GROUNDING_STOP_WORDS.has(term)));
-      const newDetails = [...detailTerms].filter((term) => !summaryTerms.has(term));
-      if (newDetails.length < 1) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] must state at least one specific fact detail absent from the summary.`);
+      const normalizedDetail = normalizeGroundingText(detailText);
+      // Word-set overlap is not a reliable semantic test: a concept may add a
+      // new relationship using terms that also appear in the summary. Reject
+      // only a substantial detail phrase copied verbatim from the summary.
+      if (detailTerms.size >= 3 && normalizedSummary.includes(normalizedDetail)) {
+        problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] repeats a detail phrase from the summary; add a distinct source fact.`);
+      }
       if (conceptDetails.some((previous) => {
         const shared = [...detailTerms].filter((term) => previous.has(term)).length;
         const union = new Set([...detailTerms, ...previous]).size;
-        return shared >= 3 && shared / Math.max(1, union) >= 0.8;
+        return shared >= 4 && shared / Math.max(1, union) >= 0.9;
       })) problems.push(`Node ${nodeNum} keyConcepts[${conceptIndex}] repeats another key concept.`);
       conceptDetails.push(detailTerms);
     }
@@ -392,7 +397,7 @@ async function callDeepSeekForStudyPath({
   userInstruction += `Generate a sequential study path strictly following all system instructions and return as JSON.\n\n`;
 
   if (retryProblems && retryProblems.length > 0) {
-    userInstruction += `REPAIR THE PREVIOUS STUDY PATH. Return the complete corrected JSON in the same schema. Fix every issue below in the named node and field; do not merely explain the correction. Preserve valid nodes, source facts, source pages, units, and document coverage.\n${retryProblems.map(p => `- ${p}`).join('\n')}\n\nREPAIR RULES:\n- For a short breakdown[0].body, rewrite it to 60-70 words (never below 55), with 3-4 explanatory sentences. Aim comfortably inside the range rather than at its boundary.\n- Slide 1 must explain a mechanism, cause, purpose, or consequence. Include a clear reasoning link in the body such as because, so, which means, while, whereas, or as a result; a bare definition or list of structures is not enough.\n- If key concepts repeat, give each a different fact after the colon; keep overlap between their detail phrases low. Each detail must add information absent from the summary.\n- For copied source wording, paraphrase the sentence from scratch and do not reuse 13 consecutive words from any sourceFact.\n- Every breakdown body must contain 1-3 literal **bold technical terms** and at least four specific terms grounded in that node's sourceFacts. Avoid phrases that introduce lists; explain how structures act or relate.\n- Keep both quiz and quiz2 complete: each needs a distinct question, four options, correctAnswerIndex, and explanation. Never omit quiz2.\n\n`;
+    userInstruction += `REPAIR THE PREVIOUS STUDY PATH. Return the complete corrected JSON in the same schema. Fix every issue below in the named node and field; do not merely explain the correction. Preserve valid nodes, source facts, source pages, units, and document coverage.\n${retryProblems.map(p => `- ${p}`).join('\n')}\n\nREPAIR RULES:\n- For a short breakdown[0].body, rewrite it to 60-70 words (never stop before 55), with 3-4 explanatory sentences. Aim comfortably inside the range.\n- Slide 1 must explain a mechanism, cause, purpose, contrast, or consequence. Include a clear reasoning link such as because, so, which means, while, whereas, or as a result; a bare definition or list is not enough.\n- If key concepts repeat, keep the term before the colon and write a different concrete fact after it. Each fact must add information absent from the summary.\n- For copied source wording, paraphrase the sentence from scratch and do not reuse 13 consecutive words from any sourceFact.\n- Every breakdown body must contain 1-3 literal **bold technical terms** and at least four specific terms grounded in that node's sourceFacts.\n- Words such as includes and covers are valid when they describe a real structure or function. Avoid vague list filler such as and others, etc., various muscles, or several joints; explain the actual action or relationship.\n- If a node title combines multiple subtopics, split it into separate narrow nodes and write independent summaries, breakdowns, key concepts, and two quizzes for each. If a node has over 8 sourceFacts, split the facts into separate nodes; never drop facts to satisfy the limit. Distribute original sourcePages across the resulting nodes.\n- Keep both quiz and quiz2 complete: each needs a distinct question, four options, correctAnswerIndex, and explanation. Never omit quiz2.\n\n`;
   }
 
   // DeepSeek-V3 context window is 64k tokens (~180,000 characters)
