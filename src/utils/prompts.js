@@ -113,7 +113,7 @@ TEACHING RULES FOR breakdown
 - Show relationships with connecting logic such as because, so, which means, therefore, when X happens Y follows.
 - Use simple everyday words around technical terms and short sentences.
 - Wrap 1 to 3 important technical terms in each body in **double asterisks**. These markers are rendered as emphasis in the lesson UI.
-- Make the bold markers literal `**` characters around a technical term in each body; do not rely on capitalization or formatting outside the text.
+- Make the bold markers literal double-asterisk characters around a technical term in each body; do not rely on capitalization or formatting outside the text.
 - Paraphrase sourceFacts in teaching prose. Never copy 13 or more consecutive words from one sourceFact into a breakdown body.
 - You may use a brief plain-language analogy, but never add a fact, number, name, or clinical claim absent from sourceFacts. If unsure, leave it out.
 - Do not use "includes", "covers", "discusses", "overview of", "various", or "several" to introduce a list. State the actual action, nerve, reason, or consequence and explain how it works.
