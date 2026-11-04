@@ -6,7 +6,7 @@ const FROM_EMAIL = getEnv('FROM_EMAIL', 'notifications@studyhelp.site');
 const FROM_NAME = 'StudyHelp';
 
 // ── Send single email ─────────────────────────────────
-export const sendEmail = async ({ to, subject, html }) => {
+export const sendEmail = async ({ to, subject, html, text }) => {
     try {
         if (!RESEND_API_KEY) {
             console.error('[Email] Error: RESEND_API_KEY missing in backend environment.');
@@ -18,7 +18,8 @@ export const sendEmail = async ({ to, subject, html }) => {
             from: `${FROM_NAME} <${FROM_EMAIL}>`,
             to,
             subject,
-            html: html
+            html,
+            ...(text ? { text } : {}),
         });
 
         if (error) {

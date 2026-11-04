@@ -148,6 +148,9 @@ const userSchema = new mongoose.Schema({
     toObject: { virtuals: true }
 });
 
+userSchema.index({ 'settings.notificationPrefs.studyReminders': 1 });
+userSchema.index({ 'settings.notificationPrefs.weeklyDigest': 1 });
+
 // Virtual field for backward compatibility with frontend 'plan' expectations
 userSchema.virtual('plan').get(function () {
     let isActive = false;

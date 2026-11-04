@@ -5,14 +5,16 @@ import { sendEmail } from './emailService.js';
 import { getEnv } from '../config/env.js';
 import webpush from 'web-push';
 
+let webPushConfigured = false;
 try {
-  webpush.setVapidDetails(
-    'mailto:support@studyhelp.com',
-    getEnv('VAPID_PUBLIC_KEY') || 'BDwY_XTd827IvdnV3MbcuUosDltKcM4WSea2jxhVubX3xA8nnd8H4clSyRCFEZ5rXKVvSSxIFIdA7AKB7zaU9hE',
-    getEnv('VAPID_PRIVATE_KEY') || 'm3tu1aef4R9Q8Q73m_zoI4iQ2so7wg2_fmwmDhfrROU'
-  );
+  const publicKey = getEnv('VAPID_PUBLIC_KEY');
+  const privateKey = getEnv('VAPID_PRIVATE_KEY');
+  if (publicKey && privateKey) {
+    webpush.setVapidDetails(getEnv('VAPID_SUBJECT', 'mailto:support@studyhelp.com'), publicKey, privateKey);
+    webPushConfigured = true;
+  }
 } catch (e) {
-  console.error('[WebPush] Failed to set vapid details:', e.message);
+  console.error('[WebPush] Failed to configure VAPID:', e.message);
 }
 
 const EMAIL_TYPES = ['payment_confirmed', 'plan_expiring', 'streak_ending', 'admin_announcement', 'welcome'];
@@ -125,6 +127,7 @@ export const sendNotification = async ({
   link = '/dashboard/student',
   data = {},
 }) => {
+  const delivery = { pushSent: false, emailSent: false };
   try {
     await PushNotification.create({
       userId,
@@ -145,7 +148,7 @@ export const sendNotification = async ({
         // userId was not a valid ObjectId or query failed, ignore
       }
     }
-    if (!user) return;
+    if (!user) return delivery;
 
     if (user.fcmToken && user.notificationsEnabled) {
       try {
@@ -167,6 +170,7 @@ export const sendNotification = async ({
             link: linkPath,
           },
         });
+        delivery.pushSent = true;
       } catch (fcmErr) {
         if (fcmErr.code === 'messaging/registration-token-not-registered' || fcmErr.code === 'messaging/invalid-registration-token') {
           await User.findOneAndUpdate({ firebaseUid: userId }, { fcmToken: null });
@@ -175,7 +179,7 @@ export const sendNotification = async ({
       }
     }
 
-    if (user.webPushSubscription && user.notificationsEnabled) {
+    if (user.webPushSubscription && user.notificationsEnabled && webPushConfigured) {
       try {
         const linkPath = link.startsWith('/') ? link : `/${link}`;
         const fullUrl = `${frontendBase()}${linkPath}`;
@@ -186,6 +190,7 @@ export const sendNotification = async ({
           data: { url: fullUrl }
         });
         await webpush.sendNotification(user.webPushSubscription, payload);
+        delivery.pushSent = true;
       } catch (wpErr) {
         if (wpErr.statusCode === 404 || wpErr.statusCode === 410) {
           await User.findOneAndUpdate({ _id: user._id }, { webPushSubscription: null });
@@ -197,16 +202,18 @@ export const sendNotification = async ({
     if (EMAIL_TYPES.includes(type) && user.email && !user.emailUnsubscribed) {
       const emailContent = getEmailContent(type, { ...data, userName: user.name, email: user.email });
       if (emailContent) {
-        await sendEmail({
+        const result = await sendEmail({
           to: user.email,
           subject: emailContent.subject,
           html: emailContent.html,
         });
+        delivery.emailSent = Boolean(result?.success);
       }
     }
   } catch (err) {
     console.error('[Notification Service]', err.message);
   }
+  return delivery;
 };
 
 export const sendBulkNotification = async ({ userIds, type, title, body, icon, link, data }) => {

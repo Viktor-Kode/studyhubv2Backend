@@ -130,8 +130,17 @@ export const protect = async (req, res, next) => {
         req.user = currentUser;
 
         const now = new Date();
-        // Update lastSeen silently (fire-and-forget)
-        User.findByIdAndUpdate(currentUser._id, { $set: { lastSeen: now } }).catch(() => {});
+        // Track lastSeen at most once per minute per user to avoid a write for every API call.
+        User.updateOne(
+            {
+                _id: currentUser._id,
+                $or: [
+                    { lastSeen: null },
+                    { lastSeen: { $lt: new Date(now.getTime() - 60 * 1000) } },
+                ],
+            },
+            { $set: { lastSeen: now } }
+        ).catch(() => {});
 
         const dk = utcDayKey(now);
         UserDailyActivity.findOneAndUpdate(

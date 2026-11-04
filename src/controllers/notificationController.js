@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import PushNotification from '../models/PushNotification.js';
 import User from '../models/User.js';
 import { sendBulkNotification } from '../services/notificationService.js';
+import { trackNotificationClick } from '../services/retentionNotificationService.js';
 
 export const getNotifications = async (req, res) => {
   try {
@@ -89,18 +90,42 @@ export const disableNotifications = async (req, res) => {
 export const registerWebPush = async (req, res) => {
   try {
     let subscription = req.body.subscription || req.body;
-    if (!subscription || !subscription.endpoint) {
+    if (!subscription || !subscription.endpoint || typeof subscription.endpoint !== 'string') {
       return res.status(400).json({ error: 'subscription required' });
+    }
+    try {
+      if (new URL(subscription.endpoint).protocol !== 'https:') return res.status(400).json({ error: 'Subscription endpoint must use HTTPS' });
+    } catch { return res.status(400).json({ error: 'Invalid subscription endpoint' }); }
+    if (!subscription.keys?.p256dh || !subscription.keys?.auth) {
+      return res.status(400).json({ error: 'Subscription keys are required' });
     }
     const uid = req.user.firebaseUid || req.user._id || req.user.id;
     if (!uid) {
       return res.status(400).json({ error: 'Missing User ID' });
     }
     const filter = req.user.firebaseUid ? { firebaseUid: uid } : { _id: uid };
-    await User.findOneAndUpdate(filter, { webPushSubscription: subscription, notificationsEnabled: true });
+    const update = { webPushSubscription: subscription, notificationsEnabled: true };
+    if (typeof req.body.timezone === 'string') {
+      try {
+        new Intl.DateTimeFormat('en', { timeZone: req.body.timezone });
+        update['settings.notificationPrefs.timezone'] = req.body.timezone;
+      } catch { /* ignore unsupported time zones */ }
+    }
+    await User.findOneAndUpdate(filter, { $set: update });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+export const trackNotification = async (req, res) => {
+  try {
+    const logId = String(req.body?.logId || '');
+    if (!mongoose.Types.ObjectId.isValid(logId)) return res.status(400).json({ success: false, error: 'Invalid logId' });
+    const tracked = await trackNotificationClick(req.user, logId);
+    return res.json({ success: true, tracked });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 };
 

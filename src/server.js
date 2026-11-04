@@ -2,7 +2,6 @@ import { getEnv } from './config/env.js'; // Must be first to load environment v
 import app from './app.js';
 import connectDB from './config/db.js';
 import mongoose from 'mongoose';
-import { registerNotificationJobs } from './jobs/notificationJobs.js';
 import { registerPushNotificationCrons } from './jobs/pushNotificationCron.js';
 import { registerStudyPlanJobs } from './jobs/studyPlanJobs.js';
 import './jobs/subscriptionJobs.js';
@@ -12,7 +11,6 @@ import './jobs/leaderboardJobs.js';
 
 // Connect to Database
 connectDB().then(() => {
-  registerNotificationJobs();
   registerPushNotificationCrons();
   registerStudyPlanJobs();
 

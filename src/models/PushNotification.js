@@ -14,6 +14,7 @@ const PushNotificationSchema = new mongoose.Schema(
         'plan_expiring',
         'new_post_follow',
         'streak_ending',
+        'study_nudge',
         'admin_announcement',
         'welcome',
       ],

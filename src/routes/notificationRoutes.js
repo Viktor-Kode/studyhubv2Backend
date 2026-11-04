@@ -1,6 +1,7 @@
 import express from 'express';
 import { protect } from '../middleware/authMiddleware.js';
 import User from '../models/User.js';
+import rateLimit from 'express-rate-limit';
 import { sendMessage, checkBalance } from '../services/termiiService.js';
 import {
   getNotifications,
@@ -9,9 +10,11 @@ import {
   registerToken,
   disableNotifications,
   registerWebPush,
+  trackNotification,
 } from '../controllers/notificationController.js';
 
 const router = express.Router();
+const notificationSetupLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 
 router.use(protect);
 
@@ -20,8 +23,9 @@ router.post('/mark-read', markAllRead);
 router.post('/mark-read/:id', markOneRead);
 router.post('/register-token', registerToken);
 router.post('/register-web-push', registerWebPush);
-router.post('/subscribe', registerWebPush);
-router.post('/test-push', async (req, res) => {
+router.post('/subscribe', notificationSetupLimiter, registerWebPush);
+router.post('/track', trackNotification);
+router.post('/test-push', notificationSetupLimiter, async (req, res) => {
   try {
     const user = await User.findById(req.user.id || req.user._id);
     if (!user || !user.webPushSubscription) {
