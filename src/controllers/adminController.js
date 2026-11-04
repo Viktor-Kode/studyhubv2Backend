@@ -18,6 +18,7 @@ import ChatHistory from '../models/ChatHistory.js';
 import PaywallEvent from '../models/PaywallEvent.js';
 import ExplanationCache from '../models/ExplanationCache.js';
 import UserActivity from '../models/UserActivity.js';
+import StudyPath from '../models/StudyPath.js';
 import { PLANS } from '../config/plans.js';
 import { syncRoleFromFirestore } from '../utils/firestoreUserSync.js';
 
@@ -584,6 +585,60 @@ export const getUserActivity = async (req, res) => {
         });
     } catch (err) {
         console.error('[Admin] getUserActivity error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+};
+
+/** Return a user's study maps and detailed map interaction history. */
+export const getUserStudyMapActivity = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const user = await User.findById(id).select('_id firebaseUid').lean();
+        if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+        const ownerIds = [user._id?.toString(), user.firebaseUid].filter(Boolean);
+        const [paths, interactions] = await Promise.all([
+            StudyPath.find({ userId: { $in: ownerIds } }).sort({ updatedAt: -1 }).lean(),
+            UserActivity.find({
+                userId: userId(id),
+                type: { $in: ['study_map_opened', 'study_node_opened', 'study_node_completed', 'study_challenge_submitted'] }
+            }).sort({ createdAt: -1 }).limit(250).select('type title subtitle metadata createdAt').lean()
+        ]);
+
+        res.json({
+            success: true,
+            maps: paths.map((path) => ({
+                topicId: path.topicId,
+                title: path.title,
+                courseCode: path.courseCode,
+                currentProgress: path.currentProgress || 0,
+                completed: Boolean(path.completed),
+                isActive: Boolean(path.isActive),
+                nodeCount: path.nodes?.length || 0,
+                nodes: (path.nodes || []).map((node) => ({
+                    id: node.id,
+                    title: node.title,
+                    status: node.status,
+                    contentStatus: node.contentStatus,
+                    sourcePages: node.sourcePages || []
+                })),
+                challenge: {
+                    status: path.challenge?.status || 'locked',
+                    attempts: (path.challenge?.attempts || []).map((attempt) => ({
+                        score: attempt.score,
+                        total: attempt.total,
+                        passed: attempt.passed,
+                        takenAt: attempt.takenAt,
+                        missedNodeIds: attempt.missedNodeIds || []
+                    }))
+                },
+                createdAt: path.createdAt,
+                updatedAt: path.updatedAt
+            })),
+            interactions
+        });
+    } catch (err) {
+        console.error('[Admin] getUserStudyMapActivity error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 };

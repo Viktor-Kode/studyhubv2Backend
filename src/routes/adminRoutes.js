@@ -12,6 +12,7 @@ import {
     getTodayLogins,
     getDashboardLogins,
     getUserActivity,
+    getUserStudyMapActivity,
     getUserActivityDay,
     getUserActivityDays,
     getUserPageViews,
@@ -88,6 +89,7 @@ router.get('/metric-users', protect, restrictTo('admin'), getMetricUsers);
 router.get('/users/:id/activity-days', protect, restrictTo('admin'), getUserActivityDays);
 router.get('/users/:id/activity/day', protect, restrictTo('admin'), getUserActivityDay);
 router.get('/users/:id/activity', protect, restrictTo('admin'), getUserActivity);
+router.get('/users/:id/study-maps', protect, restrictTo('admin'), getUserStudyMapActivity);
 router.get('/users/:id/page-views', protect, restrictTo('admin'), getUserPageViews);
 router.patch('/users/:id/verify', protect, restrictTo('admin'), setUserVerification);
 router.post('/users/:id/grant-plan', protect, restrictTo('admin'), grantPlan);

@@ -9,6 +9,7 @@ import { awardXP } from './progressController.js';
 import { buildPdfStudyPath, generatePdfOutline } from '../services/studyPathPdfPipeline.js';
 import { createStudyPathJob, getStudyPathJob, serializeStudyPathJob, updateStudyPathJob } from '../services/studyPathJobs.js';
 import { cachePdfBuffer, triggerNodeGenerations, prepareNode, getNodeStatuses } from '../services/studyPathNodeService.js';
+import { logUserActivity } from '../services/activityService.js';
 
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
@@ -1147,6 +1148,11 @@ export const getStudyPathById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Study path not found' });
     }
 
+    const viewerId = req.user?._id;
+    if (viewerId && pathRecord.userId && [viewerId.toString(), req.user?.firebaseUid].includes(pathRecord.userId)) {
+      await logUserActivity({ userId: viewerId, type: 'study_map_opened', title: 'Opened study map', subtitle: pathRecord.title, metadata: { topicId, mapTitle: pathRecord.title } });
+    }
+
     return res.status(200).json({
       success: true,
       studyPath: formatStudyPathResponse(pathRecord)
@@ -1785,6 +1791,14 @@ export const submitChallenge = async (req, res) => {
 
     await pathRecord.save();
 
+    await logUserActivity({
+      userId: userMongoId,
+      type: 'study_challenge_submitted',
+      title: 'Submitted study map challenge',
+      subtitle: `${score}/${TOTAL_CHALLENGE_QUESTIONS}${passed ? ' · passed' : ''}`,
+      metadata: { topicId, mapTitle: pathRecord.title, score, total: TOTAL_CHALLENGE_QUESTIONS, passed, missedNodeIds }
+    });
+
     if (xpAwarded > 0 && effectiveUserId && effectiveUserId !== "anonymous-user") {
       try {
         await awardXP(userMongoId || effectiveUserId, "unit_challenge", { amount: xpAwarded });
@@ -1909,6 +1923,7 @@ export const updateNodeStatus = async (req, res) => {
 
       if (status === 'completed' && prevStatus !== 'completed') {
         const userId = req.user?._id || pathRecord.userId;
+        await logUserActivity({ userId: req.user?._id, type: 'study_node_completed', title: 'Completed study node', subtitle: pathRecord.nodes[nodeIndex]?.title || `Node ${targetId}`, metadata: { topicId, mapTitle: pathRecord.title, nodeId: targetId, nodeTitle: pathRecord.nodes[nodeIndex]?.title } });
         if (userId && userId !== 'anonymous-user') {
           const xpAmt = pathRecord.nodes[nodeIndex]?.xp || 15;
           await awardXP(userId, xpAmt).catch(() => {});
@@ -1955,6 +1970,12 @@ export const prepareNodeController = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid node ID' });
     }
     const bufferNext = req.body?.bufferNext !== false;
+    const pathRecord = await StudyPath.findOne({ topicId }).select('userId title nodes.id nodes.title').lean();
+    const actorId = req.user?._id;
+    if (pathRecord && actorId && pathRecord.userId && [actorId.toString(), req.user?.firebaseUid].includes(pathRecord.userId)) {
+      const openedNode = pathRecord.nodes?.find((item) => item.id === nodeId);
+      await logUserActivity({ userId: actorId, type: 'study_node_opened', title: 'Opened study node', subtitle: openedNode?.title || `Node ${nodeId}`, metadata: { topicId, mapTitle: pathRecord.title, nodeId, nodeTitle: openedNode?.title } });
+    }
     const node = await prepareNode({ topicId, nodeId, bufferNext });
     return res.status(200).json({ success: true, node });
   } catch (error) {
