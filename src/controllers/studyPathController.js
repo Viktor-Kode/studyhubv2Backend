@@ -1191,6 +1191,42 @@ export const getUserStudyPaths = async (req, res) => {
 };
 
 /**
+ * GET /api/study-path/count (or /status)
+ * Queries DB for total count of study maps owned by authenticated user
+ */
+export const getStudyMapCount = async (req, res) => {
+  try {
+    const userMongoId = req.user?._id?.toString();
+    const userFirebaseId = req.user?.firebaseUid;
+    const userQueryId = req.query?.userId;
+    const userIds = [userMongoId, userFirebaseId, userQueryId].filter(id => id && id !== 'anonymous-user');
+
+    if (userIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        hasStudyMaps: false
+      });
+    }
+
+    const count = await StudyPath.countDocuments({ userId: { $in: userIds } });
+
+    return res.status(200).json({
+      success: true,
+      count,
+      hasStudyMaps: count > 0
+    });
+  } catch (error) {
+    console.error('[getStudyMapCount] Error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to count user study maps',
+      error: error.message
+    });
+  }
+};
+
+/**
  * DELETE /api/study-path/:topicId
  */
 export const deleteStudyPath = async (req, res) => {

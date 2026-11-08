@@ -6,6 +6,7 @@ import {
   getStudyPathJobStatus,
   getActiveStudyPath,
   getUserStudyPaths,
+  getStudyMapCount,
   getStudyPathById,
   updateNodeStatus,
   deleteStudyPath,
@@ -62,6 +63,8 @@ router.get('/jobs/:jobId', optionalProtect, getStudyPathJobStatus);
 
 // GET /api/generate-path/active or /api/study-path/active
 router.get('/active', optionalProtect, getActiveStudyPath);
+router.get('/count', optionalProtect, getStudyMapCount);
+router.get('/status', optionalProtect, getStudyMapCount);
 router.get('/all', optionalProtect, getUserStudyPaths);
 router.get('/user/all', optionalProtect, getUserStudyPaths);
 

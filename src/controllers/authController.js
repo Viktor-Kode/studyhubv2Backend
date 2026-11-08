@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import StudyPath from '../models/StudyPath.js';
 import sendEmail from '../utils/email.js';
 import crypto from 'crypto';
 import { getEnv } from '../config/env.js';
@@ -24,7 +25,7 @@ const signToken = (id) => {
 /**
  * Normalizes and sends the token response
  */
-const createSendToken = (user, statusCode, res) => {
+const createSendToken = async (user, statusCode, res) => {
     const token = signToken(user._id);
 
     const cookieOptions = {
@@ -41,10 +42,32 @@ const createSendToken = (user, statusCode, res) => {
     // Remove password from output
     user.password = undefined;
 
+    let studyMapCount = 0;
+    try {
+        const userMongoId = user._id?.toString();
+        const userFirebaseId = user.firebaseUid;
+        const userIds = [userMongoId, userFirebaseId].filter(id => id && id !== 'anonymous-user');
+        if (userIds.length > 0) {
+            studyMapCount = await StudyPath.countDocuments({ userId: { $in: userIds } });
+        }
+    } catch (err) {
+        console.warn('[createSendToken] Could not count study maps:', err.message);
+    }
+
+    const rawUser = typeof user.toObject === 'function' ? user.toObject() : { ...user };
+    const userPayload = {
+        ...rawUser,
+        studyMapCount,
+        hasStudyMaps: studyMapCount > 0
+    };
+
     res.status(statusCode).json({
         status: 'success',
+        token,
         data: {
-            user
+            user: userPayload,
+            studyMapCount,
+            hasStudyMaps: studyMapCount > 0
         }
     });
 };
@@ -155,6 +178,18 @@ export const getMe = async (req, res, next) => {
             ))
             : 0;
 
+        const userMongoId = user._id?.toString();
+        const userFirebaseId = user.firebaseUid;
+        const userIds = [userMongoId, userFirebaseId].filter(id => id && id !== 'anonymous-user');
+        let studyMapCount = 0;
+        try {
+            if (userIds.length > 0) {
+                studyMapCount = await StudyPath.countDocuments({ userId: { $in: userIds } });
+            }
+        } catch (err) {
+            console.warn('[getMe] Could not count study maps:', err.message);
+        }
+
         const uo = user.toObject();
         res.status(200).json({
             status: 'success',
@@ -164,8 +199,12 @@ export const getMe = async (req, res, next) => {
                     uid: uo.firebaseUid || null,
                     preferences: uo.preferences || { hideTourButton: true, hideChatbot: true },
                     daysLeft,
-                    isActive: user.subscriptionStatus === 'active' && daysLeft > 0
-                }
+                    isActive: user.subscriptionStatus === 'active' && daysLeft > 0,
+                    studyMapCount,
+                    hasStudyMaps: studyMapCount > 0
+                },
+                studyMapCount,
+                hasStudyMaps: studyMapCount > 0
             }
         });
     } catch (err) {
