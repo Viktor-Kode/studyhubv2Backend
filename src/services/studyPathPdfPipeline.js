@@ -2,6 +2,10 @@ import { studyPathSystemPrompt } from '../utils/prompts.js';
 import { inventoryPdfPages, parsePdfBuffer } from '../utils/parsePdf.js';
 import { generateDeepSeekVisionJson, renderPdfPagesToImages } from './deepseekStudyPathVision.js';
 import { MAX_NODES, MAX_SKIPPED_PAGE_RATIO, NODE_CONTENT_CONCURRENCY, OUTLINE_CHUNK_OVERLAP, OUTLINE_CHUNK_PAGES } from '../config/studyPathConfig.js';
+import { analyzePdfDocument } from './documentIntelligenceService.js';
+import { classifyDocumentDomain } from './domainClassifierService.js';
+import { getBlueprint, applyBlueprintToPrompt } from './blueprintEngine.js';
+import { getCollectivePatterns } from './collectiveIntelligenceService.js';
 
 const wordCount = (text) => String(text || '').trim().split(/\s+/).filter(Boolean).length;
 const normalizeTitle = (text) => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -58,7 +62,7 @@ function mergeOutlines(outlines) {
   return { nodes, skippedPages: [...skipped.values()].sort((a, b) => a.page - b.page) };
 }
 
-function outlinePrompt({ totalPages, pages, inventory, retryPages = [] }) {
+function outlinePrompt({ totalPages, pages, inventory, retryPages = [], blueprint = null }) {
   const pageMap = pages.map((page, index) => `${index + 1} = original page ${page}`).join('\n');
   const inventoryText = pages.map((page) => {
     const item = inventory[page - 1];
@@ -82,12 +86,12 @@ STRUCTURE RULES:
 - A visual page (under 15 extractable words) cannot be skipped except when it is the first or last original page and is clearly a title or thanks slide. Read its labels and diagrams from the PDF image.
 - Preserve original page numbers exactly; do not use attachment-local page numbers.
 - There is no node-count target or cap other than the safety limit of ${MAX_NODES}; let the document's content determine the count.
-${retryPages.length ? `\nCOVERAGE RETRY: These original pages are not covered: ${retryPages.join(', ')}. Add specific narrow nodes for them; do not skip them.` : ''}`;
+${retryPages.length ? `\nCOVERAGE RETRY: These original pages are not covered: ${retryPages.join(', ')}. Add specific narrow nodes for them; do not skip them.` : ''}${blueprint && blueprint.outlineRules ? `\n\nDOMAIN-SPECIFIC OUTLINE DIRECTIVES (${blueprint.name.toUpperCase()}):\n${blueprint.outlineRules}` : ''}`;
 }
 
-async function requestOutline(buffer, pages, title, totalPages, inventory, retryPages = []) {
+async function requestOutline(buffer, pages, title, totalPages, inventory, retryPages = [], blueprint = null) {
   const images = await renderPdfPagesToImages(buffer, pages);
-  const text = outlinePrompt({ totalPages, pages, inventory, retryPages });
+  const text = outlinePrompt({ totalPages, pages, inventory, retryPages, blueprint });
   const result = await generateDeepSeekVisionJson({ prompt: `${text}\n\nDocument title: ${title}`, images });
   return flattenOutline(result, pages);
 }
@@ -141,14 +145,24 @@ async function titleUncoveredRun(buffer, pages, title, inventory) {
   return { title: nodeTitle, unit: '', sourcePages: pages };
 }
 
-function nodeContentPrompt(outlineNode, allPages) {
-  return `${studyPathSystemPrompt}\n\nCreate content for EXACTLY ONE node from the attached slide images and supplied page text. Return JSON as {"node": { ... }} using the existing node schema.
+function nodeContentPrompt(outlineNode, allPages, blueprint = null, collectivePatterns = null) {
+  let prompt = `${studyPathSystemPrompt}\n\nCreate content for EXACTLY ONE node from the attached slide images and supplied page text. Return JSON as {"node": { ... }} using the existing node schema.
 Use this fixed outline title exactly: "${outlineNode.title}". Unit: "${outlineNode.unit || ''}". sourcePages must be the original page numbers [${outlineNode.sourcePages.join(', ')}]. Read labels, diagrams, and image-only slide content directly from the attached images. Use only these pages; do not import outside facts. Keep this node narrowly focused on the stated subtopic.
 The full document contains ${allPages} pages. Do not create other nodes.
 Before returning, self-check every field: both breakdown bodies must be tutor explanations, not slide bullets rewritten as sentences. Each must contain at least one technical term wrapped literally in **double asterisks**, and slide 1 must explain a cause, mechanism, or consequence using a reasoning connector. Paraphrase sourceFacts in the breakdown; never copy 13 consecutive words from a sourceFact. Do not use listing filler such as "includes" to introduce a list; explain what the structures do or how they relate. Every keyConcept must have the form "Term: new specific fact"; the fact after the colon must add information the summary does not state. Keep each concept distinct from the other concepts.`;
+
+  if (blueprint) {
+    prompt = applyBlueprintToPrompt(prompt, blueprint);
+  }
+
+  if (collectivePatterns && Array.isArray(collectivePatterns.commonPitfalls) && collectivePatterns.commonPitfalls.length > 0) {
+    prompt += `\n\nKNOWN STUDENT CONFUSION POINTS FOR THIS DOMAIN (clarify in lesson or test in quiz):\n- ${collectivePatterns.commonPitfalls.slice(0, 3).join('\n- ')}`;
+  }
+
+  return prompt;
 }
 
-export async function generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes) {
+export async function generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes, blueprint = null, collectivePatterns = null) {
   const images = await renderPdfPagesToImages(buffer, outlineNode.sourcePages);
   const pageText = outlineNode.sourcePages.map((page) => `--- Original page ${page} ---\n${inventory[page - 1].groundingText || inventory[page - 1].text || '[No extractable text; inspect the slide image.]'}`).join('\n\n');
   let lastError;
@@ -156,7 +170,7 @@ export async function generateNodeContent(buffer, outlineNode, inventory, totalP
   for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const retryText = attempt && lastError ? `\n\nREPAIR THE PREVIOUS RESPONSE. Return the complete corrected JSON node in the same schema, fixing every issue below. Rewrite the named field or sentence; do not merely explain the change.\n${lastError}\n\nREPAIR CHECKLIST:\n- For a missing bold term, wrap an actual technical term in that slide body with literal Markdown markers, for example **term**.\n- For a list-only sentence, explain the mechanism or relationship and why it produces the stated result; connect the reasoning with because, so, which means, when, or therefore.\n- For copied source wording, paraphrase the explanation from scratch. Do not reuse a run of 13 or more words from any sourceFact.\n- For a keyConcept detail issue, keep the key term before the colon and add a concrete fact after it that the summary does not state.\n- For prohibited filler, replace the phrase with the actual action, structure, or relationship.\n- Keep slide 1 body between 50 and 80 words and slide 2 body between 40 and 70 words; aim near the middle of each range. Each body needs 3-4 explanatory sentences, 1-3 bold technical terms, and at least four specific terms grounded in sourceFacts.\n- Check both keyConcepts and both quiz questions against the summary and source material before returning.` : '';
-        const result = await generateDeepSeekVisionJson({ prompt: `${nodeContentPrompt(outlineNode, totalPages)}\n\nExtracted text from the assigned original pages (visual labels may also appear in the images):\n${pageText}${retryText}`, images });
+        const result = await generateDeepSeekVisionJson({ prompt: `${nodeContentPrompt(outlineNode, totalPages, blueprint, collectivePatterns)}\n\nExtracted text from the assigned original pages (visual labels may also appear in the images):\n${pageText}${retryText}`, images });
         const generated = result?.node || result?.nodes?.[0] || result;
         const returnedPages = Array.isArray(generated.sourcePages) ? generated.sourcePages.map(Number) : [];
         if (!returnedPages.length) throw new Error('Returned node is missing its original sourcePages.');
@@ -245,16 +259,39 @@ async function runPool(items, concurrency, worker) {
 }
 
 export async function generatePdfOutline({ buffer, title, onProgress = () => {} }) {
-  const inventoryResult = await inventoryPdfPages(buffer);
-  const { numpages: totalPages } = inventoryResult;
-  const extracted = await parsePdfBuffer(buffer);
-  const inventory = inventoryResult.pages.map((page, index) => ({ ...page, groundingText: extracted.pages?.[index] || '' }));
+  let totalPages;
+  let inventory;
+  let rawText;
+  let documentProfile = null;
+
+  try {
+    const analysis = await analyzePdfDocument(buffer);
+    totalPages = analysis.totalPages;
+    inventory = analysis.inventory;
+    rawText = analysis.rawText;
+    documentProfile = analysis.documentProfile;
+  } catch (analysisErr) {
+    console.warn('[studyPathPdfPipeline] Single-pass intelligence fallback:', analysisErr.message);
+    const inventoryResult = await inventoryPdfPages(buffer);
+    totalPages = inventoryResult.numpages;
+    const extracted = await parsePdfBuffer(buffer);
+    inventory = inventoryResult.pages.map((page, index) => ({ ...page, groundingText: extracted.pages?.[index] || '' }));
+    rawText = inventory.map((page) => `--- Page ${page.page} ---\n${page.groundingText || page.text}`).join('\n\n');
+  }
+
+
+
+
   if (!totalPages) throw new Error('Could not determine the PDF page count.');
   const visualPages = inventory.filter((page) => page.visual).map((page) => page.page);
   const pageGroups = totalPages > 40 ? pageChunks(Array.from({ length: totalPages }, (_, i) => i + 1)) : [Array.from({ length: totalPages }, (_, i) => i + 1)];
-  onProgress({ status: 'outline', stage: `Reading slides... ${totalPages} pages detected`, done: 0, total: pageGroups.length + 1 });
+  // Domain classification & adaptive blueprint selection
+  const classification = await classifyDocumentDomain({ title, text: rawText, inventory });
+  const blueprint = getBlueprint(classification?.discipline);
 
-  const outlineParts = await runPool(pageGroups, 1, (pages) => requestOutline(buffer, pages, title, totalPages, inventory));
+  onProgress({ status: 'outline', stage: `Reading slides... ${totalPages} pages detected (${blueprint.name})`, done: 0, total: pageGroups.length + 1 });
+
+  const outlineParts = await runPool(pageGroups, 2, (pages) => requestOutline(buffer, pages, title, totalPages, inventory, [], blueprint));
   let outline = mergeOutlines(outlineParts);
   const nodePages = outline.nodes.flatMap((node) => node.sourcePages);
   const skipValidation = validateSkippedPages(outline.skippedPages, totalPages, inventory, nodePages);
@@ -266,7 +303,7 @@ export async function generatePdfOutline({ buffer, title, onProgress = () => {} 
     const retryPages = [...new Set([...missing, ...outline.skippedPages.filter((entry) => !validSkippedPages.includes(entry.page)).map((entry) => entry.page)])].filter((page) => page >= 1 && page <= totalPages);
     onProgress({ status: 'outline', stage: `Building map... filling ${retryPages.length} uncovered or invalid pages`, done: 1, total: pageGroups.length + 1 });
     const retryGroups = pageChunks(retryPages);
-    const retries = await runPool(retryGroups, 1, (pages) => requestOutline(buffer, pages, title, totalPages, inventory, pages));
+    const retries = await runPool(retryGroups, 2, (pages) => requestOutline(buffer, pages, title, totalPages, inventory, pages, blueprint));
     outline = mergeOutlines([outline, ...retries]);
     const retryNodePages = outline.nodes.flatMap((node) => node.sourcePages);
     const retrySkipCheck = validateSkippedPages(outline.skippedPages, totalPages, inventory, retryNodePages);
@@ -290,7 +327,7 @@ export async function generatePdfOutline({ buffer, title, onProgress = () => {} 
   const coverage = Math.round(((totalPages - missing.length) / totalPages) * 100);
   console.log(`[studyPathJob] PDF pages=${totalPages}; visual pages=${visualPages.join(', ') || 'none'}; outline chunks=${pageGroups.length}; nodes=${outline.nodes.length}; coverage=${coverage}%.`);
 
-  const rawText = inventory.map((page) => `--- Page ${page.page} ---\n${page.groundingText || page.text}`).join('\n\n');
+  rawText ||= inventory.map((page) => `--- Page ${page.page} ---\n${page.groundingText || page.text}`).join('\n\n');
 
   const skeletonNodes = outline.nodes.map((node, index) => {
     const sourcePages = Array.isArray(node.sourcePages) && node.sourcePages.length > 0 ? node.sourcePages : [index + 1];
@@ -319,7 +356,10 @@ export async function generatePdfOutline({ buffer, title, onProgress = () => {} 
     totalPages,
     skippedPages: validSkippedPages,
     inventory,
-    coverage
+    coverage,
+    documentProfile,
+    classification,
+    blueprintId: blueprint.id
   };
 }
 
@@ -331,7 +371,8 @@ export async function buildPdfStudyPath({ buffer, title, validateNodes, autoRepa
 
   let completed = 0;
   const nodes = await runPool(outlineNodes, NODE_CONTENT_CONCURRENCY, async (outlineNode) => {
-    const node = await generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes);
+    const blueprint = getBlueprint(outlineResult.classification?.discipline);
+    const node = await generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes, blueprint);
     completed++;
     onProgress({ status: 'writing', stage: `Writing node ${completed} of ${outlineNodes.length}`, done: completed, total: outlineNodes.length });
     return node;
@@ -350,6 +391,9 @@ export async function buildPdfStudyPath({ buffer, title, validateNodes, autoRepa
     totalPages,
     skippedPages: validSkippedPages,
     inventory,
-    coverage
+    coverage,
+    documentProfile,
+    classification,
+    blueprintId: blueprint.id
   };
 }

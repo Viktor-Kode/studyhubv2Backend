@@ -41,6 +41,7 @@ import pdfCbtRoutes from './routes/pdfCbtRoutes.js';
 import studyPlanRoutes from './routes/studyPlanRoutes.js';
 import studyPathRoutes from './routes/studyPathRoutes.js';
 import studyPathJobRoutes from './routes/studyPathJobRoutes.js';
+import slideRoutes from './routes/slideRoutes.js';
 import referralRoutes from './routes/referralRoutes.js';
 import SharedNote from './models/SharedNote.js';
 import SharedLibraryItem from './models/SharedLibraryItem.js';
@@ -284,6 +285,7 @@ app.use('/api/generate-path', studyPathRoutes);
 app.use('/api/study-path', studyPathRoutes);
 app.use('/api/study-paths', studyPathRoutes);
 app.use('/api/jobs', studyPathJobRoutes);
+app.use('/api/slides', slideRoutes);
 app.use('/api/topics', studyPathRoutes);
 app.use('/api/referral', referralRoutes);
 

@@ -18,7 +18,8 @@ import {
   generateStudyPathChallenge,
   getNodeStatusesController,
   prepareNodeController,
-  retryNodeController
+  retryNodeController,
+  claimStudyPathController
 } from '../controllers/studyPathController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { checkAIUsage } from '../middleware/usageMiddleware.js';
@@ -67,6 +68,7 @@ router.get('/count', optionalProtect, getStudyMapCount);
 router.get('/status', optionalProtect, getStudyMapCount);
 router.get('/all', optionalProtect, getUserStudyPaths);
 router.get('/user/all', optionalProtect, getUserStudyPaths);
+router.post('/claim', protect, claimStudyPathController);
 
 // Challenge endpoints
 router.get('/:topicId/challenge', optionalProtect, challengeLimiter, getChallenge);

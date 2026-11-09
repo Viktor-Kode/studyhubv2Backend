@@ -14,6 +14,10 @@ const documentHashSchema = new mongoose.Schema({
         index: true
     },
     fileName: String,
+    studyPathIds: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'StudyPath'
+    }],
     quizSessionIds: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'QuizSession'

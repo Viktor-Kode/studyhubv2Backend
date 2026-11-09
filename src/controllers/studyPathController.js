@@ -14,6 +14,9 @@ import { cachePdfBuffer, triggerNodeGenerations, prepareNode, getNodeStatuses } 
 import { logUserActivity } from '../services/activityService.js';
 import { expireStaleActiveSubscription, hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
 import { logPaywallEvent } from '../utils/paywallLogger.js';
+import { computeDocumentFingerprint, findUserCachedStudyPath, recordDocumentHash } from '../services/fingerprintService.js';
+import { generateAnonymousSessionId, sanitizeAnonymousSessionId, claimAnonymousStudyPath } from '../services/anonymousSessionService.js';
+import { recordStudentMistake } from '../services/collectiveIntelligenceService.js';
 
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
@@ -485,16 +488,34 @@ function getSourcePageText(source, requestedPages) {
   return selected.join('\n\n').trim();
 }
 
-export function formatStudyPathResponse(pathRecord) {
+export function formatStudyPathResponse(pathRecord, isAnonymous = null) {
   if (!pathRecord) return null;
-  const nodes = pathRecord.nodes || [];
-  const allNodesCompleted = Array.isArray(nodes) && nodes.length > 0 && nodes.every(n => n.status === "completed");
+  const rawNodes = pathRecord.nodes || [];
+  const allNodesCompleted = Array.isArray(rawNodes) && rawNodes.length > 0 && rawNodes.every(n => n.status === "completed");
   let challengeStatus = pathRecord.challenge?.status || (allNodesCompleted ? "active" : "locked");
   if (pathRecord.challenge?.passed || pathRecord.completed) {
     challengeStatus = "completed";
   } else if (allNodesCompleted && challengeStatus === "locked") {
     challengeStatus = "active";
   }
+
+  const shouldRedact = isAnonymous === true || (isAnonymous === null && (pathRecord.userId === 'anonymous-user' || Boolean(pathRecord.isAnonymousTrial)));
+
+  const nodes = shouldRedact
+    ? rawNodes.map((n) => {
+        const plain = typeof n?.toObject === 'function' ? n.toObject() : { ...n };
+        if (plain.id >= 2) {
+          return {
+            ...plain,
+            breakdown: [],
+            keyConcepts: [],
+            quiz: undefined,
+            quiz2: undefined
+          };
+        }
+        return plain;
+      })
+    : rawNodes;
 
   return {
     topicId: pathRecord.topicId,
@@ -510,7 +531,8 @@ export function formatStudyPathResponse(pathRecord) {
       bestScore: pathRecord.challenge?.bestScore || 0,
       bestXp: pathRecord.challenge?.bestXp || 0
     },
-    nodes
+    nodes,
+    ...(pathRecord.classification ? { classification: pathRecord.classification } : {})
   };
 }
 
@@ -1028,6 +1050,12 @@ async function persistSkeletonPdfPath(req, file, outlineResult) {
 
   const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
   const courseCode = outlineResult.courseCode || `${finalTitle.slice(0, 6).toUpperCase()} 101 · Interactive Study Path`;
+  const fingerprint = computeDocumentFingerprint({
+    buffer: file.buffer,
+    text: outlineResult.rawText,
+    fileName,
+    totalPages: outlineResult.totalPages
+  });
   const pathData = {
     userId,
     topicId,
@@ -1041,7 +1069,18 @@ async function persistSkeletonPdfPath(req, file, outlineResult) {
     extractedText: outlineResult.rawText,
     inventory: outlineResult.inventory || [],
     totalPages: outlineResult.totalPages || 0,
-    pdfStoragePath
+    pdfStoragePath,
+    contentHash: fingerprint.contentHash,
+    fingerprint: {
+      textHash: fingerprint.textHash,
+      bufferHash: fingerprint.bufferHash,
+      byteSize: fingerprint.byteSize
+    },
+    documentProfile: outlineResult.documentProfile || null,
+    classification: outlineResult.classification || { discipline: 'general' },
+    blueprintId: outlineResult.blueprintId || 'general',
+    anonymousSessionId: req.anonymousSessionId || req.body?.anonymousSessionId || null,
+    isAnonymousTrial: userId === 'anonymous-user'
   };
 
   const savedRecord = await StudyPath.findOneAndUpdate({ topicId }, { $set: pathData }, {
@@ -1050,6 +1089,15 @@ async function persistSkeletonPdfPath(req, file, outlineResult) {
     runValidators: true,
     setDefaultsOnInsert: true
   });
+
+  if (fingerprint?.contentHash && userId && userId !== 'anonymous-user') {
+    void recordDocumentHash({
+      userId,
+      hash: fingerprint.contentHash,
+      fileName,
+      studyPathId: savedRecord?._id
+    });
+  }
 
   if (userId && userId !== 'anonymous-user') {
     await StudyPath.updateMany({ userId, isActive: true, topicId: { $ne: topicId } }, { $set: { isActive: false } }).catch((error) => {
@@ -1178,53 +1226,105 @@ export const generateStudyPath = async (req, res) => {
       });
     }
 
+    let ownerId;
+    let isAnonymousTrial = false;
+    let anonSessionId = null;
+
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: 'UNAUTHORIZED',
-        message: 'Authentication required to generate study paths.'
+      const rawAnonId = req.body?.anonymousSessionId || req.headers['x-anonymous-session-id'];
+      anonSessionId = sanitizeAnonymousSessionId(rawAnonId) || generateAnonymousSessionId();
+
+      const existingAnon = await StudyPath.findOne({ anonymousSessionId: anonSessionId });
+      if (existingAnon) {
+        return res.status(403).json({
+          success: false,
+          requireSignup: true,
+          anonymousSessionId: anonSessionId,
+          message: 'You have reached the free anonymous trial limit. Please create an account to generate study maps!'
+        });
+      }
+
+      ownerId = 'anonymous-user';
+      isAnonymousTrial = true;
+      req.anonymousSessionId = anonSessionId;
+    } else {
+      ownerId = user._id.toString();
+
+      // Refresh expired subscription if stale
+      user = await expireStaleActiveSubscription(user);
+
+      // Check if user is active paid subscriber
+      const isPaid = Boolean(user.is_paid || hasActivePaidStudentPlan(user));
+      if (!user.is_paid && isPaid) {
+        user.is_paid = true;
+        await user.save({ validateBeforeSave: false }).catch(() => {});
+      }
+
+      // Check fast cache first before enforcing paywall!
+      const file = resolveRequestFile(req);
+      const fingerprint = computeDocumentFingerprint({
+        buffer: file?.buffer,
+        text: req.body?.text,
+        fileName: file?.originalname || req.body?.title
       });
-    }
 
-    // Refresh expired subscription if stale
-    user = await expireStaleActiveSubscription(user);
+      if (fingerprint.contentHash) {
+        const cachedStudyPath = await findUserCachedStudyPath(ownerId, fingerprint.contentHash);
+        if (cachedStudyPath) {
+          console.log(`[generateStudyPath] Instant cache hit (<500ms) for user ${ownerId} (hash: ${fingerprint.contentHash})`);
+          const formatted = formatStudyPathResponse(cachedStudyPath.toObject());
+          const job = createStudyPathJob(ownerId);
+          updateStudyPathJob(job.jobId, {
+            status: 'done',
+            stage: 'Study map retrieved from cache',
+            done: cachedStudyPath.nodes?.length || 0,
+            total: cachedStudyPath.nodes?.length || 0,
+            topicId: cachedStudyPath.topicId,
+            studyPath: formatted
+          });
+          return res.status(202).json({
+            success: true,
+            jobId: job.jobId,
+            cached: true,
+            topicId: cachedStudyPath.topicId,
+            studyPath: formatted
+          });
+        }
+      }
 
-    // Check if user is active paid subscriber
-    const isPaid = Boolean(user.is_paid || hasActivePaidStudentPlan(user));
-    if (!user.is_paid && isPaid) {
-      user.is_paid = true;
-      await user.save({ validateBeforeSave: false }).catch(() => {});
-    }
+      // Check lifetime limit: total_maps_created >= 3 and is_paid is false
+      if ((user.total_maps_created || 0) >= 3 && !isPaid) {
+        await logPaywallEvent({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'PAYWALL_TRIGGERED',
+          context: {
+            feature: 'study_map',
+            total_maps_created: user.total_maps_created,
+            limit: 3
+          }
+        }).catch(() => {});
 
-    // Check lifetime limit: total_maps_created >= 3 and is_paid is false
-    if ((user.total_maps_created || 0) >= 3 && !isPaid) {
-      await logPaywallEvent({
-        userId: user._id,
-        userEmail: user.email,
-        action: 'PAYWALL_TRIGGERED',
-        context: {
-          feature: 'study_map',
+        return res.status(403).json({
+          success: false,
+          error: 'PAYWALL_TRIGGERED',
+          code: 'PAYWALL_TRIGGERED',
+          message: 'You have reached the free lifetime limit of 3 study maps. Upgrade to create unlimited study maps.',
+          showUpgrade: true,
+          upgradeRequired: true,
           total_maps_created: user.total_maps_created,
           limit: 3
-        }
-      }).catch(() => {});
-
-      return res.status(403).json({
-        success: false,
-        error: 'PAYWALL_TRIGGERED',
-        code: 'PAYWALL_TRIGGERED',
-        message: 'You have reached the free lifetime limit of 3 study maps. Upgrade to create unlimited study maps.',
-        showUpgrade: true,
-        upgradeRequired: true,
-        total_maps_created: user.total_maps_created,
-        limit: 3
-      });
+        });
+      }
     }
 
     const file = resolveRequestFile(req);
-    const ownerId = user._id.toString();
     const job = createStudyPathJob(ownerId);
-    res.status(202).json({ success: true, jobId: job.jobId });
+    res.status(202).json({
+      success: true,
+      jobId: job.jobId,
+      ...(isAnonymousTrial ? { anonymousSessionId: anonSessionId, isAnonymousTrial: true } : {})
+    });
     const isPdf = Boolean(file?.buffer && (file.mimetype?.toLowerCase().includes('pdf') || file.originalname?.toLowerCase().endsWith('.pdf')));
     if (isPdf) void runPdfStudyPathJob(req, file, job);
     else void runLegacyStudyPathJob(req, job);
@@ -1250,13 +1350,27 @@ export const getStudyPathJobStatus = async (req, res) => {
  */
 export const getActiveStudyPath = async (req, res) => {
   try {
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(200).json({ success: true, studyPath: null });
+    }
     const userMongoId = req.user?._id?.toString();
     const userFirebaseId = req.user?.firebaseUid;
     const userQueryId = req.query?.userId;
     const userIds = [userMongoId, userFirebaseId, userQueryId].filter(id => id && id !== 'anonymous-user');
 
     if (userIds.length === 0) {
-      return res.status(200).json({ success: true, studyPath: null, message: 'No authenticated user session' });
+      const rawAnonId = req.headers['x-anonymous-session-id'] || req.query?.anonymousSessionId;
+      const anonId = sanitizeAnonymousSessionId(rawAnonId);
+      if (anonId) {
+        const anonRecord = await StudyPath.findOne({ anonymousSessionId: anonId }).sort({ updatedAt: -1 }).lean();
+        if (anonRecord) {
+          return res.status(200).json({
+            success: true,
+            studyPath: formatStudyPathResponse(anonRecord, true)
+          });
+        }
+      }
+      return res.status(200).json({ success: true, studyPath: null, message: 'No active study map found' });
     }
 
     const activeRecord = await StudyPath.findOne({ userId: { $in: userIds }, isActive: true }).sort({ updatedAt: -1 }).lean();
@@ -1933,6 +2047,13 @@ export const submitChallenge = async (req, res) => {
         if (Array.isArray(q.sourceNodeIds)) {
           q.sourceNodeIds.forEach(id => missedNodeIdsSet.add(Number(id)));
         }
+        const chosenOption = Array.isArray(q.options) && typeof studentAnswer === 'number' ? q.options[studentAnswer] : '';
+        void recordStudentMistake({
+          discipline: pathRecord.classification?.discipline || 'general',
+          topicTitle: pathRecord.title,
+          missedConcept: q.question,
+          chosenDistractor: chosenOption
+        });
       }
 
       perQuestion.push({
@@ -2100,6 +2221,20 @@ export const updateNodeStatus = async (req, res) => {
     }
 
     const nodeIndex = pathRecord.nodes.findIndex(n => n.id === targetId);
+    if (targetId >= 2) {
+      const actorId = req.user?._id?.toString() || req.user?.firebaseUid;
+      const isAnonymous = !actorId || pathRecord.userId === 'anonymous-user' || Boolean(pathRecord.isAnonymousTrial);
+      if (isAnonymous) {
+        return res.status(403).json({
+          success: false,
+          requireSignup: true,
+          anonymousSessionId: pathRecord.anonymousSessionId,
+          topicId,
+          message: 'Create a free account to unlock Node 2 and keep your progress!'
+        });
+      }
+    }
+
     if (nodeIndex !== -1) {
       const prevStatus = pathRecord.nodes[nodeIndex].status;
       pathRecord.nodes[nodeIndex].status = status;
@@ -2162,11 +2297,27 @@ export const prepareNodeController = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid node ID' });
     }
     const bufferNext = req.body?.bufferNext !== false;
-    const pathRecord = await StudyPath.findOne({ topicId }).select('userId title nodes.id nodes.title').lean();
-    const actorId = req.user?._id;
-    if (pathRecord && actorId && pathRecord.userId && [actorId.toString(), req.user?.firebaseUid].includes(pathRecord.userId)) {
+    const pathRecord = await StudyPath.findOne({ topicId }).select('userId title nodes.id nodes.title isAnonymousTrial anonymousSessionId').lean();
+    if (!pathRecord) {
+      return res.status(404).json({ success: false, message: 'Study path not found' });
+    }
+
+    // Milestone 5 Gate: Anonymous users can only access Node 1. Node 2+ requires registration!
+    const actorId = req.user?._id?.toString() || req.user?.firebaseUid;
+    const isAnonymous = !actorId || pathRecord.userId === 'anonymous-user' || Boolean(pathRecord.isAnonymousTrial);
+    if (isAnonymous && nodeId >= 2) {
+      return res.status(403).json({
+        success: false,
+        requireSignup: true,
+        anonymousSessionId: pathRecord.anonymousSessionId,
+        topicId,
+        message: 'Create a free account to unlock Node 2 and keep your progress!'
+      });
+    }
+    const userMongoId = req.user?._id;
+    if (pathRecord && userMongoId && pathRecord.userId && [userMongoId.toString(), req.user?.firebaseUid].includes(pathRecord.userId)) {
       const openedNode = pathRecord.nodes?.find((item) => item.id === nodeId);
-      await logUserActivity({ userId: actorId, type: 'study_node_opened', title: 'Opened study node', subtitle: openedNode?.title || `Node ${nodeId}`, metadata: { topicId, mapTitle: pathRecord.title, nodeId, nodeTitle: openedNode?.title } });
+      await logUserActivity({ userId: userMongoId, type: 'study_node_opened', title: 'Opened study node', subtitle: openedNode?.title || `Node ${nodeId}`, metadata: { topicId, mapTitle: pathRecord.title, nodeId, nodeTitle: openedNode?.title } });
     }
     const node = await prepareNode({ topicId, nodeId, bufferNext });
     return res.status(200).json({ success: true, node });
@@ -2186,6 +2337,31 @@ export const retryNodeController = async (req, res) => {
     if (isNaN(nodeId)) {
       return res.status(400).json({ success: false, message: 'Invalid node ID' });
     }
+
+    const pathRecord = await StudyPath.findOne({ topicId }).select('userId isAnonymousTrial anonymousSessionId').lean();
+    if (!pathRecord) {
+      return res.status(404).json({ success: false, message: 'Study path not found' });
+    }
+
+    const actorId = req.user?._id?.toString() || req.user?.firebaseUid;
+    const isAnonymous = !actorId || pathRecord.userId === 'anonymous-user' || Boolean(pathRecord.isAnonymousTrial);
+
+    // 1. Enforce Node 2+ signup restriction on retry (guests can only retry Node 1)
+    if (isAnonymous && nodeId >= 2) {
+      return res.status(403).json({
+        success: false,
+        requireSignup: true,
+        anonymousSessionId: pathRecord.anonymousSessionId,
+        topicId,
+        message: 'Create a free account to unlock Node 2 and keep your progress!'
+      });
+    }
+
+    // 2. Ownership check: Authenticated users cannot retry nodes on maps they do not own
+    if (!isAnonymous && pathRecord.userId && ![actorId, req.user?._id?.toString(), req.user?.firebaseUid].includes(pathRecord.userId)) {
+      return res.status(403).json({ success: false, message: 'You are not authorized to retry nodes on this study map.' });
+    }
+
     await StudyPath.updateOne(
       { topicId, 'nodes.id': nodeId },
       { $set: { 'nodes.$.contentStatus': 'pending', 'nodes.$.generationError': null } }
@@ -2198,3 +2374,42 @@ export const retryNodeController = async (req, res) => {
   }
 };
 
+
+/**
+ * POST /api/study-paths/claim
+ * Allows an authenticated user to claim an anonymous study path.
+ */
+export const claimStudyPathController = async (req, res) => {
+  try {
+    const userId = req.user?._id?.toString();
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required to claim study path.' });
+    }
+
+    const { anonymousSessionId, topicId } = req.body || {};
+    if (!anonymousSessionId) {
+      return res.status(400).json({ success: false, message: 'anonymousSessionId is required to claim an anonymous study path' });
+    }
+
+    const result = await claimAnonymousStudyPath({ userId, anonymousSessionId, topicId });
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'No study path found for this anonymous session.' });
+    }
+
+    if (result.conflict) {
+      return res.status(409).json({ success: false, message: result.message || 'This anonymous study path has already been claimed by another account.' });
+    }
+
+    const studyPath = result.studyPath;
+    return res.status(200).json({
+      success: true,
+      alreadyClaimed: Boolean(result.alreadyClaimed),
+      message: result.alreadyClaimed ? 'Study path already claimed by your account.' : 'Study path claimed successfully!',
+      topicId: studyPath.topicId,
+      studyPath: formatStudyPathResponse(typeof studyPath.toObject === 'function' ? studyPath.toObject() : studyPath)
+    });
+  } catch (error) {
+    console.error('[claimStudyPathController] Error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};

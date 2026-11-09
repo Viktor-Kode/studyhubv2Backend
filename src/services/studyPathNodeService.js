@@ -3,6 +3,8 @@ import path from 'path';
 import StudyPath from '../models/StudyPath.js';
 import { generateNodeContent } from './studyPathPdfPipeline.js';
 import { validateStudyPathNodes, autoRepairStudyPathNodes, generateChallenge } from '../controllers/studyPathController.js';
+import { getBlueprint } from './blueprintEngine.js';
+import { getCollectivePatterns } from './collectiveIntelligenceService.js';
 
 // In-memory buffer cache for fast access during generation sessions
 const pdfBufferCache = new Map();
@@ -178,7 +180,7 @@ export async function generateSingleNode(topicId, nodeId) {
 
   const generationPromise = (async () => {
     // 1. Fetch current node status
-    const existing = await StudyPath.findOne({ topicId, 'nodes.id': nodeId }, { 'nodes.$': 1, inventory: 1, totalPages: 1, pdfStoragePath: 1 });
+    const existing = await StudyPath.findOne({ topicId, 'nodes.id': nodeId }, { 'nodes.$': 1, inventory: 1, totalPages: 1, pdfStoragePath: 1, classification: 1, blueprintId: 1, title: 1 });
     const targetNode = existing?.nodes?.[0];
     if (!targetNode) {
       throw new Error(`Node ${nodeId} not found in topic ${topicId}`);
@@ -228,13 +230,21 @@ export async function generateSingleNode(topicId, nodeId) {
         sourcePages: targetNode.sourcePages || [nodeId]
       };
 
+      const blueprint = getBlueprint(existing?.classification?.discipline);
+      const collectivePatterns = await getCollectivePatterns({
+        discipline: existing?.classification?.discipline,
+        topicTitle: existing?.title
+      });
+
       const rawGenerated = await generateNodeContent(
         buffer,
         outlineNode,
         existing.inventory || [],
         existing.totalPages || 1,
         validateStudyPathNodes,
-        autoRepairStudyPathNodes
+        autoRepairStudyPathNodes,
+        blueprint,
+        collectivePatterns
       );
 
       const processed = postProcessSingleNode(

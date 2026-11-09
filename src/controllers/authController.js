@@ -8,6 +8,8 @@ import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 import { processReferral } from './referralController.js';
 import { logUserActivity } from '../services/activityService.js';
 import { sendNotification } from '../services/notificationService.js';
+import { claimAnonymousStudyPath } from '../services/anonymousSessionService.js';
+import { incrementStudyMapUsage } from './studyPathController.js';
 
 /**
  * Signs a JWT token
@@ -77,7 +79,7 @@ const createSendToken = async (user, statusCode, res) => {
  */
 export const signup = async (req, res, next) => {
     try {
-        const { email, password, role, name, schoolName, institution, phone, refCode } = req.body;
+        const { email, password, role, name, schoolName, institution, phone, refCode, anonymousSessionId, claimTopicId } = req.body;
 
         const newUser = await User.create({
             email,
@@ -114,6 +116,21 @@ export const signup = async (req, res, next) => {
             }
         }
 
+        if (anonymousSessionId || claimTopicId) {
+            try {
+                const claimed = await claimAnonymousStudyPath({
+                    userId: newUser._id,
+                    anonymousSessionId,
+                    topicId: claimTopicId
+                });
+                if (claimed) {
+                    await incrementStudyMapUsage(newUser._id).catch(() => {});
+                }
+            } catch (claimErr) {
+                console.warn('[signup] Anonymous study path claim notice:', claimErr.message);
+            }
+        }
+
         // Fetch refreshed user so the token response contains updated fields like referredBy
         const refreshedUser = await User.findById(newUser._id);
 
@@ -128,7 +145,7 @@ export const signup = async (req, res, next) => {
  */
 export const login = async (req, res, next) => {
     try {
-        const { email, password } = req.body;
+        const { email, password, anonymousSessionId, claimTopicId } = req.body;
 
         // 1) Check if email and password exist
         if (!email || !password) {
@@ -144,6 +161,21 @@ export const login = async (req, res, next) => {
             const error = new Error('Incorrect email or password');
             error.statusCode = 401;
             return next(error);
+        }
+
+        if (anonymousSessionId || claimTopicId) {
+            try {
+                const claimed = await claimAnonymousStudyPath({
+                    userId: user._id,
+                    anonymousSessionId,
+                    topicId: claimTopicId
+                });
+                if (claimed) {
+                    await incrementStudyMapUsage(user._id).catch(() => {});
+                }
+            } catch (claimErr) {
+                console.warn('[login] Anonymous study path claim notice:', claimErr.message);
+            }
         }
 
         // 3) If everything ok, send token to client

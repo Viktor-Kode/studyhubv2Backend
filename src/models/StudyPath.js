@@ -103,7 +103,34 @@ const studyPathSchema = new mongoose.Schema({
   extractedText: { type: String },
   inventory: { type: Array, default: [] },
   totalPages: { type: Number, default: 0 },
-  pdfStoragePath: { type: String, default: null }
+  pdfStoragePath: { type: String, default: null },
+  contentHash: { type: String, default: null, index: true },
+  fingerprint: {
+    textHash: { type: String, default: null },
+    bufferHash: { type: String, default: null },
+    byteSize: { type: Number, default: 0 }
+  },
+  documentProfile: { type: mongoose.Schema.Types.Mixed, default: null },
+  classification: {
+    discipline: { type: String, default: 'general' },
+    subDiscipline: { type: String, default: null },
+    documentType: { type: String, default: 'lecture_slides' },
+    cognitiveDensity: { type: String, default: 'conceptual' },
+    confidence: { type: Number, default: 0 }
+  },
+  blueprintId: { type: String, default: 'general' },
+  anonymousSessionId: { type: String, default: null, index: true },
+  claimedSessionId: { type: String, default: null, index: true },
+  claimState: {
+    claimedAt: { type: Date, default: null },
+    xpAwarded: { type: Boolean, default: false },
+    usageCounted: { type: Boolean, default: false }
+  },
+  isAnonymousTrial: { type: Boolean, default: false }
 }, { timestamps: true });
+
+studyPathSchema.index({ userId: 1, contentHash: 1 });
+studyPathSchema.index({ anonymousSessionId: 1 }, { sparse: true });
+studyPathSchema.index({ claimedSessionId: 1 }, { sparse: true });
 
 export default mongoose.model('StudyPath', studyPathSchema);
