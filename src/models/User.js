@@ -93,6 +93,10 @@ const userSchema = new mongoose.Schema({
     quizUsageCount: { type: Number, default: 0 },
     quizUsageLimit: { type: Number, default: 3 },
 
+    // Study map generation usage (hard lifetime limit of 3 free maps per user)
+    total_maps_created: { type: Number, default: 0 },
+    is_paid: { type: Boolean, default: false },
+
     // ─── Teacher Plan & Usage ───────────────────────────────────────────────
     teacherPlan: { type: String, enum: ['free', 'weekly', 'monthly'], default: 'free' },
     teacherPlanEnd: { type: Date, default: null },

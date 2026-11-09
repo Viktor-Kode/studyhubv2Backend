@@ -27,6 +27,7 @@ export async function expireStaleActiveSubscription(user) {
     },
     {
       $set: {
+        is_paid: false,
         subscriptionStatus: 'expired',
         subscriptionPlan: null,
         aiUsageCount: 0,

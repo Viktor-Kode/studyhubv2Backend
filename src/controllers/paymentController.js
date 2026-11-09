@@ -321,6 +321,7 @@ export const applySubscriptionToUser = async (userId, plan) => {
 
     await User.findByIdAndUpdate(userId, {
         $set: {
+            is_paid: true,
             subscriptionStatus: 'active',
             subscriptionPlan: plan,
             subscriptionStart: isAlreadyActive ? user.subscriptionStart : now,

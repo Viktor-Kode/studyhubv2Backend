@@ -22,6 +22,7 @@ cron.schedule('0 0 * * *', async () => {
             const planNameForNotify = user.subscriptionPlan || 'subscription';
 
             await User.findByIdAndUpdate(user._id, {
+                is_paid: false,
                 subscriptionStatus: 'expired',
                 subscriptionPlan: null,
                 // Reset to free limits

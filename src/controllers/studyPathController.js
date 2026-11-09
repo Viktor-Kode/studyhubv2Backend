@@ -1,4 +1,6 @@
+import mongoose from 'mongoose';
 import StudyPath from '../models/StudyPath.js';
+import User from '../models/User.js';
 import { parseDocumentBuffer } from '../utils/documentParser.js';
 import { studyPathSystemPrompt, challengePrompt } from '../utils/prompts.js';
 import { PASS_MARK, CHALLENGE_XP_PER_QUESTION, TOTAL_CHALLENGE_QUESTIONS, MAX_CHALLENGE_XP } from '../config/challengeConfig.js';
@@ -10,6 +12,8 @@ import { buildPdfStudyPath, generatePdfOutline } from '../services/studyPathPdfP
 import { createStudyPathJob, getStudyPathJob, serializeStudyPathJob, updateStudyPathJob } from '../services/studyPathJobs.js';
 import { cachePdfBuffer, triggerNodeGenerations, prepareNode, getNodeStatuses } from '../services/studyPathNodeService.js';
 import { logUserActivity } from '../services/activityService.js';
+import { expireStaleActiveSubscription, hasActivePaidStudentPlan } from '../utils/studentSubscription.js';
+import { logPaywallEvent } from '../utils/paywallLogger.js';
 
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
@@ -755,12 +759,81 @@ function postProcessNodes(rawNodes, documentId) {
 
 // ─── main handler ──────────────────────────────────────────────────────────────
 
+export async function incrementStudyMapUsage(userId) {
+  if (!userId || userId === 'anonymous-user') return null;
+  try {
+    const isOid = mongoose.Types.ObjectId.isValid(userId);
+    const query = isOid ? { $or: [{ _id: userId }, { firebaseUid: userId }] } : { firebaseUid: userId };
+    const user = await User.findOne(query);
+    if (!user) return null;
+    user.total_maps_created = (user.total_maps_created || 0) + 1;
+    await user.save({ validateBeforeSave: false });
+    console.log(`[incrementStudyMapUsage] User ${user._id} total_maps_created permanently incremented to ${user.total_maps_created}`);
+    return user;
+  } catch (err) {
+    console.error('[incrementStudyMapUsage] Error updating total_maps_created:', err.message);
+    return null;
+  }
+}
+
 /**
  * POST /api/generate-path
  * Accepts multipart/form-data with a PDF/document or JSON with text
  */
 const generateStudyPathLegacy = async (req, res) => {
   try {
+    // 0. Lifetime limit guardrail
+    let user = null;
+    const userMongoId = req.user?._id;
+    const userFirebaseId = req.user?.firebaseUid;
+    const bodyUserId = req.body?.userId;
+
+    if (userMongoId) {
+      user = await User.findById(userMongoId);
+    } else if (userFirebaseId) {
+      user = await User.findOne({ firebaseUid: userFirebaseId });
+    } else if (bodyUserId && bodyUserId !== 'anonymous-user') {
+      const isOid = mongoose.Types.ObjectId.isValid(bodyUserId);
+      user = await User.findOne({
+        $or: [
+          ...(isOid ? [{ _id: bodyUserId }] : []),
+          { firebaseUid: bodyUserId }
+        ]
+      });
+    }
+
+    if (user) {
+      user = await expireStaleActiveSubscription(user);
+      const isPaid = Boolean(user.is_paid || hasActivePaidStudentPlan(user));
+      if (!user.is_paid && isPaid) {
+        user.is_paid = true;
+        await user.save({ validateBeforeSave: false }).catch(() => {});
+      }
+      if ((user.total_maps_created || 0) >= 3 && !isPaid) {
+        await logPaywallEvent({
+          userId: user._id,
+          userEmail: user.email,
+          action: 'PAYWALL_TRIGGERED',
+          context: {
+            feature: 'study_map',
+            total_maps_created: user.total_maps_created,
+            limit: 3
+          }
+        }).catch(() => {});
+
+        return res.status(403).json({
+          success: false,
+          error: 'PAYWALL_TRIGGERED',
+          code: 'PAYWALL_TRIGGERED',
+          message: 'You have reached the free lifetime limit of 3 study maps. Upgrade to create unlimited study maps.',
+          showUpgrade: true,
+          upgradeRequired: true,
+          total_maps_created: user.total_maps_created,
+          limit: 3
+        });
+      }
+    }
+
     let rawText = '';
     let fileName = '';
     let totalPages = 0;
@@ -874,6 +947,7 @@ const generateStudyPathLegacy = async (req, res) => {
         await StudyPath.updateMany({ userId, isActive: true }, { $set: { isActive: false } });
         await incrementAIUsage(req.user?._id || userId).catch(() => {});
         await awardXP(req.user?._id || userId, 'ai_study_path').catch(() => {});
+        await incrementStudyMapUsage(req.user?._id || userId).catch(() => {});
       }
 
       await StudyPath.deleteOne({ topicId }).catch(() => {});
@@ -983,6 +1057,7 @@ async function persistSkeletonPdfPath(req, file, outlineResult) {
     });
     await incrementAIUsage(req.user?._id || userId).catch(() => {});
     await awardXP(req.user?._id || userId, 'ai_study_path').catch(() => {});
+    await incrementStudyMapUsage(req.user?._id || userId).catch(() => {});
   }
 
   return { topicId, studyPath: formatStudyPathResponse(savedRecord.toObject()) };
@@ -1020,6 +1095,7 @@ async function persistGeneratedPdfPath(req, file, generation) {
     });
     await incrementAIUsage(req.user?._id || userId).catch(() => {});
     await awardXP(req.user?._id || userId, 'ai_study_path').catch(() => {});
+    await incrementStudyMapUsage(req.user?._id || userId).catch(() => {});
   }
   return { topicId, studyPath: formatStudyPathResponse(savedRecord.toObject()) };
 }
@@ -1081,13 +1157,84 @@ async function runLegacyStudyPathJob(req, job) {
 }
 
 export const generateStudyPath = async (req, res) => {
-  const file = resolveRequestFile(req);
-  const ownerId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
-  const job = createStudyPathJob(ownerId);
-  res.status(202).json({ success: true, jobId: job.jobId });
-  const isPdf = Boolean(file?.buffer && (file.mimetype?.toLowerCase().includes('pdf') || file.originalname?.toLowerCase().endsWith('.pdf')));
-  if (isPdf) void runPdfStudyPathJob(req, file, job);
-  else void runLegacyStudyPathJob(req, job);
+  try {
+    // 0. Query authenticated user's record before executing any PDF processing or study path generation
+    let user = null;
+    const userMongoId = req.user?._id;
+    const userFirebaseId = req.user?.firebaseUid;
+    const bodyUserId = req.body?.userId;
+
+    if (userMongoId) {
+      user = await User.findById(userMongoId);
+    } else if (userFirebaseId) {
+      user = await User.findOne({ firebaseUid: userFirebaseId });
+    } else if (bodyUserId && bodyUserId !== 'anonymous-user') {
+      const isOid = mongoose.Types.ObjectId.isValid(bodyUserId);
+      user = await User.findOne({
+        $or: [
+          ...(isOid ? [{ _id: bodyUserId }] : []),
+          { firebaseUid: bodyUserId }
+        ]
+      });
+    }
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'UNAUTHORIZED',
+        message: 'Authentication required to generate study paths.'
+      });
+    }
+
+    // Refresh expired subscription if stale
+    user = await expireStaleActiveSubscription(user);
+
+    // Check if user is active paid subscriber
+    const isPaid = Boolean(user.is_paid || hasActivePaidStudentPlan(user));
+    if (!user.is_paid && isPaid) {
+      user.is_paid = true;
+      await user.save({ validateBeforeSave: false }).catch(() => {});
+    }
+
+    // Check lifetime limit: total_maps_created >= 3 and is_paid is false
+    if ((user.total_maps_created || 0) >= 3 && !isPaid) {
+      await logPaywallEvent({
+        userId: user._id,
+        userEmail: user.email,
+        action: 'PAYWALL_TRIGGERED',
+        context: {
+          feature: 'study_map',
+          total_maps_created: user.total_maps_created,
+          limit: 3
+        }
+      }).catch(() => {});
+
+      return res.status(403).json({
+        success: false,
+        error: 'PAYWALL_TRIGGERED',
+        code: 'PAYWALL_TRIGGERED',
+        message: 'You have reached the free lifetime limit of 3 study maps. Upgrade to create unlimited study maps.',
+        showUpgrade: true,
+        upgradeRequired: true,
+        total_maps_created: user.total_maps_created,
+        limit: 3
+      });
+    }
+
+    const file = resolveRequestFile(req);
+    const ownerId = user._id.toString();
+    const job = createStudyPathJob(ownerId);
+    res.status(202).json({ success: true, jobId: job.jobId });
+    const isPdf = Boolean(file?.buffer && (file.mimetype?.toLowerCase().includes('pdf') || file.originalname?.toLowerCase().endsWith('.pdf')));
+    if (isPdf) void runPdfStudyPathJob(req, file, job);
+    else void runLegacyStudyPathJob(req, job);
+  } catch (error) {
+    console.error('[generateStudyPath] Guardrail error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to initiate study path generation'
+    });
+  }
 };
 
 export const getStudyPathJobStatus = async (req, res) => {
@@ -1211,9 +1358,18 @@ export const getStudyMapCount = async (req, res) => {
 
     const count = await StudyPath.countDocuments({ userId: { $in: userIds } });
 
+    let user = null;
+    if (userMongoId) user = await User.findById(userMongoId);
+    else if (userFirebaseId) user = await User.findOne({ firebaseUid: userFirebaseId });
+
+    const totalMapsCreated = user ? (user.total_maps_created || 0) : count;
+    const isPaid = user ? Boolean(user.is_paid || hasActivePaidStudentPlan(user)) : false;
+
     return res.status(200).json({
       success: true,
       count,
+      total_maps_created: totalMapsCreated,
+      is_paid: isPaid,
       hasStudyMaps: count > 0
     });
   } catch (error) {
