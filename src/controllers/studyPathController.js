@@ -668,6 +668,9 @@ async function callDeepSeekForStudyPath({
 
 async function generateAndVerify({ rawText, title, totalPages }) {
   let parsedData = await callDeepSeekForStudyPath({ rawText, title, totalPages });
+  if (Array.isArray(parsedData?.nodes) && parsedData.nodes.length > 0) {
+    parsedData.nodes = autoRepairStudyPathNodes(parsedData.nodes, rawText);
+  }
   let validationProblems = validateStudyPathNodes(parsedData?.nodes, rawText);
   const getMissing = (data) => totalPages > 0
     ? uncoveredPages(totalPages, data?.nodes || [], data?.skippedPages || [])
@@ -680,6 +683,9 @@ async function generateAndVerify({ rawText, title, totalPages }) {
     console.warn(`[generateStudyPath] Validation issues before repair ${attempt}:`, repairIssues);
     try {
       parsedData = await callDeepSeekForStudyPath({ rawText, title, totalPages, retryProblems: repairIssues });
+      if (Array.isArray(parsedData?.nodes) && parsedData.nodes.length > 0) {
+        parsedData.nodes = autoRepairStudyPathNodes(parsedData.nodes, rawText);
+      }
       validationProblems = validateStudyPathNodes(parsedData?.nodes, rawText);
       missing = getMissing(parsedData);
       repairIssues = [...validationProblems];

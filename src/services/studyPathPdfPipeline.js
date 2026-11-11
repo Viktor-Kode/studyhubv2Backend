@@ -91,9 +91,17 @@ ${retryPages.length ? `\nCOVERAGE RETRY: These original pages are not covered: $
 }
 
 async function requestOutline(buffer, pages, title, totalPages, inventory, retryPages = [], blueprint = null) {
-  const images = await renderPdfPagesToImages(buffer, pages);
+
+  const visualPages = pages.filter((p) => inventory[p - 1]?.visual);
   const text = outlinePrompt({ totalPages, pages, inventory, retryPages, blueprint });
-  const result = await generateDeepSeekVisionJson({ prompt: `${text}\n\nDocument title: ${title}`, images });
+  const prompt = `${text}\n\nDocument title: ${title}`;
+  let result;
+  if (visualPages.length === 0) {
+    result = await generateDeepSeekTextJson({ prompt });
+  } else {
+    const images = await renderPdfPagesToImages(buffer, visualPages);
+    result = await generateDeepSeekVisionJson({ prompt, images });
+  }
   return flattenOutline(result, pages);
 }
 
@@ -136,10 +144,11 @@ function contiguousRuns(pages) {
 }
 
 async function titleUncoveredRun(buffer, pages, title, inventory) {
-  const images = await renderPdfPagesToImages(buffer, pages);
+  const runImages = await renderPdfPagesToImages(buffer, pages.slice(0, 3));
+
   const result = await generateDeepSeekVisionJson({
     prompt: `Inspect these slide images and return JSON {"title":"..."} with one specific narrow subtopic title (maximum 12 words) covering their main teachable content. Do not list subtopics. Original pages: ${pages.join(', ')}. Page word counts: ${pages.map((page) => `${page}=${inventory[page - 1].wordCount}`).join(', ')}.`,
-    images
+    images: runImages
   });
   const nodeTitle = String(result?.title || '').trim();
   if (!nodeTitle || wordCount(nodeTitle) > 12) throw new Error(`DeepSeek could not title uncovered pages ${pages.join(', ')} within the title limit.`);

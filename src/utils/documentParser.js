@@ -29,6 +29,26 @@ export const parseDocumentBuffer = async (buffer, originalname, mimetype) => {
     }
 
     // 4. TXT / MD
+    // 5. Images (PNG, JPG, JPEG, WEBP) via DeepSeek Vision OCR
+    if (['png', 'jpg', 'jpeg', 'webp'].includes(extension) || mime?.startsWith('image/')) {
+      const { default: aiClient } = await import('./aiClient.js');
+      const imageBase64 = buffer.toString('base64');
+      const response = await aiClient.chatCompletion({
+        model: 'deepseek-flash',
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Extract all study content, slide titles, diagrams, bullet points, and anatomical/conceptual relationships from this image verbatim. Return only the extracted text content.' },
+            { type: 'image_url', image_url: { url: `data:${mime || 'image/jpeg'};base64,${imageBase64}`, detail: 'auto' } }
+          ]
+        }],
+        max_tokens: 4096,
+        temperature: 0.1
+      });
+      const extracted = response.choices?.[0]?.message?.content || '';
+      return { text: extracted.trim(), numpages: 1 };
+    }
+
     if (extension === 'txt' || extension === 'md' || mime?.startsWith('text/')) {
       return { text: buffer.toString('utf8'), numpages: 1 };
     }
