@@ -54,7 +54,7 @@ router.get('/:documentId/page-:page.:ext', async (req, res) => {
     }
 
     // 3. Render slide image
-    const images = await renderPdfPagesToImages(buffer, [pageNumber], { maxDimension: 1200, quality: 75 });
+    const images = await renderPdfPagesToImages(buffer, [pageNumber], { maxDimension: 1000, quality: 70, topicId: documentId });
     if (!images || images.length === 0 || !images[0]?.data) {
       return res.status(404).json({ success: false, message: `Could not render page ${pageNumber}` });
     }

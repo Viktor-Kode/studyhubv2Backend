@@ -1,6 +1,7 @@
 import { studyPathSystemPrompt } from '../utils/prompts.js';
 import { inventoryPdfPages, parsePdfBuffer } from '../utils/parsePdf.js';
 import { generateDeepSeekVisionJson, renderPdfPagesToImages } from './deepseekStudyPathVision.js';
+import aiClient from '../utils/aiClient.js';
 import { MAX_NODES, MAX_SKIPPED_PAGE_RATIO, NODE_CONTENT_CONCURRENCY, OUTLINE_CHUNK_OVERLAP, OUTLINE_CHUNK_PAGES } from '../config/studyPathConfig.js';
 import { analyzePdfDocument } from './documentIntelligenceService.js';
 import { classifyDocumentDomain } from './domainClassifierService.js';
@@ -162,15 +163,39 @@ Before returning, self-check every field: both breakdown bodies must be tutor ex
   return prompt;
 }
 
+async function generateDeepSeekTextJson({ prompt, maxTokens = 4096 }) {
+  const response = await aiClient.chatCompletion({
+    model: 'deepseek-chat',
+    messages: [{ role: 'user', content: `${prompt}\n\nReturn only valid JSON. Do not use markdown fences.` }],
+    max_tokens: maxTokens,
+    temperature: 0.2,
+    response_format: { type: 'json_object' }
+  });
+  const raw = response.choices?.[0]?.message?.content;
+  if (!raw || typeof raw !== 'string') throw new Error('DeepSeek returned an empty text response.');
+  try { return JSON.parse(raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()); }
+  catch { throw new Error('DeepSeek returned invalid JSON for the study path node.'); }
+}
+
 export async function generateNodeContent(buffer, outlineNode, inventory, totalPages, validateNodes, autoRepairNodes, blueprint = null, collectivePatterns = null) {
-  const images = await renderPdfPagesToImages(buffer, outlineNode.sourcePages);
-  const pageText = outlineNode.sourcePages.map((page) => `--- Original page ${page} ---\n${inventory[page - 1].groundingText || inventory[page - 1].text || '[No extractable text; inspect the slide image.]'}`).join('\n\n');
+  const assignedPages = outlineNode.sourcePages && outlineNode.sourcePages.length > 0 ? outlineNode.sourcePages : [1];
+  const hasVisualPages = assignedPages.some((p) => inventory[p - 1]?.visual);
+  const totalWords = assignedPages.reduce((sum, p) => sum + (inventory[p - 1]?.wordCount || 0), 0);
+  const useTextOnly = !hasVisualPages && totalWords >= 20;
+  const pageText = assignedPages.map((page) => `--- Original page ${page} ---\n${inventory[page - 1]?.groundingText || inventory[page - 1]?.text || '[No extractable text; inspect the slide image.]'}`).join('\n\n');
   let lastError;
   let lastNode = null;
   for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const retryText = attempt && lastError ? `\n\nREPAIR THE PREVIOUS RESPONSE. Return the complete corrected JSON node in the same schema, fixing every issue below. Rewrite the named field or sentence; do not merely explain the change.\n${lastError}\n\nREPAIR CHECKLIST:\n- For a missing bold term, wrap an actual technical term in that slide body with literal Markdown markers, for example **term**.\n- For a list-only sentence, explain the mechanism or relationship and why it produces the stated result; connect the reasoning with because, so, which means, when, or therefore.\n- For copied source wording, paraphrase the explanation from scratch. Do not reuse a run of 13 or more words from any sourceFact.\n- For a keyConcept detail issue, keep the key term before the colon and add a concrete fact after it that the summary does not state.\n- For prohibited filler, replace the phrase with the actual action, structure, or relationship.\n- Keep slide 1 body between 50 and 80 words and slide 2 body between 40 and 70 words; aim near the middle of each range. Each body needs 3-4 explanatory sentences, 1-3 bold technical terms, and at least four specific terms grounded in sourceFacts.\n- Check both keyConcepts and both quiz questions against the summary and source material before returning.` : '';
-        const result = await generateDeepSeekVisionJson({ prompt: `${nodeContentPrompt(outlineNode, totalPages, blueprint, collectivePatterns)}\n\nExtracted text from the assigned original pages (visual labels may also appear in the images):\n${pageText}${retryText}`, images });
+        const prompt = `${nodeContentPrompt(outlineNode, totalPages, blueprint, collectivePatterns)}\n\nExtracted text from the assigned original pages (visual labels may also appear in the images):\n${pageText}${retryText}`;
+        let result;
+        if (useTextOnly) {
+          result = await generateDeepSeekTextJson({ prompt });
+        } else {
+          const images = await renderPdfPagesToImages(buffer, assignedPages);
+          result = await generateDeepSeekVisionJson({ prompt, images });
+        }
         const generated = result?.node || result?.nodes?.[0] || result;
         const returnedPages = Array.isArray(generated.sourcePages) ? generated.sourcePages.map(Number) : [];
         if (!returnedPages.length) throw new Error('Returned node is missing its original sourcePages.');
@@ -181,14 +206,25 @@ export async function generateNodeContent(buffer, outlineNode, inventory, totalP
           id: 1,
           title: outlineNode.title,
           unit: outlineNode.unit || generated.unit || '',
-          sourcePages: outlineNode.sourcePages,
+          sourcePages: assignedPages,
           sourceFacts: Array.isArray(generated.sourceFacts) ? generated.sourceFacts : []
         };
         lastNode = node;
         // DeepSeek reads the rendered slide images directly; text grounding should not
         // reject visual slide content (diagrams, anatomy labels, tables).
-        const issues = typeof validateNodes === 'function' ? validateNodes([node], '') : [];
-        if (issues.length) throw new Error(issues.join('\n'));
+        const issues = typeof validateNodes === 'function' ? validateNodes([node], useTextOnly ? pageText : '') : [];
+        if (issues.length) {
+          if (typeof autoRepairNodes === 'function') {
+            const repaired = autoRepairNodes([node]);
+            if (repaired && repaired[0]) {
+              const remaining = validateNodes([repaired[0]], useTextOnly ? pageText : '');
+              if (remaining.length === 0) {
+                return repaired[0];
+              }
+            }
+          }
+          throw new Error(issues.join('\n'));
+        }
         return node;
       } catch (error) {
         lastError = error.message || 'Node content validation failed.';
