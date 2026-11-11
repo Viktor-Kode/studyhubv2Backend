@@ -195,7 +195,7 @@ export const getMe = async (req, res, next) => {
             'subscriptionStatus subscriptionPlan subscriptionEnd ' +
             'aiUsageCount aiUsageLimit ' +
             'flashcardUsageCount flashcardUsageLimit ' +
-            'notificationsEnabled aiCredits referralCode'
+            'notificationsEnabled aiCredits referralCode avatar settings'
         );
 
         if (!user) {
@@ -223,12 +223,15 @@ export const getMe = async (req, res, next) => {
         }
 
         const uo = user.toObject();
+        // Resolve avatar: top-level field takes precedence, fall back to settings.avatar
+        const resolvedAvatar = uo.avatar || uo.settings?.avatar || null;
         res.status(200).json({
             status: 'success',
             data: {
                 user: {
                     ...uo,
                     uid: uo.firebaseUid || null,
+                    avatar: resolvedAvatar,
                     preferences: uo.preferences || { hideTourButton: true, hideChatbot: true },
                     daysLeft,
                     isActive: user.subscriptionStatus === 'active' && daysLeft > 0,

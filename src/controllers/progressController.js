@@ -269,9 +269,8 @@ export const getLeaderboard = async (req, res) => {
             .limit(limit)
             .lean();
 
-        const ids = topProgress
-            .map((p) => p.userId)
-            .filter(Boolean)
+        const rawIds = topProgress.map((p) => p.userId).filter(Boolean);
+        const objIds = rawIds
             .map((id) => {
                 try {
                     return new mongoose.Types.ObjectId(id);
@@ -281,13 +280,19 @@ export const getLeaderboard = async (req, res) => {
             })
             .filter(Boolean);
 
-        const users = await User.find({ _id: { $in: ids } })
-            .select('name settings role avatar profile')
+        const users = await User.find({
+            $or: [
+                { _id: { $in: objIds } },
+                { firebaseUid: { $in: rawIds } }
+            ]
+        })
+            .select('name settings role avatar profile firebaseUid')
             .lean();
 
         const userMap = {};
         users.forEach((u) => {
             userMap[String(u._id)] = u;
+            if (u.firebaseUid) userMap[String(u.firebaseUid)] = u;
         });
 
         const rows = [];
@@ -296,11 +301,13 @@ export const getLeaderboard = async (req, res) => {
             if (!u) continue;
             if (u.role === 'admin') continue;
 
+            const isCurrentUser = p.userId === userId || (req.user.firebaseUid && p.userId === req.user.firebaseUid);
+
             rows.push({
                 userId: p.userId,
-                isMe: p.userId === userId,
+                isMe: isCurrentUser,
                 name: u.name || 'Anonymous',
-                avatar: u.avatar || u.profile?.avatar || null,
+                avatar: u.avatar || u.settings?.avatar || u.profile?.avatar || null,
                 displayXP: p[sortField] || 0,
                 dailyXP: p.dailyXP || 0,
                 weeklyXP: p.weeklyXP || 0,

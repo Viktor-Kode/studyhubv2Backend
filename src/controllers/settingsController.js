@@ -92,7 +92,11 @@ export const updateSettings = async (req, res) => {
             if (profile.examTarget != null) nextSettings.examTarget = profile.examTarget;
             if (profile.subjects != null) nextSettings.subjects = profile.subjects;
             if (profile.targetYear != null) nextSettings.targetYear = profile.targetYear;
-            if (profile.avatar != null) nextSettings.avatar = profile.avatar;
+            if (profile.avatar != null) {
+                nextSettings.avatar = profile.avatar;
+                // Mirror avatar to the top-level field so the leaderboard can read it
+                updateData.avatar = profile.avatar;
+            }
             updateData.settings = nextSettings;
         }
 

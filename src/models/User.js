@@ -112,6 +112,9 @@ const userSchema = new mongoose.Schema({
         class_record: { type: Number, default: 0 }
     },
 
+    // Avatar — URL/data URI of the user's chosen profile picture
+    avatar: { type: String, default: null },
+
     lastSeen: { type: Date, default: null },
 
     emailUnsubscribed: { type: Boolean, default: false },

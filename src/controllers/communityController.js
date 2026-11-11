@@ -1025,7 +1025,7 @@ export const getLeaderboard = async (req, res) => {
 
     const leaderboard = topUsers.map((u) => ({
       name: u.name || 'Anonymous',
-      avatar: computeInitials(u.name || 'Anonymous'),
+      avatar: u.avatar || u.settings?.avatar || computeInitials(u.name || 'Anonymous'),
       totalPoints: u.totalPoints || 0,
       cbtPoints: u.cbtPoints || 0,
       communityPoints: u.communityPoints || 0,
@@ -1040,7 +1040,7 @@ export const getLeaderboard = async (req, res) => {
         ? null
         : {
             name: myUser.name || 'Anonymous',
-            avatar: computeInitials(myUser.name || 'Anonymous'),
+            avatar: myUser.avatar || myUser.settings?.avatar || computeInitials(myUser.name || 'Anonymous'),
             totalPoints: myUser.totalPoints || 0,
             cbtPoints: myUser.cbtPoints || 0,
             communityPoints: myUser.communityPoints || 0,
