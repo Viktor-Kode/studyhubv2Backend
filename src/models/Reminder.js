@@ -59,6 +59,9 @@ const reminderSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
+reminderSchema.index({ completed: 1, date: 1, time: 1 });
+reminderSchema.index({ completed: 1, pushAtTimeNotifiedAt: 1, emailAtTimeNotifiedAt: 1 });
+
 const Reminder = mongoose.model('Reminder', reminderSchema);
 
 export default Reminder;

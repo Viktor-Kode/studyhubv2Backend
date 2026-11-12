@@ -15,9 +15,21 @@ cron.schedule(
       // Fetch reminders that can send Email
       const reminders = await Reminder.find({
         completed: false,
+        $or: [
+          { pushAtTimeNotifiedAt: null },
+          { pushBeforeNotifiedAt: null },
+          { emailEnabled: true, emailAtTimeNotifiedAt: null },
+          { emailEnabled: true, emailBeforeNotifiedAt: null }
+        ]
       }).lean();
 
       if (!reminders.length) return;
+
+      const userIds = [...new Set(reminders.map((r) => r.userId).filter(Boolean))];
+      const users = await User.find({ _id: { $in: userIds } })
+        .select('email firebaseUid name webPushSubscription notificationsEnabled fcmToken')
+        .lean();
+      const userMap = new Map(users.map((u) => [u._id.toString(), u]));
 
       for (const reminder of reminders) {
         try {
@@ -36,7 +48,7 @@ cron.schedule(
           }
 
           // Determine destination Email address
-          const user = await User.findById(reminder.userId).select('email firebaseUid name webPushSubscription notificationsEnabled fcmToken').lean();
+          const user = userMap.get(reminder.userId?.toString());
           const to = user?.email;
 
           // 1) Send BEFORE reminder time (notifyBefore minutes)
@@ -62,9 +74,9 @@ cron.schedule(
             }
 
             // B) PUSH BEFORE (Phone Notification)
-            if (!reminder.pushBeforeNotifiedAt && user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+            if (!reminder.pushBeforeNotifiedAt && user && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
               await sendNotification({
-                userId: user.firebaseUid,
+                userId: user.firebaseUid || user._id.toString(),
                 type: 'timetable_reminder',
                 title: `Upcoming: ${reminder.title || 'Task'}`,
                 body: `Starts in ${notifyMinutes} minutes!`,
@@ -101,9 +113,9 @@ cron.schedule(
             }
 
             // B) PUSH AT TIME (Phone Notification)
-            if (!reminder.pushAtTimeNotifiedAt && user?.firebaseUid && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
+            if (!reminder.pushAtTimeNotifiedAt && user && (user.webPushSubscription || user.fcmToken) && user.notificationsEnabled) {
               await sendNotification({
-                userId: user.firebaseUid,
+                userId: user.firebaseUid || user._id.toString(),
                 type: 'timetable_reminder',
                 title: `Time to study: ${reminder.title || 'Task'}`,
                 body: `It's time! Let's get to work 💪`,

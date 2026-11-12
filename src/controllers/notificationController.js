@@ -4,17 +4,26 @@ import User from '../models/User.js';
 import { sendBulkNotification } from '../services/notificationService.js';
 import { trackNotificationClick } from '../services/retentionNotificationService.js';
 
+const getUserNotificationFilter = (user) => {
+  const uid = user?.firebaseUid;
+  const mongoId = user?._id?.toString() || user?.id?.toString();
+  if (uid && mongoId) return { $or: [{ userId: uid }, { userId: mongoId }] };
+  if (uid) return { userId: uid };
+  if (mongoId) return { userId: mongoId };
+  return null;
+};
+
 export const getNotifications = async (req, res) => {
   try {
-    const uid = req.user.firebaseUid;
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing Firebase UID' });
+    const filter = getUserNotificationFilter(req.user);
+    if (!filter) {
+      return res.status(400).json({ error: 'User identification required' });
     }
-    const notifications = await PushNotification.find({ userId: uid })
+    const notifications = await PushNotification.find(filter)
       .sort({ createdAt: -1 })
       .limit(30)
       .lean();
-    const unreadCount = await PushNotification.countDocuments({ userId: uid, isRead: false });
+    const unreadCount = await PushNotification.countDocuments({ ...filter, isRead: false });
     res.json({ notifications, unreadCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -23,11 +32,11 @@ export const getNotifications = async (req, res) => {
 
 export const markAllRead = async (req, res) => {
   try {
-    const uid = req.user.firebaseUid;
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing Firebase UID' });
+    const filter = getUserNotificationFilter(req.user);
+    if (!filter) {
+      return res.status(400).json({ error: 'User identification required' });
     }
-    await PushNotification.updateMany({ userId: uid, isRead: false }, { isRead: true });
+    await PushNotification.updateMany({ ...filter, isRead: false }, { isRead: true });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -36,12 +45,12 @@ export const markAllRead = async (req, res) => {
 
 export const markOneRead = async (req, res) => {
   try {
-    const uid = req.user.firebaseUid;
+    const filter = getUserNotificationFilter(req.user);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid id' });
     }
     const n = await PushNotification.findOneAndUpdate(
-      { _id: req.params.id, userId: uid },
+      { _id: req.params.id, ...filter },
       { isRead: true },
       { new: true }
     );
@@ -60,14 +69,11 @@ export const registerToken = async (req, res) => {
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ error: 'token required' });
     }
-    const uid = req.user.firebaseUid;
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing Firebase UID' });
+    const filter = getUserNotificationFilter(req.user);
+    if (!filter) {
+      return res.status(400).json({ error: 'User identification required' });
     }
-    await User.findOneAndUpdate(
-      { firebaseUid: uid },
-      { fcmToken: token, notificationsEnabled: true }
-    );
+    await User.findByIdAndUpdate(req.user._id, { fcmToken: token, notificationsEnabled: true });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -76,11 +82,11 @@ export const registerToken = async (req, res) => {
 
 export const disableNotifications = async (req, res) => {
   try {
-    const uid = req.user.firebaseUid;
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing Firebase UID' });
+    const filter = getUserNotificationFilter(req.user);
+    if (!filter) {
+      return res.status(400).json({ error: 'User identification required' });
     }
-    await User.findOneAndUpdate({ firebaseUid: uid }, { fcmToken: null, notificationsEnabled: false });
+    await User.findByIdAndUpdate(req.user._id, { fcmToken: null, notificationsEnabled: false });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -100,7 +106,7 @@ export const registerWebPush = async (req, res) => {
       return res.status(400).json({ error: 'Subscription keys are required' });
     }
     const uid = req.user.firebaseUid || req.user._id || req.user.id;
-    if (!uid) {
+    if (!filter) {
       return res.status(400).json({ error: 'Missing User ID' });
     }
     const filter = req.user.firebaseUid ? { firebaseUid: uid } : { _id: uid };

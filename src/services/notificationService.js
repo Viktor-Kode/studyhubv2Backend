@@ -120,7 +120,7 @@ const getEmailContent = (type, data) => {
 
 export const sendNotification = async ({
   userId,
-  type,
+  type = 'general',
   title,
   body,
   icon = '📚',
@@ -173,7 +173,7 @@ export const sendNotification = async ({
         delivery.pushSent = true;
       } catch (fcmErr) {
         if (fcmErr.code === 'messaging/registration-token-not-registered' || fcmErr.code === 'messaging/invalid-registration-token') {
-          await User.findOneAndUpdate({ firebaseUid: userId }, { fcmToken: null });
+          await User.findByIdAndUpdate(user._id, { fcmToken: null });
         }
         console.error('[FCM]', fcmErr.message);
       }
@@ -193,7 +193,7 @@ export const sendNotification = async ({
         delivery.pushSent = true;
       } catch (wpErr) {
         if (wpErr.statusCode === 404 || wpErr.statusCode === 410) {
-          await User.findOneAndUpdate({ _id: user._id }, { webPushSubscription: null });
+          await User.findByIdAndUpdate(user._id, { webPushSubscription: null });
         }
         console.error('[WebPush]', wpErr.message);
       }
@@ -220,7 +220,7 @@ export const sendBulkNotification = async ({ userIds, type, title, body, icon, l
   const batchSize = 20;
   for (let i = 0; i < userIds.length; i += batchSize) {
     const batch = userIds.slice(i, i + batchSize);
-    await Promise.all(
+    await Promise.allSettled(
       batch.map((userId) =>
         sendNotification({ userId, type, title, body, icon, link, data })
       )
