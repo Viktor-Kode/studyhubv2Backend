@@ -1412,6 +1412,84 @@ export const getFullDashboardStats = async (req, res) => {
     }
 };
 
+// ── Study engagement dashboard ──────────────────────────────────────────────
+export const getStudyEngagementStats = async (req, res) => {
+    try {
+        const now = new Date();
+        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const paidFilter = { $or: [
+            { subscriptionStatus: 'active', subscriptionEnd: { $gt: now } },
+            { role: 'teacher', teacherPlan: { $ne: 'free' }, teacherPlanEnd: { $gt: now } },
+            { is_paid: true }
+        ] };
+        const [totalUsers, activePaths, completedPathActivity, cbtActivity, flashcardActivity,
+            usersWithPaths, paidCount, freeLimitEvents] = await Promise.all([
+            User.countDocuments(),
+            StudyPath.aggregate([
+                { $match: { userId: { $regex: /^[a-fA-F0-9]{24}$/ } } },
+                { $group: { _id: '$userId', last: { $max: { $ifNull: ['$updatedAt', '$createdAt'] } } } }
+            ]),
+            StudyPath.aggregate([
+                { $match: { userId: { $regex: /^[a-fA-F0-9]{24}$/ }, 'nodes.status': 'completed' } },
+                { $project: { userId: 1, completed: { $size: { $filter: { input: '$nodes', as: 'node', cond: { $eq: ['$$node.status', 'completed'] } } } }, at: { $ifNull: ['$updatedAt', '$createdAt'] } } },
+                { $group: { _id: '$userId', completedNodes: { $sum: '$completed' }, last: { $max: '$at' } } }
+            ]),
+            CBTResult.aggregate([
+                { $match: { examType: 'AI_STUDY' } },
+                { $group: { _id: '$studentId', last: { $max: { $ifNull: ['$takenAt', '$createdAt'] } } } }
+            ]),
+            FlashcardProgress.aggregate([
+                { $match: { reviewCount: { $gt: 0 }, lastReviewed: { $type: 'date' } } },
+                { $group: { _id: '$studentId', last: { $max: '$lastReviewed' } } }
+            ]),
+            StudyPath.aggregate([
+                { $match: { userId: { $regex: /^[a-fA-F0-9]{24}$/ } } },
+                { $group: { _id: '$userId', studyPaths: { $sum: 1 }, nodesCompleted: { $sum: { $size: { $filter: { input: '$nodes', as: 'node', cond: { $eq: ['$$node.status', 'completed'] } } } } }, lastPathActivity: { $max: { $ifNull: ['$updatedAt', '$createdAt'] } } } },
+                { $lookup: { from: 'users', let: { uid: { $toObjectId: '$_id' } }, pipeline: [{ $match: { $expr: { $eq: ['$_id', '$$uid'] } } }, { $project: { name: 1, email: 1, role: 1, subscriptionStatus: 1, subscriptionPlan: 1, subscriptionEnd: 1, teacherPlan: 1, teacherPlanEnd: 1, is_paid: 1 } }], as: 'user' } },
+                { $unwind: '$user' }
+            ]),
+            User.countDocuments(paidFilter),
+            PaywallEvent.distinct('userId', { action: 'PAYWALL_TRIGGERED', 'context.feature': 'study_map', 'context.total_maps_created': { $gte: 3 } })
+        ]);
+
+        const activityByUser = new Map();
+        const addActivity = (rows) => rows.forEach(({ _id, last }) => {
+            if (!_id || !last) return;
+            const key = String(_id);
+            const value = new Date(last);
+            if (!activityByUser.has(key) || activityByUser.get(key) < value) activityByUser.set(key, value);
+        });
+        addActivity(activePaths);
+        addActivity(completedPathActivity);
+        addActivity(cbtActivity);
+        addActivity(flashcardActivity);
+        const active7 = [...activityByUser.values()].filter((date) => date >= sevenDaysAgo).length;
+        const active30 = [...activityByUser.values()].filter((date) => date >= thirtyDaysAgo).length;
+
+        const completionByUser = new Map(completedPathActivity.map((row) => [String(row._id), row.completedNodes]));
+        const cbtByUser = new Map(cbtActivity.map((row) => [String(row._id), row.last]));
+        const flashByUser = new Map(flashcardActivity.map((row) => [String(row._id), row.last]));
+        const studyPathUsers = usersWithPaths.map(({ _id, studyPaths, nodesCompleted, lastPathActivity, user }) => {
+            const id = String(_id);
+            const dates = [lastPathActivity, activityByUser.get(id), cbtByUser.get(id), flashByUser.get(id)].filter(Boolean).map((date) => new Date(date));
+            const latest = dates.reduce((a, b) => a > b ? a : b);
+            const isPaid = (user.subscriptionStatus === 'active' && user.subscriptionEnd && new Date(user.subscriptionEnd) > now) ||
+                (user.role === 'teacher' && user.teacherPlan !== 'free' && user.teacherPlanEnd && new Date(user.teacherPlanEnd) > now) || user.is_paid;
+            return { userId: id, name: user.name, email: user.email, studyPaths, nodesCompleted: completionByUser.get(id) ?? nodesCompleted, lastActivity: latest, plan: isPaid ? 'Paid' : 'Free' };
+        }).sort((a, b) => new Date(b.lastActivity) - new Date(a.lastActivity));
+
+        res.json({
+            active: { sevenDays: active7, thirtyDays: active30, percentOfUsers: totalUsers ? Math.round(active7 / totalUsers * 1000) / 10 : 0 },
+            studyPaths: { users: usersWithPaths.length, percentOfUsers: totalUsers ? Math.round(usersWithPaths.length / totalUsers * 1000) / 10 : 0, rows: studyPathUsers },
+            funnel: { signedUp: totalUsers, createdStudyPath: usersWithPaths.length, tookCbt: cbtActivity.length, usedFreeLimit: freeLimitEvents.length, paid: paidCount }
+        });
+    } catch (err) {
+        console.error('[Admin] Study engagement stats error:', err.message);
+        res.status(500).json({ error: 'Failed to load study engagement stats' });
+    }
+};
+
 export const getActivityFeed = async (req, res) => {
     try {
         const limit = Math.min(50, Math.max(5, parseInt(req.query.limit, 10) || 20));
