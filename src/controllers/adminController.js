@@ -1418,39 +1418,51 @@ export const getStudyEngagementStats = async (req, res) => {
         const now = new Date();
         const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        const launchPath = await StudyPath.findOne().sort({ createdAt: 1 }).select('createdAt').lean();
+        const launchDate = launchPath?.createdAt || null;
+        const sinceLaunch = req.query.sinceLaunch === 'true';
+        const scopedUserIds = sinceLaunch && launchDate
+            ? await User.find({ createdAt: { $gte: launchDate } }).distinct('_id')
+            : sinceLaunch ? [] : null;
+        const scopedStringIds = scopedUserIds?.map(String);
+        const scopeMatch = scopedUserIds ? { $in: scopedStringIds } : { $regex: /^[a-fA-F0-9]{24}$/ };
+        const cbtUserMatch = scopedUserIds ? { $in: scopedUserIds } : { $type: 'objectId' };
         const paidFilter = { $or: [
             { subscriptionStatus: 'active', subscriptionEnd: { $gt: now } },
             { role: 'teacher', teacherPlan: { $ne: 'free' }, teacherPlanEnd: { $gt: now } },
             { is_paid: true }
         ] };
+        const scopedPaidFilter = scopedUserIds ? { $and: [paidFilter, { _id: { $in: scopedUserIds } }] } : paidFilter;
         const [totalUsers, activePaths, completedPathActivity, cbtActivity, flashcardActivity,
-            usersWithPaths, paidCount, freeLimitEvents] = await Promise.all([
-            User.countDocuments(),
+            usersWithPaths, paidCount, freeLimitEvents, cbtResultCount, cbtWithUserIdCount] = await Promise.all([
+            scopedUserIds ? scopedUserIds.length : User.countDocuments(),
             StudyPath.aggregate([
-                { $match: { userId: { $regex: /^[a-fA-F0-9]{24}$/ } } },
+                { $match: { userId: scopeMatch } },
                 { $group: { _id: '$userId', last: { $max: { $ifNull: ['$updatedAt', '$createdAt'] } } } }
             ]),
             StudyPath.aggregate([
-                { $match: { userId: { $regex: /^[a-fA-F0-9]{24}$/ }, 'nodes.status': 'completed' } },
+                { $match: { userId: scopeMatch, 'nodes.status': 'completed' } },
                 { $project: { userId: 1, completed: { $size: { $filter: { input: '$nodes', as: 'node', cond: { $eq: ['$$node.status', 'completed'] } } } }, at: { $ifNull: ['$updatedAt', '$createdAt'] } } },
                 { $group: { _id: '$userId', completedNodes: { $sum: '$completed' }, last: { $max: '$at' } } }
             ]),
             CBTResult.aggregate([
-                { $match: { examType: 'AI_STUDY' } },
+                { $match: { examType: 'AI_STUDY', studentId: cbtUserMatch } },
                 { $group: { _id: '$studentId', last: { $max: { $ifNull: ['$takenAt', '$createdAt'] } } } }
             ]),
             FlashcardProgress.aggregate([
-                { $match: { reviewCount: { $gt: 0 }, lastReviewed: { $type: 'date' } } },
+                { $match: { reviewCount: { $gt: 0 }, lastReviewed: { $type: 'date' }, ...(scopedUserIds ? { studentId: { $in: scopedUserIds } } : {}) } },
                 { $group: { _id: '$studentId', last: { $max: '$lastReviewed' } } }
             ]),
             StudyPath.aggregate([
-                { $match: { userId: { $regex: /^[a-fA-F0-9]{24}$/ } } },
+                { $match: { userId: scopeMatch } },
                 { $group: { _id: '$userId', studyPaths: { $sum: 1 }, nodesCompleted: { $sum: { $size: { $filter: { input: '$nodes', as: 'node', cond: { $eq: ['$$node.status', 'completed'] } } } } }, lastPathActivity: { $max: { $ifNull: ['$updatedAt', '$createdAt'] } } } },
                 { $lookup: { from: 'users', let: { uid: { $toObjectId: '$_id' } }, pipeline: [{ $match: { $expr: { $eq: ['$_id', '$$uid'] } } }, { $project: { name: 1, email: 1, role: 1, subscriptionStatus: 1, subscriptionPlan: 1, subscriptionEnd: 1, teacherPlan: 1, teacherPlanEnd: 1, is_paid: 1 } }], as: 'user' } },
                 { $unwind: '$user' }
             ]),
-            User.countDocuments(paidFilter),
-            PaywallEvent.distinct('userId', { action: 'PAYWALL_TRIGGERED', 'context.feature': 'study_map', 'context.total_maps_created': { $gte: 3 } })
+            User.countDocuments(scopedPaidFilter),
+            PaywallEvent.distinct('userId', { action: 'PAYWALL_TRIGGERED', 'context.feature': 'study_map', 'context.total_maps_created': { $gte: 3 }, ...(scopedUserIds ? { userId: { $in: scopedUserIds } } : {}) }),
+            CBTResult.countDocuments(),
+            CBTResult.countDocuments({ studentId: { $type: 'objectId' } })
         ]);
 
         const activityByUser = new Map();
@@ -1482,7 +1494,9 @@ export const getStudyEngagementStats = async (req, res) => {
         res.json({
             active: { sevenDays: active7, thirtyDays: active30, percentOfUsers: totalUsers ? Math.round(active7 / totalUsers * 1000) / 10 : 0 },
             studyPaths: { users: usersWithPaths.length, percentOfUsers: totalUsers ? Math.round(usersWithPaths.length / totalUsers * 1000) / 10 : 0, rows: studyPathUsers },
-            funnel: { signedUp: totalUsers, createdStudyPath: usersWithPaths.length, tookCbt: cbtActivity.length, usedFreeLimit: freeLimitEvents.length, paid: paidCount }
+            funnel: { signedUp: totalUsers, createdStudyPath: usersWithPaths.length, tookCbt: cbtActivity.length, usedFreeLimit: freeLimitEvents.length, paid: paidCount },
+            launchDate,
+            cbtRecords: { total: cbtResultCount, withUserId: cbtWithUserIdCount, withoutUserId: cbtResultCount - cbtWithUserIdCount }
         });
     } catch (err) {
         console.error('[Admin] Study engagement stats error:', err.message);
