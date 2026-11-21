@@ -525,7 +525,7 @@ export const getUserActivity = async (req, res) => {
             transactions
         ] = await Promise.all([
             User.findById(id)
-                .select('name email phoneNumber subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit flashcardUsageCount flashcardUsageLimit createdAt lastSeen examTarget subjects avatar')
+                .select('name email phoneNumber subscriptionStatus subscriptionPlan subscriptionEnd aiUsageCount aiUsageLimit aiCredits flashcardUsageCount flashcardUsageLimit createdAt lastSeen examTarget subjects avatar')
                 .lean(),
             CBTResult.find({ studentId: userId(id) }).sort({ takenAt: -1 }).limit(20).lean(),
             StudySession.find({ userId: userId(id) }).sort({ startTime: -1 }).limit(20).lean(),

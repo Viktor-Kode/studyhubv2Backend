@@ -46,7 +46,7 @@ router.delete('/notes/:id', deleteStudyNote);
 router.put('/notes/:id', updateStudyNote);
 
 // Generate a new quiz (POST)
-router.post('/generate', checkQuizUsage, checkAIUsage, validate(generateQuizSchema), generateQuiz);
+router.post('/generate', validate(generateQuizSchema), checkQuizUsage, checkAIUsage, generateQuiz);
 // AI Tutor Chat (POST)
 router.post('/chat', checkAIUsage, validate(chatWithTutorSchema), chatWithTutor);
 

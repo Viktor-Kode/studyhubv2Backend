@@ -3,45 +3,53 @@ import AIRequestLog from '../models/AIRequestLog.js';
 import { expireStaleActiveSubscription } from '../utils/studentSubscription.js';
 import { logPaywallEvent } from '../utils/paywallLogger.js';
 
-// Check AI usage — runs before every AI endpoint
-export const checkAIUsage = async (req, res, next) => {
+// Shared quota check for middleware and handlers that must inspect cache hits first.
+export const assertAIUsageAllowed = async (req, res) => {
     try {
-        let user = await User.findById(req.user.id);
+        let user = await User.findById(req.user?.id || req.user?._id);
         if (!user) {
-            return res.status(401).json({ error: 'User not found', message: 'User not found' });
+            res.status(401).json({ error: 'User not found', message: 'User not found' });
+            return false;
         }
         user = await expireStaleActiveSubscription(user);
 
         // Determine how many AI units this request needs
-        const requestedAmount = parseInt(req.body.amount || req.body.numberOfQuestions || req.body.requestedCount || req.body.count || 1) || 1;
+        const requestedRaw = Number.parseInt(req.body?.amount ?? req.body?.numberOfQuestions ?? req.body?.requestedCount ?? req.body?.count ?? 1, 10);
+        const requestedAmount = Number.isFinite(requestedRaw) ? Math.max(1, requestedRaw) : 1;
 
         // Check subscription is active
         if (user.subscriptionStatus === 'expired') {
-            return res.status(403).json({
+            res.status(403).json({
                 error: 'Subscription expired',
                 message: 'Your plan has expired. Renew to continue.',
                 showUpgrade: true,
                 code: 'SUBSCRIPTION_EXPIRED'
             });
+            return false;
         }
 
         // Check AI limit - prevents bypassing by requesting large batches (includes referral aiCredits)
-        const totalLimit = user.aiUsageLimit + (user.aiCredits || 0);
-        if (user.aiUsageCount + requestedAmount > totalLimit) {
+        const usedValue = Number(user.aiUsageCount);
+        const limitValue = Number(user.aiUsageLimit);
+        const creditsValue = Number(user.aiCredits);
+        const used = Number.isFinite(usedValue) ? usedValue : 0;
+        const totalLimit = (Number.isFinite(limitValue) ? limitValue : 3) +
+            (Number.isFinite(creditsValue) ? creditsValue : 0);
+        if (used + requestedAmount > totalLimit) {
             await logPaywallEvent({
                 userId: user._id,
                 userEmail: user.email,
                 action: 'AI_LIMIT_REACHED',
                 context: {
-                    used: user.aiUsageCount,
+                    used,
                     requested: requestedAmount,
                     limit: totalLimit
                 }
             });
 
-            const remaining = Math.max(0, totalLimit - user.aiUsageCount);
+            const remaining = Math.max(0, totalLimit - used);
 
-            return res.status(403).json({
+            res.status(403).json({
                 error: 'AI limit reached',
                 message: user.subscriptionStatus === 'free'
                     ? (remaining > 0 
@@ -49,11 +57,12 @@ export const checkAIUsage = async (req, res, next) => {
                         : 'You have used up your free and referral AI credits. Invite friends to get more, or upgrade to a paid plan.')
                     : `AI limit reached. You need ${requestedAmount} units but only have ${remaining} left. Purchase an add-on pack for ₦500.`,
                 showUpgrade: true,
-                used: user.aiUsageCount,
+                used,
                 requested: requestedAmount,
                 limit: totalLimit,
                 code: 'AI_LIMIT_REACHED'
             });
+            return false;
         }
 
         // Rate limiting — max 5 AI requests per minute per user
@@ -64,18 +73,25 @@ export const checkAIUsage = async (req, res, next) => {
         });
 
         if (recentRequests >= 5) {
-            return res.status(429).json({
+            res.status(429).json({
                 error: 'Too many requests',
                 message: 'Slow down! Max 5 AI requests per minute.',
                 code: 'RATE_LIMITED'
             });
+            return false;
         }
 
         req.currentUser = user; // pass to controller if needed
-        next();
+        return true;
     } catch (err) {
         res.status(500).json({ error: err.message });
+        return false;
     }
+};
+
+// Check AI usage — runs before every AI endpoint
+export const checkAIUsage = async (req, res, next) => {
+    if (await assertAIUsageAllowed(req, res)) return next();
 };
 
 // Call this AFTER successful AI response — increment usage

@@ -6,7 +6,7 @@ import { studyPathSystemPrompt, challengePrompt } from '../utils/prompts.js';
 import { PASS_MARK, CHALLENGE_XP_PER_QUESTION, TOTAL_CHALLENGE_QUESTIONS, MAX_CHALLENGE_XP } from '../config/challengeConfig.js';
 import { getEnv } from '../config/env.js';
 import aiClient from '../utils/aiClient.js';
-import { incrementAIUsage } from '../middleware/usageMiddleware.js';
+import { assertAIUsageAllowed, incrementAIUsage } from '../middleware/usageMiddleware.js';
 import { awardXP } from './progressController.js';
 import { buildPdfStudyPath, generatePdfOutline } from '../services/studyPathPdfPipeline.js';
 import { createStudyPathJob, getStudyPathJob, serializeStudyPathJob, updateStudyPathJob } from '../services/studyPathJobs.js';
@@ -24,6 +24,16 @@ const wordCount = (value) => String(value || '').trim().split(/\s+/).filter(Bool
 const GROUNDING_STOP_WORDS = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'by', 'for', 'from', 'in', 'into', 'is', 'it', 'of', 'on', 'or', 'that', 'the', 'their', 'this', 'to', 'was', 'were', 'with']);
 const BREAKDOWN_FILLER_REGEX = /\b(?:overview of|discusses?)\b|\b(?:include|includes|including|contain|contains|cover|covers|covering)\b[^.!?]{0,180}\b(?:and others|etcetera|etc\.|various|several|many)\b|\b(?:various|several|many)\s+(?:[a-z]+\s+){0,2}(?:muscles?|joints?|structures?|regions?|functions?|features?|parts?)\b|with specific (?:actions|nerve supply|attachments)/i;
 const BREAKDOWN_CONNECTOR_REGEX = /\b(?:because|so|which means|therefore|by\s|when\s|causes|leads to|allows|allowing|results in|while|whereas|in contrast|so that|as a result|since|acting as|serves as|serves to|functions as|functions to|enables|thereby|connects|attaches|provides|anchors|transmits)\b/i;
+
+function canAccessStudyPath(req, pathRecord) {
+  if (!pathRecord) return false;
+  const actorIds = [req.user?._id?.toString(), req.user?.firebaseUid].filter(Boolean);
+  if (pathRecord.userId === 'anonymous-user' || pathRecord.isAnonymousTrial) {
+    const anonId = sanitizeAnonymousSessionId(req.headers['x-anonymous-session-id']);
+    return Boolean(anonId && anonId === pathRecord.anonymousSessionId);
+  }
+  return actorIds.includes(String(pathRecord.userId));
+}
 
 function durationFromLessonText(summary, keyConcepts, breakdown) {
   const text = [summary || '', ...(Array.isArray(keyConcepts) ? keyConcepts : []), ...(Array.isArray(breakdown) ? breakdown.flatMap((slide) => [slide?.heading || '', slide?.body || '', slide?.memoryTip || '']) : [])].join(' ');
@@ -814,20 +824,10 @@ const generateStudyPathLegacy = async (req, res) => {
     let user = null;
     const userMongoId = req.user?._id;
     const userFirebaseId = req.user?.firebaseUid;
-    const bodyUserId = req.body?.userId;
-
     if (userMongoId) {
       user = await User.findById(userMongoId);
     } else if (userFirebaseId) {
       user = await User.findOne({ firebaseUid: userFirebaseId });
-    } else if (bodyUserId && bodyUserId !== 'anonymous-user') {
-      const isOid = mongoose.Types.ObjectId.isValid(bodyUserId);
-      user = await User.findOne({
-        $or: [
-          ...(isOid ? [{ _id: bodyUserId }] : []),
-          { firebaseUid: bodyUserId }
-        ]
-      });
     }
 
     if (user) {
@@ -968,7 +968,7 @@ const generateStudyPathLegacy = async (req, res) => {
     const processedNodes = postProcessNodes(parsedData.nodes, documentId);
 
     // Persistence
-    const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
+    const userId = req.user?._id?.toString() || req.user?.firebaseUid || 'anonymous-user';
 
     try {
       if (userId && userId !== 'anonymous-user') {
@@ -989,7 +989,9 @@ const generateStudyPathLegacy = async (req, res) => {
         nodes: processedNodes,
         isActive: true,
         sourceFileName: fileName,
-        extractedText: rawText
+        extractedText: rawText,
+        anonymousSessionId: req.anonymousSessionId || null,
+        isAnonymousTrial: userId === 'anonymous-user'
       });
 
       await savedRecord.save();
@@ -1054,7 +1056,7 @@ async function persistSkeletonPdfPath(req, file, outlineResult) {
     };
   });
 
-  const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
+  const userId = req.user?._id?.toString() || req.user?.firebaseUid || 'anonymous-user';
   const courseCode = outlineResult.courseCode || `${finalTitle.slice(0, 6).toUpperCase()} 101 · Interactive Study Path`;
   const fingerprint = computeDocumentFingerprint({
     buffer: file.buffer,
@@ -1123,7 +1125,7 @@ async function persistGeneratedPdfPath(req, file, generation) {
   const topicId = toKebabCase(finalTitle);
   const documentId = req.body?.documentId || req.body?.docId || topicId;
   const processedNodes = postProcessNodes(generation.nodes, documentId);
-  const userId = req.user?._id?.toString() || req.user?.firebaseUid || req.body?.userId || 'anonymous-user';
+  const userId = req.user?._id?.toString() || req.user?.firebaseUid || 'anonymous-user';
   const courseCode = generation.courseCode || `${finalTitle.slice(0, 6).toUpperCase()} 101 · Interactive Study Path`;
   const pathData = {
     userId,
@@ -1135,7 +1137,9 @@ async function persistGeneratedPdfPath(req, file, generation) {
     challenge: {},
     isActive: true,
     sourceFileName: fileName,
-    extractedText: generation.rawText
+    extractedText: generation.rawText,
+    anonymousSessionId: req.anonymousSessionId || null,
+    isAnonymousTrial: userId === 'anonymous-user'
   };
   const savedRecord = await StudyPath.findOneAndUpdate({ topicId }, { $set: pathData }, {
     new: true,
@@ -1216,20 +1220,10 @@ export const generateStudyPath = async (req, res) => {
     let user = null;
     const userMongoId = req.user?._id;
     const userFirebaseId = req.user?.firebaseUid;
-    const bodyUserId = req.body?.userId;
-
     if (userMongoId) {
       user = await User.findById(userMongoId);
     } else if (userFirebaseId) {
       user = await User.findOne({ firebaseUid: userFirebaseId });
-    } else if (bodyUserId && bodyUserId !== 'anonymous-user') {
-      const isOid = mongoose.Types.ObjectId.isValid(bodyUserId);
-      user = await User.findOne({
-        $or: [
-          ...(isOid ? [{ _id: bodyUserId }] : []),
-          { firebaseUid: bodyUserId }
-        ]
-      });
     }
 
     let ownerId;
@@ -1297,6 +1291,9 @@ export const generateStudyPath = async (req, res) => {
           });
         }
       }
+
+      // Cache retrieval is free; only a new AI generation spends an AI unit.
+      if (req.user && !(await assertAIUsageAllowed(req, res))) return;
 
       // Check lifetime limit: total_maps_created >= 3 and is_paid is false
       if ((user.total_maps_created || 0) >= 3 && !isPaid) {
@@ -1531,8 +1528,7 @@ export const regenerateStudyPathNode = async (req, res) => {
     const { topicId, nodeId } = req.params;
     const pathRecord = await StudyPath.findOne({ topicId });
     if (!pathRecord) return res.status(404).json({ success: false, message: 'Study path not found' });
-    const userId = req.user?._id?.toString() || req.user?.firebaseUid;
-    if (userId && userId !== pathRecord.userId) return res.status(403).json({ success: false, message: 'Not allowed to update this study path' });
+    if (!canAccessStudyPath(req, pathRecord)) return res.status(403).json({ success: false, message: 'Not allowed to update this study path' });
     const node = pathRecord.nodes.find((item) => item.id === Number(nodeId));
     if (!node) return res.status(404).json({ success: false, message: 'Study path node not found' });
     const sourceText = getSourcePageText(pathRecord.extractedText, node.sourcePages || []);
@@ -1558,6 +1554,7 @@ export const regenerateStudyPathNode = async (req, res) => {
     node.quiz2 = generated.quiz2;
     if (pathRecord.challenge) pathRecord.challenge.stale = true;
     await pathRecord.save();
+    await incrementAIUsage(req.user._id);
     return res.status(200).json({ success: true, node: node.toObject() });
   } catch (error) {
     console.error('[regenerateStudyPathNode] Error:', error.message);
@@ -1954,8 +1951,7 @@ export const getChallenge = async (req, res) => {
     const pathRecord = await StudyPath.findOne({ topicId });
     if (!pathRecord) return res.status(404).json({ success: false, message: "Study path not found" });
 
-    const userId = req.user?._id?.toString() || req.user?.firebaseUid;
-    if (userId && userId !== "anonymous-user" && pathRecord.userId && pathRecord.userId !== "anonymous-user" && userId !== pathRecord.userId) {
+    if (!canAccessStudyPath(req, pathRecord)) {
       return res.status(403).json({ success: false, message: "Not allowed to access this study path" });
     }
 
@@ -1981,6 +1977,7 @@ export const getChallenge = async (req, res) => {
       pathRecord.challenge.status = "active";
     }
     await pathRecord.save();
+    await incrementAIUsage(req.user._id);
 
     return res.status(200).json({
       success: true,
@@ -2014,17 +2011,12 @@ export const submitChallenge = async (req, res) => {
     const pathRecord = await StudyPath.findOne({ topicId });
     if (!pathRecord) return res.status(404).json({ success: false, message: "Study path not found" });
 
-    const userMongoId = req.user?._id?.toString();
-    const userFirebaseId = req.user?.firebaseUid;
-    const isOwner = !pathRecord.userId ||
-      pathRecord.userId === "anonymous-user" ||
-      (!userMongoId && !userFirebaseId) ||
-      pathRecord.userId === userMongoId ||
-      pathRecord.userId === userFirebaseId;
-
-    if (!isOwner) {
+    if (!canAccessStudyPath(req, pathRecord)) {
       return res.status(403).json({ success: false, message: "Not allowed to submit this challenge" });
     }
+
+    const userMongoId = req.user?._id?.toString();
+    const userFirebaseId = req.user?.firebaseUid;
 
     const effectiveUserId = userMongoId || userFirebaseId || (pathRecord.userId !== "anonymous-user" ? pathRecord.userId : null);
 
@@ -2151,15 +2143,7 @@ export const retryChallenge = async (req, res) => {
     const pathRecord = await StudyPath.findOne({ topicId });
     if (!pathRecord) return res.status(404).json({ success: false, message: "Study path not found" });
 
-    const userMongoId = req.user?._id?.toString();
-    const userFirebaseId = req.user?.firebaseUid;
-    const isOwner = !pathRecord.userId ||
-      pathRecord.userId === "anonymous-user" ||
-      (!userMongoId && !userFirebaseId) ||
-      pathRecord.userId === userMongoId ||
-      pathRecord.userId === userFirebaseId;
-
-    if (!isOwner) {
+    if (!canAccessStudyPath(req, pathRecord)) {
       return res.status(403).json({ success: false, message: "Not allowed to retry this challenge" });
     }
 
@@ -2191,6 +2175,7 @@ export const retryChallenge = async (req, res) => {
     }
 
     await pathRecord.save();
+    await incrementAIUsage(req.user._id);
 
     return res.status(200).json({
       success: true,
@@ -2308,8 +2293,13 @@ export const prepareNodeController = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Study path not found' });
     }
 
-    // Milestone 5 Gate: Anonymous users can only access Node 1. Node 2+ requires registration!
+    if (!canAccessStudyPath(req, pathRecord)) {
+      return res.status(403).json({ success: false, message: 'Not allowed to access this study path.' });
+    }
+
     const actorId = req.user?._id?.toString() || req.user?.firebaseUid;
+
+    // Milestone 5 Gate: Anonymous users can only access Node 1. Node 2+ requires registration!
     const isAnonymous = !actorId || pathRecord.userId === 'anonymous-user' || Boolean(pathRecord.isAnonymousTrial);
     if (isAnonymous && nodeId >= 2) {
       return res.status(403).json({
@@ -2352,6 +2342,10 @@ export const retryNodeController = async (req, res) => {
     const actorId = req.user?._id?.toString() || req.user?.firebaseUid;
     const isAnonymous = !actorId || pathRecord.userId === 'anonymous-user' || Boolean(pathRecord.isAnonymousTrial);
 
+    if (!canAccessStudyPath(req, pathRecord)) {
+      return res.status(403).json({ success: false, message: 'Not allowed to access this study path.' });
+    }
+
     // 1. Enforce Node 2+ signup restriction on retry (guests can only retry Node 1)
     if (isAnonymous && nodeId >= 2) {
       return res.status(403).json({
@@ -2373,6 +2367,7 @@ export const retryNodeController = async (req, res) => {
       { $set: { 'nodes.$.contentStatus': 'pending', 'nodes.$.generationError': null } }
     );
     const node = await prepareNode({ topicId, nodeId, bufferNext: true });
+    if (req.user?._id) await incrementAIUsage(req.user._id);
     return res.status(200).json({ success: true, node });
   } catch (error) {
     console.error(`[retryNode] Error for ${req.params.topicId} node ${req.params.nodeId}:`, error.message);
@@ -2395,6 +2390,30 @@ export const claimStudyPathController = async (req, res) => {
     const { anonymousSessionId, topicId } = req.body || {};
     if (!anonymousSessionId) {
       return res.status(400).json({ success: false, message: 'anonymousSessionId is required to claim an anonymous study path' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+    const refreshedUser = await expireStaleActiveSubscription(user);
+    const isPaid = Boolean(refreshedUser.is_paid || hasActivePaidStudentPlan(refreshedUser));
+    const alreadyClaimed = await StudyPath.exists({
+      claimedSessionId: anonymousSessionId,
+      userId,
+      'claimState.usageCounted': true
+    });
+    if (!alreadyClaimed && (refreshedUser.total_maps_created || 0) >= 3 && !isPaid) {
+      await logPaywallEvent({
+        userId: refreshedUser._id,
+        userEmail: refreshedUser.email,
+        action: 'PAYWALL_TRIGGERED',
+        context: { feature: 'study_map', total_maps_created: refreshedUser.total_maps_created, limit: 3 }
+      }).catch(() => {});
+      return res.status(403).json({
+        success: false,
+        code: 'PAYWALL_TRIGGERED',
+        showUpgrade: true,
+        message: 'You have reached the free lifetime limit of 3 study maps. Upgrade to claim more study maps.'
+      });
     }
 
     const result = await claimAnonymousStudyPath({ userId, anonymousSessionId, topicId });
