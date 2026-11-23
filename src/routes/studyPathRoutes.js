@@ -19,7 +19,9 @@ import {
   getNodeStatusesController,
   prepareNodeController,
   retryNodeController,
-  claimStudyPathController
+  claimStudyPathController,
+  getNodeAudioController,
+  getNodeAudioScriptController
 } from '../controllers/studyPathController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { checkAIUsage } from '../middleware/usageMiddleware.js';
@@ -118,6 +120,8 @@ router.post('/:topicId/nodes/:nodeId/retry', optionalProtect, challengeLimiter, 
 
 // GET & PUT & DELETE for specific path
 router.get('/:topicId', optionalProtect, getStudyPathById);
+router.get('/:topicId/node/:nodeId/audio', optionalProtect, getNodeAudioController);
+router.get('/:topicId/node/:nodeId/audio-script', optionalProtect, getNodeAudioScriptController);
 router.put('/:topicId/node/:nodeId', optionalProtect, updateNodeStatus);
 router.post('/:topicId/node/:nodeId/regenerate', protect, checkAIUsage, regenerateStudyPathNode);
 router.post('/:topicId/node/:nodeId/analyze-summary', protect, checkAIUsage, analyzeLessonSummary);

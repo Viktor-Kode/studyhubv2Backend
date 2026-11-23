@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import fs from 'fs';
 import StudyPath from '../models/StudyPath.js';
 import User from '../models/User.js';
 import { parseDocumentBuffer } from '../utils/documentParser.js';
@@ -17,6 +18,7 @@ import { logPaywallEvent } from '../utils/paywallLogger.js';
 import { computeDocumentFingerprint, findUserCachedStudyPath, recordDocumentHash } from '../services/fingerprintService.js';
 import { generateAnonymousSessionId, sanitizeAnonymousSessionId, claimAnonymousStudyPath } from '../services/anonymousSessionService.js';
 import { recordStudentMistake } from '../services/collectiveIntelligenceService.js';
+import { getOrGenerateNodeAudio, buildNodeNarration } from '../services/studyPathTtsService.js';
 
 const BANNED_FILLER_REGEX = /(fundamental principles|core terminology|key ideas build|introduction to (the )?primary concepts|^definition$)/i;
 const QUIZ_TEMPLATE_REGEX = /how does .{1,120} interact with the (overall )?mechanics of/i;
@@ -2435,6 +2437,106 @@ export const claimStudyPathController = async (req, res) => {
     });
   } catch (error) {
     console.error('[claimStudyPathController] Error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/study-paths/:topicId/node/:nodeId/audio
+ * Streams synthesized MP3 audio for a learning node.
+ * Supports HTTP Range requests (206 Partial Content) for scrubbing.
+ */
+export const getNodeAudioController = async (req, res) => {
+  try {
+    const { topicId, nodeId } = req.params;
+    const { voice = 'en-NG-EzinneNeural', speed = '+0%' } = req.query;
+
+    const parsedNodeId = parseInt(nodeId, 10);
+    if (isNaN(parsedNodeId)) {
+      return res.status(400).json({ success: false, message: 'Invalid nodeId' });
+    }
+
+    const studyPath = await StudyPath.findOne({ topicId });
+    if (!studyPath) {
+      return res.status(404).json({ success: false, message: 'Study path not found' });
+    }
+
+    const node = studyPath.nodes.find(n => n.id === parsedNodeId);
+    if (!node) {
+      return res.status(404).json({ success: false, message: 'Learning node not found' });
+    }
+
+    // Synthesize or retrieve from cache
+    const { filePath, size } = await getOrGenerateNodeAudio(topicId, node, { voice, speed });
+
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : size - 1;
+      const chunkSize = (end - start) + 1;
+
+      const fileStream = fs.createReadStream(filePath, { start, end });
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${size}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': 'audio/mpeg',
+        'Cache-Control': 'public, max-age=604800, immutable'
+      });
+      return fileStream.pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': size,
+        'Content-Type': 'audio/mpeg',
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=604800, immutable'
+      });
+      const fileStream = fs.createReadStream(filePath);
+      return fileStream.pipe(res);
+    }
+  } catch (error) {
+    console.error(`[getNodeAudioController] Error for ${req.params.topicId} node ${req.params.nodeId}:`, error.message);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to generate audio' });
+  }
+};
+
+/**
+ * GET /api/study-paths/:topicId/node/:nodeId/audio-script
+ * Returns the timed, clean narration script with section markers.
+ */
+export const getNodeAudioScriptController = async (req, res) => {
+  try {
+    const { topicId, nodeId } = req.params;
+    const parsedNodeId = parseInt(nodeId, 10);
+
+    if (isNaN(parsedNodeId)) {
+      return res.status(400).json({ success: false, message: 'Invalid nodeId' });
+    }
+
+    const studyPath = await StudyPath.findOne({ topicId });
+    if (!studyPath) {
+      return res.status(404).json({ success: false, message: 'Study path not found' });
+    }
+
+    const node = studyPath.nodes.find(n => n.id === parsedNodeId);
+    if (!node) {
+      return res.status(404).json({ success: false, message: 'Learning node not found' });
+    }
+
+    const narration = buildNodeNarration(node);
+
+    return res.status(200).json({
+      success: true,
+      topicId,
+      nodeId: parsedNodeId,
+      title: node.title,
+      estimatedDurationSeconds: narration.estimatedDurationSeconds,
+      sections: narration.sections,
+      scriptText: narration.scriptText
+    });
+  } catch (error) {
+    console.error(`[getNodeAudioScriptController] Error for ${req.params.topicId} node ${req.params.nodeId}:`, error.message);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
