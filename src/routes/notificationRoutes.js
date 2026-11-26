@@ -10,6 +10,8 @@ import {
   registerToken,
   disableNotifications,
   registerWebPush,
+  getNotificationConfig,
+  getNotificationStatus,
   trackNotification,
 } from '../controllers/notificationController.js';
 
@@ -18,6 +20,8 @@ const notificationSetupLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, 
 
 router.use(protect);
 
+router.get('/config', getNotificationConfig);
+router.get('/status', getNotificationStatus);
 router.get('/', getNotifications);
 router.post('/mark-read', markAllRead);
 router.post('/mark-read/:id', markOneRead);

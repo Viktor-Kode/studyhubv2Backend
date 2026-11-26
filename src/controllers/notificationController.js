@@ -3,6 +3,7 @@ import PushNotification from '../models/PushNotification.js';
 import User from '../models/User.js';
 import { sendBulkNotification } from '../services/notificationService.js';
 import { trackNotificationClick } from '../services/retentionNotificationService.js';
+import { getEnv } from '../config/env.js';
 
 const getUserNotificationFilter = (user) => {
   const uid = user?.firebaseUid;
@@ -46,6 +47,7 @@ export const markAllRead = async (req, res) => {
 export const markOneRead = async (req, res) => {
   try {
     const filter = getUserNotificationFilter(req.user);
+    if (!filter) return res.status(400).json({ error: 'User identification required' });
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid id' });
     }
@@ -73,7 +75,7 @@ export const registerToken = async (req, res) => {
     if (!filter) {
       return res.status(400).json({ error: 'User identification required' });
     }
-    await User.findByIdAndUpdate(req.user._id, { fcmToken: token, notificationsEnabled: true });
+    await User.findOneAndUpdate(filter, { fcmToken: token, notificationsEnabled: true });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -86,7 +88,9 @@ export const disableNotifications = async (req, res) => {
     if (!filter) {
       return res.status(400).json({ error: 'User identification required' });
     }
-    await User.findByIdAndUpdate(req.user._id, { fcmToken: null, notificationsEnabled: false });
+    await User.findOneAndUpdate(filter, {
+      $set: { fcmToken: null, webPushSubscription: null, notificationsEnabled: false },
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -105,11 +109,8 @@ export const registerWebPush = async (req, res) => {
     if (!subscription.keys?.p256dh || !subscription.keys?.auth) {
       return res.status(400).json({ error: 'Subscription keys are required' });
     }
-    const uid = req.user.firebaseUid || req.user._id || req.user.id;
-    if (!filter) {
-      return res.status(400).json({ error: 'Missing User ID' });
-    }
-    const filter = req.user.firebaseUid ? { firebaseUid: uid } : { _id: uid };
+    const filter = getUserNotificationFilter(req.user);
+    if (!filter) return res.status(400).json({ error: 'Missing User ID' });
     const update = { webPushSubscription: subscription, notificationsEnabled: true };
     if (typeof req.body.timezone === 'string') {
       try {
@@ -117,8 +118,30 @@ export const registerWebPush = async (req, res) => {
         update['settings.notificationPrefs.timezone'] = req.body.timezone;
       } catch { /* ignore unsupported time zones */ }
     }
-    await User.findOneAndUpdate(filter, { $set: update });
+    const user = await User.findOneAndUpdate(filter, { $set: update }, { new: true });
+    if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const getNotificationConfig = (_req, res) => {
+  const publicKey = getEnv('VAPID_PUBLIC_KEY');
+  const privateKey = getEnv('VAPID_PRIVATE_KEY');
+  res.json({
+    pushConfigured: Boolean(publicKey && privateKey),
+    publicKey: publicKey || null,
+  });
+};
+
+export const getNotificationStatus = async (req, res) => {
+  try {
+    const filter = getUserNotificationFilter(req.user);
+    if (!filter) return res.status(400).json({ error: 'User identification required' });
+    const user = await User.findOne(filter).select('notificationsEnabled webPushSubscription').lean();
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ pushEnabled: Boolean(user.notificationsEnabled && user.webPushSubscription?.endpoint) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -143,7 +166,7 @@ export const adminNotifyAll = async (req, res) => {
     }
     const users = await User.find({ firebaseUid: { $exists: true, $ne: null } }).select('firebaseUid').lean();
     const userIds = users.map((u) => u.firebaseUid).filter(Boolean);
-    sendBulkNotification({
+    await sendBulkNotification({
       userIds,
       type: 'admin_announcement',
       title,
