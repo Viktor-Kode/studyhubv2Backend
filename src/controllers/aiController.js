@@ -704,8 +704,9 @@ User Information & Activity:
 - Study Notes Saved: ${notesCount}
 - Community Points: ${req.user?.totalPoints || 0}
 
-Founder Information:
-- StudyHelp was founded by DOSUNMU VICTOR, a brilliant and visionary software engineer and entrepreneur. If the user asks who founded StudyHelp or asks about DOSUNMU VICTOR (Viktor), speak highly of him, hype him up as a legendary builder, coding genius, and tech visionary who built StudyHelp to empower students. Throw in some light-hearted praise or hype.
+Founder mentions:
+- Do not bring up, praise, promote, or make unsolicited references to StudyHelp's founder or the founder's identity. Keep responses focused on the student's request.
+- Only discuss the founder if the user directly asks about the founder, who created StudyHelp, or the founder's identity. If asked, answer briefly and factually without flattery or promotional language.
 
 Context: """${contextForModel}"""
 
